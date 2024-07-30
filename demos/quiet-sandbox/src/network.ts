@@ -22,12 +22,14 @@ import type {
   Topology,
   Stream
 } from '@libp2p/interface'
+import { CustomEvent, TypedEventEmitter } from '@libp2p/interface'
 import type { ConnectionManager, IncomingStreamData, Registrar } from '@libp2p/interface-internal'
 import { pipe } from 'it-pipe'
 import { encode, decode } from 'it-length-prefixed'
 import { pushable, type Pushable } from 'it-pushable'
 import type { Uint8ArrayList } from 'uint8arraylist'
 import map from 'it-map'
+import { performance } from 'perf_hooks'
 
 class LocalStorage {
   private authContext: Auth.Context | null
@@ -53,9 +55,14 @@ interface Libp2pAuthComponents {
   logger: ComponentLogger
 }
 
+interface Libp2pAuthEvents {
+  'auth:join': CustomEvent<any>
+  'auth:change': CustomEvent<any>
+}
+
 // Implementing local-first-auth as a service just to get started. I think we
 // likely want to integrate it in a custom Transport/Muxer.
-class Libp2pAuth {
+class Libp2pAuth extends TypedEventEmitter<Libp2pAuthEvents> {
   private readonly protocol: string
   private readonly components: Libp2pAuthComponents
   private storage: LocalStorage
@@ -65,6 +72,8 @@ class Libp2pAuth {
   private inboundStreams: Record<string, Stream>
 
   constructor(storage: LocalStorage, components: Libp2pAuthComponents) {
+    super()
+
     this.protocol = '/local-first-auth/1.0.0'
     this.components = components
     this.storage = storage
@@ -100,7 +109,6 @@ class Libp2pAuth {
   }
 
   async stop() {
-    // TODO
   }
 
   private async openOutboundStream(peerId: PeerId, connection: Connection) {
@@ -158,11 +166,8 @@ class Libp2pAuth {
       },
     })
 
-    // TODO: Listen for updates to context and update context in storage
-    authConnection.on('joined', ({ team, user }) => {
-      console.log('Joined', team, user)
-    })
-    authConnection.on('change', state => console.log('Change', state))
+    authConnection.on('joined', evt => super.dispatchEvent(new CustomEvent<any>('auth:joined', { detail: evt })))
+    authConnection.on('change', evt => super.dispatchEvent(new CustomEvent<any>('auth:change', { detail: evt })))
 
     this.authConnections[peerId.toString()] = authConnection
   }
@@ -203,7 +208,9 @@ class Libp2pAuth {
 }
 
 const libp2pAuth = (storage: LocalStorage): ((components: Libp2pAuthComponents) => Libp2pAuth) => {
-  return (components: Libp2pAuthComponents) => new Libp2pAuth(storage, components)
+  return (components: Libp2pAuthComponents) => {
+    return new Libp2pAuth(storage, components)
+  }
 }
 
 class Libp2pService {
@@ -251,6 +258,7 @@ class Libp2pService {
     console.log('Starting libp2p client')
 
     const peerId = await this.getPeerId()
+    const auth = libp2pAuth(this.storage)
 
     this.libp2p = await createLibp2p({
       peerId,
@@ -279,7 +287,7 @@ class Libp2pService {
           allowPublishToZeroTopicPeers: true
         }),
         identify: identify(),
-        auth: libp2pAuth(this.storage)
+        auth: auth
       }
     })
 
@@ -417,7 +425,9 @@ class MessageService extends EventEmitter {
 }
 
 const main = async () => {
-  // Peer 1
+  /**
+   * Peer 1
+   */
   const storage1 = new LocalStorage()
 
   const founderContext = {
@@ -430,13 +440,31 @@ const main = async () => {
   const peer1 = new Libp2pService('peer1', storage1)
   await peer1.init()
 
-  const { seed } = team.inviteMember()
+  // @ts-ignore
+  peer1.libp2p?.services.auth.addEventListener('auth:joined', (evt) => console.log('peer1 joined', evt.detail))
+  // @ts-ignore
+  peer1.libp2p?.services.auth.addEventListener('auth:change', (evt) => console.log('peer1 change', evt.detail))
 
   // const orbitDb1 = new OrbitDbService(peer1)
   // const messageSrv1 = new MessageService(orbitDb1)
   // const channelListAddr = await messageSrv1.init()
 
-  // Peer 2
+  /**
+   * Add test users
+   */
+  const testUsernames = [...Array(1000).keys()].map(i => 'user-' + i)
+
+  for (const username of testUsernames) {
+    const user = Auth.createUser(username, username)
+    const device = Auth.createDevice(username, 'dev/' + username)
+    team.addForTesting(user, [], device)
+  }
+
+  const { seed } = team.inviteMember()
+
+  /**
+   * Peer 2
+   */
   const storage2 = new LocalStorage()
   storage2.setAuthContext({
     user: Auth.createUser('test2', 'test2'),
@@ -446,11 +474,26 @@ const main = async () => {
   const peer2 = new Libp2pService('peer2', storage2)
   await peer2.init()
 
+  let stopTime: number
+  // @ts-ignore
+  peer2.libp2p?.services.auth.addEventListener('auth:joined', (evt) => {
+    console.log('peer2 joined', evt.detail)
+
+    stopTime = performance.now()
+    console.log('Time: ', stopTime - startTime)
+  })
+  // @ts-ignore
+  peer2.libp2p?.services.auth.addEventListener('auth:change', (evt) => console.log('peer2 change', evt.detail))
+
   // const orbitDb2 = new OrbitDbService(peer2)
   // const messageSrv2 = new MessageService(orbitDb2)
   // await messageSrv2.init(channelListAddr)
 
-  // Test
+  /**
+   * Test
+   */
+  const startTime = performance.now()
+
   for (let addr of peer2.libp2p?.getMultiaddrs() ?? []) {
     await peer1.libp2p?.dial(addr)
   }
