@@ -11,7 +11,8 @@
     "build": "npx tsc",
     "test": "echo \"Error: no test specified\" && exit 1",
     "ig": "tsc && npm i -g .",
-    "start": "node dist/index.js interactive"
+    "start": "node dist/index.js interactive",
+    "benchmark": "tsc && node dist/index.js benchmark"
   },
   "keywords": [],
   "author": "",

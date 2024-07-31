@@ -3,6 +3,7 @@
 import { program } from '@commander-js/extra-typings';
 
 import interactive from './prompts/interactive.js';
+import { benchmark } from './scripts/benchmarking.js';
 
 // Helper function for logging
 const logOptions = (globalOptions: object, commandOptions: object) => {
@@ -20,6 +21,13 @@ program
   .option('-p, --peer <peer>', 'Directs the specified peer instead of the default user to perform the command')
   .option('-v, --verbose', 'Verbose mode')
   .option('-d, --dry', 'Dry run')
+
+program
+  .command('benchmark')
+  .description('Benchmarking')
+  .action((options) => {
+    benchmark();
+  });
 
 // Interactive mode
 program

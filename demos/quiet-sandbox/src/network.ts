@@ -41,15 +41,15 @@ import { generateKeyPairFromSeed } from '@libp2p/crypto/keys'
 import path from 'path'
 
 export class LocalStorage {
-    private authContext: Auth.Context | null
-    private context: Auth.LocalUserContext | null
-    private sigChain: SigChain | null
+  private authContext: Auth.Context | null
+  private context: Auth.LocalUserContext | null
+  private sigChain: SigChain | null
 
-    constructor() {        
-        this.authContext = null
-        this.context = null
-        this.sigChain = null
-    }
+  constructor() {
+      this.authContext = null
+      this.context = null
+      this.sigChain = null
+  }
 
   public setAuthContext(context: Auth.Context) {
     this.authContext = context
@@ -61,17 +61,17 @@ export class LocalStorage {
 
   public setSigChain(sigChain: SigChain) {
     this.sigChain = sigChain
-}
+  }
 
-public setContext(context: Auth.LocalUserContext) {
+  public setContext(context: Auth.LocalUserContext) {
     this.context = context
-}
+  }
 
   public getSigChain(): SigChain | null {
     return this.sigChain
     }
 
-public getContext(): Auth.LocalUserContext | null {
+  public getContext(): Auth.LocalUserContext | null {
         return this.context
     }
 }
@@ -283,7 +283,7 @@ export class Libp2pService {
     if (!peerIdB64) {
       console.log('Creating peer ID')
       const keys: Auth.KeysetWithSecrets = this.storage.getContext()?.user!.keys
-      
+
       const buf = Buffer.from(keys.encryption.secretKey)
       const priv = await generateKeyPairFromSeed("Ed25519", new Uint8Array(buf).subarray(0, 32))
       const peerId = await createFromPrivKey(priv)
@@ -356,7 +356,7 @@ export class Libp2pService {
           multiaddrs.push(addr)
         }
         await this.libp2p?.dial(multiaddrs)
-        
+
         return true
     }
 
@@ -393,9 +393,9 @@ export class OrbitDbService {
     await this.ipfs.start()
     const keystore = await KeyStore({ path: path.join(this.dir, './keystore') })
     const identities = await Identities({ ipfs: this.ipfs, keystore })
-    this.orbitDb = await createOrbitDB({ 
-      id: (await this.libp2pService.getPeerId()).toString(), 
-      ipfs: this.ipfs, 
+    this.orbitDb = await createOrbitDB({
+      id: (await this.libp2pService.getPeerId()).toString(),
+      ipfs: this.ipfs,
       directory: this.dir,
       identities
     })
@@ -407,12 +407,12 @@ export class OrbitDbService {
     }
     // Seems like we can improve the type definitions
     return await this.orbitDb.open(
-      dbName, 
-      { 
-        write: ['*'], 
-        sync: true, 
-        meta: {}, 
-        AccessController: getAccessController() 
+      dbName,
+      {
+        write: ['*'],
+        sync: true,
+        meta: {},
+        AccessController: getAccessController()
       }
     ) as unknown as Events
   }
@@ -584,7 +584,7 @@ const main = async () => {
     // Peer 1
     const storage1 = new LocalStorage()
 
-    const { 
+    const {
         context: founderContext,
         sigChain
     } = SigChain.create(teamName, username1)
