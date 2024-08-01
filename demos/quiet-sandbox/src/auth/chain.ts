@@ -29,7 +29,7 @@ class SigChain {
 
   /**
    * Create a brand new SigChain with a given name and also generate the initial user with a given name
-   * 
+   *
    * @param teamName Name of the team we are creating
    * @param username Username of the initial user we are generating
    */
@@ -37,7 +37,7 @@ class SigChain {
     const context = UserService.create(username)
     const team: auth.Team = this.lfa.createTeam(teamName, context)
     const sigChain = this.init(team)
-    
+
     sigChain.roles.createWithMembers(RoleName.MEMBER, [context.user.userId])
     // sigChain.persist()
 
@@ -57,10 +57,20 @@ class SigChain {
 
   // TODO: Is this the right signature for this method?
   public static join(context: auth.LocalUserContext, serializedTeam: Uint8Array, teamKeyRing: auth.Keyring): LoadedSigChain {
+    let start, end: number
+    start = Date.now()
     const team: auth.Team = this.lfa.loadTeam(serializedTeam, context, teamKeyRing)
+    end = Date.now()
+    console.log(`Time to load team: ${end - start}ms`)
+    start = Date.now()
     team.join(teamKeyRing)
+    end = Date.now()
+    console.log(`Time to join team: ${end - start}ms`)
 
+    start = Date.now()
     const sigChain = this.init(team)
+    end = Date.now()
+    console.log(`Time to init sigChain: ${end - start}ms`)
     // sigChain.persist()
 
     return {

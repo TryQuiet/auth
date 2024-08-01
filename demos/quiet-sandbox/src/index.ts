@@ -25,8 +25,9 @@ program
 program
   .command('benchmark')
   .description('Benchmarking')
+  .option('--file <filename>', 'Specifies the file to write the benchmark results to')
   .action((options) => {
-    benchmark();
+    benchmark(options.file);
   });
 
 // Interactive mode

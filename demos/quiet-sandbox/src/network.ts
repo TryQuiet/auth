@@ -274,11 +274,11 @@ export class Libp2pService {
     let peerIdFilename = '.peerId.' + this.peerName
     let peerIdB64
 
-    try {
-      peerIdB64 = fs.readFileSync(peerIdFilename, 'utf8')
-    } catch (e) {
-      console.error(e)
-    }
+    // try {
+    //   peerIdB64 = fs.readFileSync(peerIdFilename, 'utf8')
+    // } catch (e) {
+    //   console.error(e)
+    // }
 
     if (!peerIdB64) {
       console.log('Creating peer ID')
@@ -290,11 +290,11 @@ export class Libp2pService {
       const peerIdBytes = exportToProtobuf(peerId)
       peerIdB64 = base64.encoder.encode(peerIdBytes)
 
-      try {
-        fs.writeFileSync(peerIdFilename, peerIdB64)
-      } catch (e) {
-        console.error(e)
-      }
+      // try {
+      //   fs.writeFileSync(peerIdFilename, peerIdB64)
+      // } catch (e) {
+      //   console.error(e)
+      // }
 
       this.peerId = peerId
       return peerId
@@ -571,6 +571,11 @@ export class Networking {
 
   get messages(): MessageService {
     return this._messages
+  }
+
+  public close = async () => {
+    // await this._libp2p.close()
+    await this._orbitDb.close()
   }
 }
 

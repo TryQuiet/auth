@@ -8,6 +8,14 @@ export const load = (
   context: LocalContext,
   teamKeys: KeysetWithSecrets | Keyring
 ) => {
+  let start, end: number
+  start = Date.now()
   const teamKeyring = createKeyring(teamKeys)
-  return new Team({ source, context, teamKeyring })
+  end = Date.now()
+  console.log(`Time to create keyring: ${end - start}ms`)
+  start = Date.now()
+  const team = new Team({ source, context, teamKeyring })
+  end = Date.now()
+  console.log(`Time to create team: ${end - start}ms`)
+  return team
 }
