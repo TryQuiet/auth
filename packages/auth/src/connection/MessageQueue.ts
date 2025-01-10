@@ -21,7 +21,7 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
   readonly #sendMessage: (message: NumberedMessage<T>) => void
   #sharedLogger: any | undefined
 
-  constructor({ sendMessage, timeout = 1000, createLogger = undefined, username = undefined }: Options<T>) {
+  constructor({ sendMessage, timeout = 1000, createLogger = undefined }: Options<T>) {
     super()
     this.#sendMessage = (message: NumberedMessage<T>) => {
       this.#nextOutbound = message.index + 1
@@ -30,9 +30,6 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
     this.#timeout = timeout
     if (createLogger != null) {
       this.#sharedLogger = createLogger('message-queue')
-      if (username != null) {
-        this.#sharedLogger.extend(username)
-      }
     }
   }
 
@@ -150,9 +147,13 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
   }
 
   #truncateMessageForLogging(message: any): string {
-    return findAllByKeyAndReplace(JSON.parse(JSON.stringify(message)), ['data', 'encryptedBody', 'encryptedPayload'], {
-      replacerFunc: (dataArray: any[]) => Buffer.from(dataArray).toString('base64')
-    })
+    return findAllByKeyAndReplace(
+      JSON.parse(JSON.stringify(message)),
+      ['data', 'encryptedBody', 'encryptedPayload'],
+      {
+        replacerFunc: (dataArray: any[]) => Buffer.from(dataArray).toString('base64'),
+      }
+    )
   }
 }
 
@@ -162,20 +163,25 @@ function highestIndex(queue: Record<number, any>) {
   return Math.max(...Object.keys(queue).map(Number), -1)
 }
 
-const findAllByKeyAndReplace = (object: any, keys: string[], replace: { newValue?: any, replacerFunc?: (originalValue: any) => any}) => {
+const findAllByKeyAndReplace = (
+  object: any,
+  keys: string[],
+  replace: { newValue?: any; replacerFunc?: (originalValue: any) => any }
+) => {
   if (replace.newValue == null && replace.replacerFunc == null) {
     throw new Error(`Must provide a replacement value or a replacement function!`)
   }
 
-  const replacerFunc = replace.newValue ? (originalValue: any) => replace.newValue : replace.replacerFunc!
-  
+  const replacerFunc = replace.newValue
+    ? (originalValue: any) => replace.newValue
+    : replace.replacerFunc!
+
   const newObject = { ...object }
   const looper = (obj: any) => {
-    for (let k in obj){
-      if(keys.includes(k)){
+    for (let k in obj) {
+      if (keys.includes(k)) {
         obj[k] = replacerFunc(obj[k])
-      }
-      else if("object" === typeof obj[k]){
+      } else if ('object' === typeof obj[k]) {
         looper(obj[k])
       }
     }
@@ -201,7 +207,7 @@ type Options<T> = {
   /** Time to wait (in ms) before requesting a missing message */
   timeout?: number
 
-  createLogger?: (name: string) => any,
+  createLogger?: (name: string) => any
   username?: string
 }
 

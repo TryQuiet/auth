@@ -64,7 +64,7 @@ himself told me it's OK. So
 https://github.com/statelyai/xstate/discussions/4783#discussioncomment-8673350
 
 The bulk of this class is an XState state machine. It's instantiated in the constructor. It looks
-something like this: 
+something like this:
 
 ```ts
 const machine = setup({
@@ -80,7 +80,7 @@ const machine = setup({
 ```
 
 To understand the way this flows, the best place to start is the state machine definition passed to
-`createMachine`. 
+`createMachine`.
 
 You can also visualize this machine in the Stately visualizer - here's a link that's current at time
 of writing this:
@@ -118,7 +118,6 @@ export class Connection extends EventEmitter<ConnectionEvents> {
         throw new Error(`Unknown log level ${level}`)
     }
   }
-
 
   constructor({ sendMessage, context, createLogger }: ConnectionParams) {
     super()
@@ -272,7 +271,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           const { deviceId } = theirIdentityClaim
           const theirDevice = team.device(deviceId, { includeRemoved: true })
           const peer = team.memberByDeviceId(deviceId, { includeRemoved: true })
-          this.LOG("info", "Found the following device and member information", theirDevice, peer)
+          this.LOG('info', 'Found the following device and member information', theirDevice, peer)
 
           // we now have a user name so add that to the debug logger
           this.#log = this.#log.extend(peer.userName)
@@ -416,7 +415,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           } catch (error) {
             if (String(error).includes('wrong secret key')) {
               this.LOG(
-                'error', 
+                'error',
                 `failed to decrypt message using session key ${base58.encode(sessionKey)}`,
                 error
               )
@@ -450,7 +449,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
         // EVENTS FOR EXTERNAL LISTENERS
 
-        onConnected: (context) => {
+        onConnected: context => {
           this.emit('connected')
           // this.#machine.send({ type: 'SYNC', payload: { head } }) // Send update event to local machine
         },
@@ -490,22 +489,28 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           const { theirIdentityClaim } = context
           // This is only for existing members (authenticating with deviceId rather than invitation)
           assert(isMemberClaim(theirIdentityClaim!))
-          const deviceMissing = !context.team!.hasDevice(theirIdentityClaim.deviceId, { includeRemoved: true })
+          const deviceMissing = !context.team!.hasDevice(theirIdentityClaim.deviceId, {
+            includeRemoved: true,
+          })
           if (deviceMissing) {
-            this.LOG("error", `Device ${theirIdentityClaim.deviceId} was unknown and these were the members we had`, context.team!.members().map((member) => {
-              return {
-                name: member.userName,
-                id: member.userId,
-                devices: member.devices?.map((device) => {
-                  return {
-                    id: device.deviceId,
-                    name: device.deviceName
-                  }
-                })
-              }
-            }))
+            this.LOG(
+              'error',
+              `Device ${theirIdentityClaim.deviceId} was unknown and these were the members we had`,
+              context.team!.members().map(member => {
+                return {
+                  name: member.userName,
+                  id: member.userId,
+                  devices: member.devices?.map(device => {
+                    return {
+                      id: device.deviceId,
+                      name: device.deviceName,
+                    }
+                  }),
+                }
+              })
+            )
           }
-          return deviceMissing 
+          return deviceMissing
         },
 
         identityIsValid: ({ context, event }) => {
@@ -855,7 +860,11 @@ export class Connection extends EventEmitter<ConnectionEvents> {
     return this.#started
   }
 
-  #initializeMessageQueue(sendMessage: (message: Uint8Array) => void, createLogger?: (name: string) => any, username?: string) {
+  #initializeMessageQueue(
+    sendMessage: (message: Uint8Array) => void,
+    createLogger?: (name: string) => any,
+    username?: string
+  ) {
     // To send messages to our peer, we give them to the ordered message queue, which will deliver
     // them using the `sendMessage` function provided.
     return new MessageQueue<ConnectionMessage>({
@@ -865,7 +874,6 @@ export class Connection extends EventEmitter<ConnectionEvents> {
         sendMessage(Uint8Array.from(serialized))
       },
       createLogger,
-      username
     })
       .on('message', message => {
         this.#logMessage('in', message)
@@ -930,6 +938,6 @@ export type ConnectionParams = {
   sendMessage: (message: Uint8Array) => void
 
   /** The initial context. */
-  context: Context,
+  context: Context
   createLogger?: (packageName: string) => any
 }
