@@ -59,7 +59,6 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
     const index = highestIndex(this.#outbound) + 1
     const numberedMessage = { ...message, index }
     this.#outbound[index] = numberedMessage
-    this.#LOG('info', 'send', numberedMessage)
     if (this.#started) this.#sendMessage(numberedMessage)
     return this
   }
@@ -71,7 +70,6 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
     const message = this.#outbound[index]
     if (!message)
       throw new Error(`Received resend request for message #${index}, which doesn't exist.`)
-    this.#LOG('warn', 'resend', message)
     this.#sendMessage(message)
     return this
   }
@@ -81,7 +79,6 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
    */
   public receive(message: NumberedMessage<T>) {
     const { index } = message
-    this.#LOG('info', 'receive', message)
     if (!this.#inbound[index]) {
       this.#inbound[index] = message
       if (this.#started) this.#processInbound()
