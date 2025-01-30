@@ -19,14 +19,18 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
   #outbound: Record<number, NumberedMessage<T>> = {}
   #nextOutbound = 0
   readonly #sendMessage: (message: NumberedMessage<T>) => void
+  #sharedLogger: any | undefined
 
-  constructor({ sendMessage, timeout = 1000 }: Options<T>) {
+  constructor({ sendMessage, timeout = 1000, createLogger = undefined }: Options<T>) {
     super()
     this.#sendMessage = (message: NumberedMessage<T>) => {
       this.#nextOutbound = message.index + 1
       sendMessage(message)
     }
     this.#timeout = timeout
+    if (createLogger != null) {
+      this.#sharedLogger = createLogger('message-queue')
+    }
   }
 
   /**
@@ -55,7 +59,6 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
     const index = highestIndex(this.#outbound) + 1
     const numberedMessage = { ...message, index }
     this.#outbound[index] = numberedMessage
-    log('send %o', numberedMessage)
     if (this.#started) this.#sendMessage(numberedMessage)
     return this
   }
@@ -67,7 +70,6 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
     const message = this.#outbound[index]
     if (!message)
       throw new Error(`Received resend request for message #${index}, which doesn't exist.`)
-    log('resend %o', message)
     this.#sendMessage(message)
     return this
   }
@@ -77,7 +79,6 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
    */
   public receive(message: NumberedMessage<T>) {
     const { index } = message
-    log('receive %o', message)
     if (!this.#inbound[index]) {
       this.#inbound[index] = message
       if (this.#started) this.#processInbound()
@@ -87,7 +88,7 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
 
   #processOutbound() {
     // send outbound messages in order
-    log('processOutbound')
+    this.#LOG('info', 'processOutbound')
     while (this.#outbound[this.#nextOutbound]) {
       const message = this.#outbound[this.#nextOutbound]
       this.#sendMessage(message)
@@ -98,7 +99,7 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
    * Receives any messages that are pending in the inbound queue, and requests any missing messages.
    */
   #processInbound() {
-    log('processInbound')
+    this.#LOG('info', 'processInbound')
     // emit received messages in order
     while (this.#inbound[this.#nextInbound]) {
       const message = this.#inbound[this.#nextInbound]
@@ -120,12 +121,71 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
       }, this.#timeout)
     }
   }
+
+  #LOG(level: 'info' | 'warn' | 'error', message: string, ...params: any[]) {
+    if (this.#sharedLogger == null) {
+      log(message, params)
+      return
+    }
+
+    switch (level) {
+      case 'info':
+        this.#sharedLogger.info(message, ...params)
+        break
+      case 'warn':
+        this.#sharedLogger.warn(message, ...params)
+        break
+      case 'error':
+        this.#sharedLogger.error(message, ...params)
+        break
+      default:
+        throw new Error(`Unknown log level ${level}`)
+    }
+  }
+
+  #truncateMessageForLogging(message: any): string {
+    return findAllByKeyAndReplace(
+      JSON.parse(JSON.stringify(message)),
+      ['data', 'encryptedBody', 'encryptedPayload'],
+      {
+        replacerFunc: (dataArray: any[]) => Buffer.from(dataArray).toString('base64'),
+      }
+    )
+  }
 }
 
 // HELPERS
 
 function highestIndex(queue: Record<number, any>) {
   return Math.max(...Object.keys(queue).map(Number), -1)
+}
+
+const findAllByKeyAndReplace = (
+  object: any,
+  keys: string[],
+  replace: { newValue?: any; replacerFunc?: (originalValue: any) => any }
+) => {
+  if (replace.newValue == null && replace.replacerFunc == null) {
+    throw new Error(`Must provide a replacement value or a replacement function!`)
+  }
+
+  const replacerFunc = replace.newValue
+    ? (originalValue: any) => replace.newValue
+    : replace.replacerFunc!
+
+  const newObject = { ...object }
+  const looper = (obj: any) => {
+    for (let k in obj) {
+      if (keys.includes(k)) {
+        obj[k] = replacerFunc(obj[k])
+      } else if ('object' === typeof obj[k]) {
+        looper(obj[k])
+      }
+    }
+  }
+  looper(newObject)
+
+  return newObject
 }
 
 // TYPES
@@ -143,6 +203,9 @@ type Options<T> = {
 
   /** Time to wait (in ms) before requesting a missing message */
   timeout?: number
+
+  createLogger?: (name: string) => any
+  username?: string
 }
 
 type TimeoutId = ReturnType<typeof setTimeout>
