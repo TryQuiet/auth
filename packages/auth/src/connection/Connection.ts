@@ -271,7 +271,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           const { deviceId } = theirIdentityClaim
           const theirDevice = team.device(deviceId, { includeRemoved: true })
           const peer = team.memberByDeviceId(deviceId, { includeRemoved: true })
-          this.LOG('info', 'Found the following device and member information', theirDevice, peer)
+          this.LOG('info', 'Found the following device and member information', theirDevice.deviceId, peer.userId)
 
           // we now have a user name so add that to the debug logger
           this.#log = this.#log.extend(peer.userName)
@@ -496,18 +496,6 @@ export class Connection extends EventEmitter<ConnectionEvents> {
             this.LOG(
               'error',
               `Device ${theirIdentityClaim.deviceId} was unknown and these were the members we had`,
-              context.team!.members().map(member => {
-                return {
-                  name: member.userName,
-                  id: member.userId,
-                  devices: member.devices?.map(device => {
-                    return {
-                      id: device.deviceId,
-                      name: device.deviceName,
-                    }
-                  }),
-                }
-              })
             )
           }
           return deviceMissing
@@ -768,9 +756,6 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
     // add automatic logging to all events
     this.emit = (event, ...args) => {
-      for (const arg of args) {
-        this.LOG('info', typeof arg)
-      }
       this.LOG('info', `emit ${event}`, ...args)
       return super.emit(event, ...args)
     }
