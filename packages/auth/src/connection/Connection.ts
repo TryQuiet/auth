@@ -541,6 +541,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           // Don't respond to a request for an identity claim if we've already sent one
           always: { guard: 'bothSentIdentityClaim', target: 'authenticating' },
           on: { CLAIM_IDENTITY: { actions: 'receiveIdentityClaim' } },
+          ...timeout,
         },
 
         // To authenticate, each peer either presents an invitation (as a new device or as a new
