@@ -778,11 +778,13 @@ export class Connection extends EventEmitter<ConnectionEvents> {
   }
 
   /** Shuts down and sends a disconnect message to the peer. */
-  public stop = () => {
+  public stop = (sendPeerDisconnect = true) => {
     if (this.#started && this.#machine.getSnapshot().status !== 'done') {
       const disconnectMessage: DisconnectMessage = { type: 'DISCONNECT' }
       this.#machine.send(disconnectMessage) // Send disconnect event to local machine
-      this.#messageQueue.send(disconnectMessage) // Send disconnect message to peer
+      if (sendPeerDisconnect) {
+        this.#messageQueue.send(disconnectMessage) // Send disconnect message to peer
+      }
     }
 
     this.removeAllListeners()
