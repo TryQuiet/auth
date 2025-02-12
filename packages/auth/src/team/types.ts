@@ -339,3 +339,5 @@ export type LookupIdentityResult =
   | 'MEMBER_REMOVED'
   | 'DEVICE_UNKNOWN'
   | 'DEVICE_REMOVED'
+
+export type EncryptStreamTeamPayload = { recipient: KeyMetadata, encryptStream: AsyncGenerator<Uint8Array>, header: Uint8Array }

@@ -30,3 +30,5 @@ export type Cipher = {
 
 export type Encoder = (b: Uint8Array) => string
 export type Password = string | Uint8Array
+
+export type EncryptStreamResult = { encryptStream: AsyncGenerator<Uint8Array>, header: Uint8Array }
