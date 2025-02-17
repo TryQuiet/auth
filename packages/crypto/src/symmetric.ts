@@ -1,7 +1,7 @@
 import sodium, { StateAddress } from 'libsodium-wrappers-sumo'
 import { pack, unpack } from 'msgpackr'
 import { stretch } from './stretch.js'
-import type { Base58, Cipher, Password, Payload } from './types.js'
+import { INVALID_STREAM_DECRYPT_ERROR_MSG, StreamDecryptError, StreamEncryptError, type Base58, type Cipher, type Password, type Payload } from './types.js'
 import { base58, keyToBytes } from './util/index.js'
 
 /**
@@ -46,38 +46,55 @@ const encryptBytesStream = (
   /** The password used to encrypt */
   password: Password
 ): { encryptStream: AsyncGenerator<Uint8Array>, header: Uint8Array } => {
+  // Prepare stream for encryption
   const key = stretch(password)
 
   const { state, header } = sodium.crypto_secretstream_xchacha20poly1305_init_push(key);
 
+  // Encrypt stream
   const createEncryptStream = async function*(stream: AsyncIterable<Uint8Array>, state: StateAddress): AsyncGenerator<Uint8Array> {
+    // Encrypt each chunk of the stream with message tag
     for await (const chunk of stream) {
-      const encryptedChunk = sodium.crypto_secretstream_xchacha20poly1305_push(
-        state,
-        chunk,
-        null,
-        sodium.crypto_secretstream_xchacha20poly1305_TAG_MESSAGE
-      );
-      yield encryptedChunk
-      
+      try {
+        const encryptedChunk = sodium.crypto_secretstream_xchacha20poly1305_push(
+          state,
+          chunk,
+          null,
+          sodium.crypto_secretstream_xchacha20poly1305_TAG_MESSAGE
+        );
+        yield encryptedChunk
+      } catch (e) {
+        throw new StreamEncryptError(`Error while encrypting byte stream message`, {
+          cause: e
+        })
+      }
     }
 
-    // Finalize the stream
-    const encryptedFinalChunk = sodium.crypto_secretstream_xchacha20poly1305_push(
-      state,
-      new Uint8Array(),
-      null,
-      sodium.crypto_secretstream_xchacha20poly1305_TAG_FINAL
-    );
-    yield encryptedFinalChunk
+    // Finalize the stream with the final tag
+    try {
+      const encryptedFinalChunk = sodium.crypto_secretstream_xchacha20poly1305_push(
+        state,
+        new Uint8Array(),
+        null,
+        sodium.crypto_secretstream_xchacha20poly1305_TAG_FINAL
+      );
+      yield encryptedFinalChunk
+    } catch (e) {
+      throw new StreamEncryptError(`Error while encrypting final message of byte stream`, {
+        cause: e
+      })
+    }
   }
 
   return {
     encryptStream: createEncryptStream(stream, state),
-    header
+    header // this header is required for decrypting later
   }
 }
 
+/**
+ * Symmetrically decrypts a byte stream.
+ */
 const decryptBytesStream = (
   /** The stream of encrypted bytes to decrypt */
   encryptedStream: AsyncIterable<Uint8Array>,
@@ -86,22 +103,38 @@ const decryptBytesStream = (
   /** The password used to encrypt */
   password: Password
 ): AsyncGenerator<any> => {
+  // Prepare stream for decryption
   const key = stretch(password)
 
   const state = sodium.crypto_secretstream_xchacha20poly1305_init_pull(header, key);
-  console.log(state, typeof state)
 
+  // Decrypt stream
   const createDecryptStream = async function*(encryptedStream: AsyncIterable<Uint8Array>, state: StateAddress): AsyncGenerator<any> {
+    // Decrypt each 
     for await (const chunk of encryptedStream) {
-      const decryptedChunk = sodium.crypto_secretstream_xchacha20poly1305_pull(
-        state,
-        chunk
-      );
-      // all valid encrypted chunks on the stream should end with this tag
-      if (decryptedChunk.tag == sodium.crypto_secretstream_xchacha20poly1305_TAG_MESSAGE) {
-        yield decryptedChunk.message
-      } else if (decryptedChunk.tag != sodium.crypto_secretstream_xchacha20poly1305_TAG_FINAL) {
-        console.error(`Unknown tag seen while decrypting stream`, decryptedChunk.tag)
+      try {
+        const decryptedChunk = sodium.crypto_secretstream_xchacha20poly1305_pull(
+          state,
+          chunk
+        );
+        // all valid encrypted chunks on the stream should end with this tag
+        if (decryptedChunk.tag == sodium.crypto_secretstream_xchacha20poly1305_TAG_MESSAGE) {
+          yield decryptedChunk.message
+        // the final tag is only here to mark the end of the stream but contains no valid information
+        // any other tag means we've hit an issue
+        } else if (decryptedChunk.tag != null && decryptedChunk.tag != sodium.crypto_secretstream_xchacha20poly1305_TAG_FINAL) {
+          throw new StreamDecryptError(`Unknown tag ${decryptedChunk.tag} seen while decrypting byte stream`)
+        } else {
+          throw new StreamDecryptError(INVALID_STREAM_DECRYPT_ERROR_MSG)
+        }
+      } catch (e) {
+        if (e instanceof StreamDecryptError) {
+          throw e
+        }
+
+        throw new StreamDecryptError(`Error while decrypting byte stream`, {
+          cause: e
+        })
       }
     }
   }
