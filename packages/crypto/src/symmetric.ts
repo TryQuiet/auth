@@ -110,22 +110,28 @@ const decryptBytesStream = (
 
   // Decrypt stream
   const createDecryptStream = async function*(encryptedStream: AsyncIterable<Uint8Array>, state: StateAddress): AsyncGenerator<any> {
-    // Decrypt each 
+    // Decrypt each chunk of the byte stream
     for await (const chunk of encryptedStream) {
       try {
         const decryptedChunk = sodium.crypto_secretstream_xchacha20poly1305_pull(
           state,
           chunk
         );
-        // all valid encrypted chunks on the stream should end with this tag
-        if (decryptedChunk.tag == sodium.crypto_secretstream_xchacha20poly1305_TAG_MESSAGE) {
-          yield decryptedChunk.message
-        // the final tag is only here to mark the end of the stream but contains no valid information
-        // any other tag means we've hit an issue
-        } else if (decryptedChunk.tag != null && decryptedChunk.tag != sodium.crypto_secretstream_xchacha20poly1305_TAG_FINAL) {
-          throw new StreamDecryptError(`Unknown tag ${decryptedChunk.tag} seen while decrypting byte stream`)
-        } else {
-          throw new StreamDecryptError(INVALID_STREAM_DECRYPT_ERROR_MSG)
+
+        switch (decryptedChunk.tag) {
+          // all valid encrypted chunks on the stream should end with this tag
+          case sodium.crypto_secretstream_xchacha20poly1305_TAG_MESSAGE:
+            yield decryptedChunk.message
+            break
+          // the final tag is only here to mark the end of the stream but contains no valid information
+          case sodium.crypto_secretstream_xchacha20poly1305_TAG_FINAL:
+            break
+          // if we are missing a tag that means something is wrong with the incoming stream
+          case undefined:
+            throw new StreamDecryptError(INVALID_STREAM_DECRYPT_ERROR_MSG)
+          // any other tag means we've hit an issue
+          default:
+            throw new StreamDecryptError(`Invalid tag ${decryptedChunk.tag} seen while decrypting byte stream`)
         }
       } catch (e) {
         if (e instanceof StreamDecryptError) {
