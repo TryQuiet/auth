@@ -41,6 +41,7 @@ import * as select from './selectors/index.js'
 import { maybeDeserialize, serializeTeamGraph } from './serialize.js'
 import type {
   EncryptedEnvelope,
+  EncryptStreamTeamPayload,
   InvitationMap,
   InviteResult,
   Member,
@@ -730,6 +731,31 @@ export class Team extends EventEmitter<TeamEvents> {
   public decrypt = (message: EncryptedEnvelope): Payload => {
     const { secretKey } = this.keys(message.recipient)
     return symmetric.decryptBytes(message.contents, secretKey)
+  }
+  
+  /**
+   * Symmetrically encrypt a byte stream for the given scope using keys available to the current user.
+   *
+   * > *Note*: Since this convenience function uses symmetric encryption, we can only use it to
+   * encrypt for scopes the current user has keys for (e.g. the whole team, or roles they belong
+   * to). If we need to encrypt asymmetrically, we use the functions in the crypto module directly.
+   */
+  public encryptStream = (stream: AsyncIterable<Uint8Array>, roleName?: string): EncryptStreamTeamPayload => {
+    const scope = roleName ? { type: KeyType.ROLE, name: roleName } : TEAM_SCOPE
+    const { secretKey, generation } = this.keys(scope)
+    
+    const { header, encryptStream } = symmetric.encryptBytesStream(stream, secretKey)
+    return {
+      header,
+      encryptStream,
+      recipient: { ...scope, generation }
+    }
+  }
+
+  /** Decrypt a byte stream using keys available to the current user and a header generated during encryption. */
+  public decryptStream = (encryptedStream: AsyncIterable<Uint8Array>, header: Uint8Array, recipient: KeyMetadata): AsyncGenerator<any> => {
+    const { secretKey } = this.keys(recipient)
+    return symmetric.decryptBytesStream(encryptedStream, header, secretKey)
   }
 
   /** Sign a message using the current user's keys. */

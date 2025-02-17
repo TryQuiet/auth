@@ -30,3 +30,26 @@ export type Cipher = {
 
 export type Encoder = (b: Uint8Array) => string
 export type Password = string | Uint8Array
+
+export type EncryptStreamResult = { encryptStream: AsyncGenerator<Uint8Array>, header: Uint8Array }
+
+export class StreamEncryptError extends Error {
+  constructor (message: string, options?: ErrorOptions) {
+    super(message, options)
+  }
+}
+
+export class StreamDecryptError extends Error {
+  constructor (message: string, options?: ErrorOptions) {
+    super(message, options)
+  }
+}
+
+export const INVALID_STREAM_DECRYPT_ERROR_MSG = `Error while decrypting a byte stream
+
+A decrypted chunk of this byte stream had an undefined tag.  This could mean:
+
+* The chunk size written to the original source is different from the chunk size of the read stream
+* The data in the encrypted stream is not encrypted
+* The data in the encrypted stream was encrypted with a different protocol/format
+`
