@@ -213,7 +213,10 @@ export class Connection extends EventEmitter<ConnectionEvents> {
               const { userName, userKeys } = theirIdentityClaim
               team.admitMember(proofOfInvitation, userKeys, userName)
               const userId = userKeys.name
-              team.addMemberRole(userId, 'member')
+              if (context.server == null && !team.hasServer(userId) && !team.hasServer(context.user?.userId!)) {
+                this.#log(userId, context.user?.userId, context.userName)
+                team.addMemberRole(userId, 'member')
+              }
               return team.members(userId)
             } else {
               // New device for existing member
@@ -295,7 +298,20 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           this.#queueMessage('PROVE_IDENTITY', { challenge, proof })
         },
 
-        acceptIdentity: () => this.#queueMessage('ACCEPT_IDENTITY'),
+        acceptIdentity: ({ context, event }) => {
+          assertEvent(event, 'PROVE_IDENTITY')
+          const { roles, userId } = context.peer ?? { roles: undefined, userId: undefined }
+          const { team } = context
+          
+          assert(team)
+          assert(roles)
+          assert(userId)
+
+          if (!roles!.includes('member') && context.server == null && !team!.hasServer(userId!)) {
+            team!.addMemberRole(userId!, 'member')
+          }
+          this.#queueMessage('ACCEPT_IDENTITY')
+        },
 
         // SYNCHRONIZATION
 
@@ -317,7 +333,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
           // Undefined message means we're already synced
           if (syncMessage) {
-            this.LOG('info', 'sending sync message', syncMessageSummary(syncMessage))
+            this.LOG('info', 'sending sync message', syncMessage.head)
             this.#queueMessage('SYNC', syncMessage)
           } else {
             this.LOG('info', 'no sync message to send')
@@ -495,7 +511,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           if (deviceMissing) {
             this.LOG(
               'error',
-              `Device ${theirIdentityClaim.deviceId} was unknown and these were the members we had`,
+              `Device ${theirIdentityClaim.deviceId} was unknown`,
             )
           }
           return deviceMissing
@@ -747,7 +763,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
       next: state => {
         const summary = stateSummary(state.value as string)
         this.emit('change', summary)
-        this.LOG('info', `⏩ ${summary} `)
+        this.LOG('info', `⏩ ${JSON.stringify(state.value, null, 2)} `)
       },
       error: error => {
         this.LOG('error', 'Connection encountered an unhandled error', error)
@@ -757,7 +773,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
     // add automatic logging to all events
     this.emit = (event, ...args) => {
-      this.LOG('info', `emit ${event}`, ...args)
+      this.LOG('info', `emit ${event}`)
       return super.emit(event, ...args)
     }
   }
@@ -901,7 +917,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
   #logMessage(direction: 'in' | 'out', message: NumberedMessage<ConnectionMessage>) {
     const arrow = direction === 'in' ? '<-' : '->'
     const peerUserName = this.#started ? this._context.peer?.userName ?? '?' : '?'
-    this.LOG('info', `${arrow}${peerUserName} #${message.index} ${messageSummary(message)}`)
+    this.LOG('info', `${arrow}${peerUserName} #${message.index} ${message.type}`)
   }
 }
 
