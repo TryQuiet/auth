@@ -1,11 +1,16 @@
 import sodium, { StateAddress } from 'libsodium-wrappers-sumo'
 import { pack, unpack } from 'msgpackr'
 import { stretch } from './stretch.js'
-import { INVALID_STREAM_DECRYPT_ERROR_MSG, StreamDecryptError, StreamEncryptError, type Base58, type Cipher, type Password, type Payload } from './types.js'
+import { DecryptError, INVALID_STREAM_DECRYPT_ERROR_MSG, INVALID_TAG_DECRYPT_ERROR_MSG, StreamDecryptError, StreamEncryptError, type Base58, type Cipher, type Password, type Payload } from './types.js'
 import { base58, keyToBytes } from './util/index.js'
 
 /**
- * Symmetrically encrypts a byte array.
+ * Symmetrically encrypts a byte array and calculate a hash of the nonce and authentication
+ * tag to prevent invisible salamanders attacks
+ * 
+ * References:
+ *  - https://libsodium.gitbook.io/doc/secret-key_cryptography/aead#robustness
+ *  - https://github.com/TryQuiet/quiet/issues/2711
  */
 const encryptBytes = (
   /** The plaintext or object to encrypt */
@@ -13,17 +18,25 @@ const encryptBytes = (
   /** The password used to encrypt */
   password: Password
 ): Uint8Array => {
-  const messageBytes = pack(payload)
+  const messageBytes = packToUint8Array(payload)
   const key = stretch(password)
   const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES)
-  const encrypted = sodium.crypto_secretbox_easy(messageBytes, nonce, key)
-  const cipher: Cipher = { nonce, message: encrypted }
-  const cipherBytes = pack(cipher)
+  const secretBox = sodium.crypto_secretbox_detached(messageBytes, nonce, key)
+  const tag = sodium.crypto_auth(new Uint8Array([...nonce, ...secretBox.mac]), key)
+  const cipher: Cipher = { nonce, tag, message: secretBox.cipher, mac: secretBox.mac }
+  const cipherBytes = packToUint8Array(cipher)
   return cipherBytes
 }
 
 /**
- * Symmetrically decrypts a message encrypted by `symmetric.encryptBytes`. Returns the original byte array.
+ * Symmetrically decrypts a message encrypted by `symmetric.encryptBytes` after validating
+ * the tag against the nonce and mac to prevent invisible salamanders attacks
+ * 
+ * Returns the original byte array
+ * 
+ * References:
+ *  - https://libsodium.gitbook.io/doc/secret-key_cryptography/aead#robustness
+ *  - https://github.com/TryQuiet/quiet/issues/2711
  */
 const decryptBytes = (
   /** The encrypted data in msgpack format */
@@ -32,8 +45,12 @@ const decryptBytes = (
   password: Password
 ): Payload => {
   const key = stretch(password)
-  const { nonce, message } = unpack(cipher) as Cipher
-  const decrypted = sodium.crypto_secretbox_open_easy(message, nonce, key)
+  const { nonce, message, tag, mac } = unpack(cipher) as Cipher
+  const tagValid = sodium.crypto_auth_verify(tag, new Uint8Array([...nonce, ...mac]), key)
+  if (!tagValid) {
+      throw new DecryptError(INVALID_TAG_DECRYPT_ERROR_MSG)
+  }
+  const decrypted = sodium.crypto_secretbox_open_detached(message, mac, nonce, key)
   return unpack(decrypted)
 }
 
@@ -176,4 +193,10 @@ const decrypt = (
   return decryptBytes(cipherBytes, password)
 }
 
-export const symmetric = { encryptBytes, decryptBytes, encrypt, decrypt, encryptBytesStream, decryptBytesStream }
+const packToUint8Array = (
+  payload: Payload
+): Uint8Array => {
+  return new Uint8Array(pack(payload))
+}
+
+export const symmetric = { encryptBytes, decryptBytes, encrypt, decrypt, encryptBytesStream, decryptBytesStream, packToUint8Array }

@@ -1,5 +1,8 @@
+import sodium from 'libsodium-wrappers-sumo'
 import { describe, expect, test } from 'vitest'
-import { symmetric } from '../index.js'
+import { stretch, symmetric } from '../index.js'
+import { unpack } from 'msgpackr'
+import { Cipher } from '../types.js'
 
 const { encrypt, decrypt } = symmetric
 
@@ -38,6 +41,31 @@ describe('crypto', () => {
       const encrypted = symmetric.encryptBytes(secret, password)
       const decrypted = symmetric.decryptBytes(encrypted, password)
       expect(decrypted).toEqual(secret)
+    })
+
+    test('encryptBytes/decryptBytes - invisible salamanders - wrong key', () => {
+      const secret = {
+        foo: 'bar',
+        pizza: 42,
+      }
+
+      const encrypted = symmetric.encryptBytes(secret, password)
+      const attemptToDecrypt = () => symmetric.decryptBytes(encrypted, longPassword)
+      expect(attemptToDecrypt).toThrow()
+    })
+
+    test('encryptBytes/decryptBytes - invisible salamanders - wrong tag', () => {
+      const secret = {
+        foo: 'bar',
+        pizza: 42,
+      }
+
+      const encrypted = symmetric.encryptBytes(secret, password)
+      const cipher = unpack(encrypted) as Cipher
+      const newTag = sodium.crypto_auth(new Uint8Array([...cipher.nonce, ...cipher.mac]), stretch(new Uint8Array([1, 2, 3, 4, 5])))
+      const fakeEncrypted = symmetric.packToUint8Array({ ...cipher, tag: newTag })
+      const attemptToDecrypt = () => symmetric.decryptBytes(fakeEncrypted, password)
+      expect(attemptToDecrypt).toThrow()
     })
 
     test('byte array as password', () => {

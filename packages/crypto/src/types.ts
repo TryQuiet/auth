@@ -26,6 +26,8 @@ export type SignedMessage = {
 export type Cipher = {
   nonce: Uint8Array
   message: Uint8Array
+  tag: Uint8Array
+  mac: Uint8Array
 }
 
 export type Encoder = (b: Uint8Array) => string
@@ -53,3 +55,11 @@ A decrypted chunk of this byte stream had an undefined tag.  This could mean:
 * The data in the encrypted stream is not encrypted
 * The data in the encrypted stream was encrypted with a different protocol/format
 `
+
+export class DecryptError extends Error {
+  constructor (message: string, options?: ErrorOptions) {
+    super(message, options)
+  }
+}
+
+export const INVALID_TAG_DECRYPT_ERROR_MSG = `Invalid tag found while decrypting`
