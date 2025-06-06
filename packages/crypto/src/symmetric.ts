@@ -1,7 +1,7 @@
 import sodium, { StateAddress } from 'libsodium-wrappers-sumo'
 import { pack, unpack } from 'msgpackr'
 import { stretch } from './stretch.js'
-import { DecryptError, INVALID_STREAM_DECRYPT_ERROR_MSG, INVALID_TAG_DECRYPT_ERROR_MSG, StreamDecryptError, StreamEncryptError, type Base58, type Cipher, type Password, type Payload } from './types.js'
+import { DecryptError, EncryptStreamResult, INVALID_STREAM_DECRYPT_ERROR_MSG, INVALID_TAG_DECRYPT_ERROR_MSG, StreamDecryptError, StreamEncryptError, type Base58, type Cipher, type Password, type Payload } from './types.js'
 import { base58, keyToBytes } from './util/index.js'
 
 /**
@@ -62,7 +62,7 @@ const encryptBytesStream = (
   stream: AsyncIterable<Uint8Array>,
   /** The password used to encrypt */
   password: Password
-): { encryptStream: AsyncGenerator<Uint8Array>, header: Uint8Array } => {
+): EncryptStreamResult => {
   // Prepare stream for encryption
   const key = stretch(password)
 
@@ -105,7 +105,7 @@ const encryptBytesStream = (
 
   return {
     encryptStream: createEncryptStream(stream, state),
-    header // this header is required for decrypting later
+    header, // this header is required for decrypting later
   }
 }
 
