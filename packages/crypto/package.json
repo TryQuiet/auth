@@ -28,7 +28,7 @@
     "bs58": "^5.0.0",
     "libsodium-wrappers-sumo": "^0.7.13",
     "lodash-es": "^4.17.21",
-    "msgpackr": "^1.10.0"
+    "msgpackr": "1.10.2"
   },
   "publishConfig": {
     "access": "public"

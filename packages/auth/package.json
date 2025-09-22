@@ -31,7 +31,7 @@
     "@localfirst/shared": "workspace:*",
     "@paralleldrive/cuid2": "^2.2.2",
     "lodash-es": "^4.17.21",
-    "msgpackr": "^1.10.0",
+    "msgpackr": "1.10.2",
     "xstate": "^5.9.1"
   },
   "publishConfig": {

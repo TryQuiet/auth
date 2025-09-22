@@ -26,7 +26,7 @@
     "@localfirst/auth": "workspace:*",
     "@localfirst/crypto": "workspace:*",
     "@localfirst/shared": "workspace:*",
-    "msgpackr": "^1.10.0"
+    "msgpackr": "1.10.2"
   },
   "devDependencies": {
     "@automerge/automerge-repo-network-messagechannel": "^1.1.2",
