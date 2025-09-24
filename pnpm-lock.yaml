@@ -423,7 +423,7 @@ importers:
         version: 18.3.1(react@18.3.1)
       tailwindcss:
         specifier: ^3.3.5
-        version: 3.4.3(ts-node@10.9.2(@swc/core@1.5.24)(@types/node@20.14.11)(typescript@5.4.5))
+        version: 3.4.3(ts-node@10.9.2(@swc/core@1.5.24)(@types/node@20.14.11)(typescript@5.5.3))
       vite:
         specifier: ^5.2.11
         version: 5.2.12(@types/node@20.14.11)(terser@5.31.0)
@@ -474,7 +474,7 @@ importers:
         specifier: ^4.17.21
         version: 4.17.21
       msgpackr:
-        specifier: ^1.10.0
+        specifier: 1.10.2
         version: 1.10.2
       xstate:
         specifier: ^5.9.1
@@ -498,7 +498,7 @@ importers:
         specifier: workspace:*
         version: link:../shared
       msgpackr:
-        specifier: ^1.10.0
+        specifier: 1.10.2
         version: 1.10.2
     devDependencies:
       '@automerge/automerge-repo-network-messagechannel':
@@ -581,7 +581,7 @@ importers:
         specifier: ^4.17.21
         version: 4.17.21
       msgpackr:
-        specifier: ^1.10.0
+        specifier: 1.10.2
         version: 1.10.2
 
   packages/crypto:
@@ -602,7 +602,7 @@ importers:
         specifier: ^4.17.21
         version: 4.17.21
       msgpackr:
-        specifier: ^1.10.0
+        specifier: 1.10.2
         version: 1.10.2
 
   packages/shared:
@@ -3207,6 +3207,7 @@ packages:
 
   acorn-import-assertions@1.9.0:
     resolution: {integrity: sha512-cmMwop9x+8KFhxvKrKfPYmN6/pKTYYHBqLa0DfvVZcKMJWNyWLnaqND7dx/qn66R7ewM1UX5XMaDVP5wlVTaVA==}
+    deprecated: package has been renamed to acorn-import-attributes
     peerDependencies:
       acorn: ^8
 
@@ -8540,6 +8541,7 @@ packages:
 
   sudo-prompt@9.2.1:
     resolution: {integrity: sha512-Mu7R0g4ig9TUuGSxJavny5Rv0egCEtpZRNMrZaYS1vxkiIxGiGUwoezU3LazIQ+KE04hTrTfNPgxU5gzi7F5Pw==}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
 
   sumchecker@3.0.1:
     resolution: {integrity: sha512-MvjXzkz/BOfyVDkG0oFOtBxHX2u3gKbMHIF/dXblZsgD3BWOFLmHovIpZY7BykJdAjcqRCBi1WYBNdEC9yI7vg==}
@@ -15094,7 +15096,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-module-utils@2.8.1(@typescript-eslint/parser@6.21.0(eslint@8.57.0)(typescript@5.5.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-webpack@0.13.8(eslint-plugin-import@2.27.5(@typescript-eslint/parser@6.21.0(eslint@8.57.0)(typescript@5.4.5))(eslint@8.57.0))(webpack@5.91.0(@swc/core@1.5.24)(esbuild@0.19.12)))(eslint@8.57.0):
+  eslint-module-utils@2.8.1(@typescript-eslint/parser@6.21.0(eslint@8.57.0)(typescript@5.5.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-webpack@0.13.8)(eslint@8.57.0):
     dependencies:
       debug: 3.2.7(supports-color@8.1.1)
     optionalDependencies:
@@ -15139,7 +15141,7 @@ snapshots:
       doctrine: 2.1.0
       eslint: 8.57.0
       eslint-import-resolver-node: 0.3.9
-      eslint-module-utils: 2.8.1(@typescript-eslint/parser@6.21.0(eslint@8.57.0)(typescript@5.5.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-webpack@0.13.8(eslint-plugin-import@2.27.5(@typescript-eslint/parser@6.21.0(eslint@8.57.0)(typescript@5.4.5))(eslint@8.57.0))(webpack@5.91.0(@swc/core@1.5.24)(esbuild@0.19.12)))(eslint@8.57.0)
+      eslint-module-utils: 2.8.1(@typescript-eslint/parser@6.21.0(eslint@8.57.0)(typescript@5.5.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-webpack@0.13.8)(eslint@8.57.0)
       has: 1.0.4
       is-core-module: 2.13.1
       is-glob: 4.0.3
@@ -18619,13 +18621,13 @@ snapshots:
       postcss: 8.4.38
       ts-node: 10.9.2(@swc/core@1.5.24)(@types/node@18.19.33)(typescript@5.5.3)
 
-  postcss-load-config@4.0.2(postcss@8.4.38)(ts-node@10.9.2(@swc/core@1.5.24)(@types/node@20.14.11)(typescript@5.4.5)):
+  postcss-load-config@4.0.2(postcss@8.4.38)(ts-node@10.9.2(@swc/core@1.5.24)(@types/node@20.14.11)(typescript@5.5.3)):
     dependencies:
       lilconfig: 3.1.1
       yaml: 2.4.2
     optionalDependencies:
       postcss: 8.4.38
-      ts-node: 10.9.2(@swc/core@1.5.24)(@types/node@20.14.11)(typescript@5.4.5)
+      ts-node: 10.9.2(@swc/core@1.5.24)(@types/node@20.14.11)(typescript@5.5.3)
 
   postcss-nested@6.0.1(postcss@8.4.38):
     dependencies:
@@ -19720,7 +19722,7 @@ snapshots:
     transitivePeerDependencies:
       - ts-node
 
-  tailwindcss@3.4.3(ts-node@10.9.2(@swc/core@1.5.24)(@types/node@20.14.11)(typescript@5.4.5)):
+  tailwindcss@3.4.3(ts-node@10.9.2(@swc/core@1.5.24)(@types/node@20.14.11)(typescript@5.5.3)):
     dependencies:
       '@alloc/quick-lru': 5.2.0
       arg: 5.0.2
@@ -19739,7 +19741,7 @@ snapshots:
       postcss: 8.4.38
       postcss-import: 15.1.0(postcss@8.4.38)
       postcss-js: 4.0.1(postcss@8.4.38)
-      postcss-load-config: 4.0.2(postcss@8.4.38)(ts-node@10.9.2(@swc/core@1.5.24)(@types/node@20.14.11)(typescript@5.4.5))
+      postcss-load-config: 4.0.2(postcss@8.4.38)(ts-node@10.9.2(@swc/core@1.5.24)(@types/node@20.14.11)(typescript@5.5.3))
       postcss-nested: 6.0.1(postcss@8.4.38)
       postcss-selector-parser: 6.1.0
       resolve: 1.22.8
