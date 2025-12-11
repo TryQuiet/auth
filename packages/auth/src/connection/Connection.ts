@@ -98,7 +98,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
   #started = false
   #log = debug.extend('auth:connection')
   #sharedLogger: any | undefined
-  private LOG = (level: 'info' | 'warn' | 'error', message: any, ...params: any[]) => {
+  private LOG = (level: 'info' | 'warn' | 'error' | 'debug', message: any, ...params: any[]) => {
     if (this.#sharedLogger == null) {
       this.#log(message, params)
       return
@@ -113,6 +113,9 @@ export class Connection extends EventEmitter<ConnectionEvents> {
         break
       case 'error':
         this.#sharedLogger.error(message, ...params)
+        break
+      case 'debug':
+        this.#sharedLogger.debug(message, ...params)
         break
       default:
         throw new Error(`Unknown log level ${level}`)
@@ -213,7 +216,11 @@ export class Connection extends EventEmitter<ConnectionEvents> {
               const { userName, userKeys } = theirIdentityClaim
               team.admitMember(proofOfInvitation, userKeys, userName)
               const userId = userKeys.name
-              if (context.server == null && !team.hasServer(userId) && !team.hasServer(context.user?.userId!)) {
+              if (
+                context.server == null &&
+                !team.hasServer(userId) &&
+                !team.hasServer(context.user?.userId!)
+              ) {
                 this.#log(userId, context.user?.userId, context.userName)
                 team.addMemberRole(userId, 'member')
               }
@@ -274,7 +281,12 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           const { deviceId } = theirIdentityClaim
           const theirDevice = team.device(deviceId, { includeRemoved: true })
           const peer = team.memberByDeviceId(deviceId, { includeRemoved: true })
-          this.LOG('info', 'Found the following device and member information', theirDevice.deviceId, peer.userId)
+          this.LOG(
+            'info',
+            'Found the following device and member information',
+            theirDevice.deviceId,
+            peer.userId
+          )
 
           // we now have a user name so add that to the debug logger
           this.#log = this.#log.extend(peer.userName)
@@ -302,7 +314,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           assertEvent(event, 'PROVE_IDENTITY')
           const { roles, userId } = context.peer ?? { roles: undefined, userId: undefined }
           const { team } = context
-          
+
           assert(team)
           assert(roles)
           assert(userId)
@@ -333,10 +345,10 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
           // Undefined message means we're already synced
           if (syncMessage) {
-            this.LOG('info', 'sending sync message', syncMessage.head)
+            this.LOG('debug', 'sending sync message', syncMessage.head)
             this.#queueMessage('SYNC', syncMessage)
           } else {
-            this.LOG('info', 'no sync message to send')
+            this.LOG('debug', 'no sync message to send')
           }
 
           return { syncState }
@@ -382,7 +394,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           const recipientPublicKey = peer!.keys.encryption
           const senderSecretKey = user!.keys.encryption.secretKey
 
-          this.LOG('info', `encrypting seed with key ${recipientPublicKey}`)
+          this.LOG('debug', `encrypting seed with key ${recipientPublicKey}`)
           const encryptedSeed = asymmetric.encryptBytes({
             secret: seed,
             recipientPublicKey,
@@ -509,10 +521,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
             includeRemoved: true,
           })
           if (deviceMissing) {
-            this.LOG(
-              'error',
-              `Device ${theirIdentityClaim.deviceId} was unknown`,
-            )
+            this.LOG('error', `Device ${theirIdentityClaim.deviceId} was unknown`)
           }
           return deviceMissing
         },
@@ -763,7 +772,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
       next: state => {
         const summary = stateSummary(state.value as string)
         this.emit('change', summary)
-        this.LOG('info', `⏩ ${JSON.stringify(state.value, null, 2)} `)
+        this.LOG('debug', `⏩ ${JSON.stringify(state.value, null, 2)} `)
       },
       error: error => {
         this.LOG('error', 'Connection encountered an unhandled error', error)
@@ -773,7 +782,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
     // add automatic logging to all events
     this.emit = (event, ...args) => {
-      this.LOG('info', `emit ${event}`)
+      this.LOG('debug', `emit ${event}`)
       return super.emit(event, ...args)
     }
   }
@@ -782,7 +791,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
   /** Starts the state machine. Returns this Connection object. */
   public start = (storedMessages: Uint8Array[] = []) => {
-    this.LOG('info', 'starting')
+    this.LOG('debug', 'starting')
     this.#machine.start()
     this.#messageQueue.start()
     this.#started = true
@@ -825,7 +834,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
   public send = (message: any) => {
     assert(this._sessionKey, "Can't send encrypted messages until we've finished connecting")
     const encryptedMessage = symmetric.encryptBytes(message, this._sessionKey)
-    this.LOG('info', `encrypted message with session key ${base58.encode(this._sessionKey)}`)
+    this.LOG('debug', `encrypted message with session key ${base58.encode(this._sessionKey)}`)
     this.#queueMessage('ENCRYPTED_MESSAGE', encryptedMessage)
   }
 
@@ -916,8 +925,8 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
   #logMessage(direction: 'in' | 'out', message: NumberedMessage<ConnectionMessage>) {
     const arrow = direction === 'in' ? '<-' : '->'
-    const peerUserName = this.#started ? this._context.peer?.userName ?? '?' : '?'
-    this.LOG('info', `${arrow}${peerUserName} #${message.index} ${message.type}`)
+    const peerUserName = this.#started ? (this._context.peer?.userName ?? '?') : '?'
+    this.LOG('debug', `${arrow}${peerUserName} #${message.index} ${message.type}`)
   }
 }
 
