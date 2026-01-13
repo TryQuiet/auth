@@ -796,22 +796,22 @@ export class Team extends EventEmitter<TeamEvents> {
    * get other members' public keys, look up the member - the `keys` property contains their public
    * keys.
    */
-  public keys = (scope: KeyMetadata | KeyScope) =>
-    select.keys(this.state, this.context.device.keys, scope)
+  public keys = (scope: KeyMetadata | KeyScope, decryptionKeys: KeysetWithSecrets = this.context.device.keys) =>
+    select.keys(this.state, decryptionKeys, scope)
 
-  public keysAllGenerations = (scope: KeyMetadata | KeyScope) =>
-    select.keysAllGen(this.state, this.context.device.keys, scope)
+  public keysAllGenerations = (scope: KeyMetadata | KeyScope, decryptionKeys: KeysetWithSecrets = this.context.device.keys) =>
+    select.keysAllGen(this.state, decryptionKeys, scope)
 
-  public allKeys = () =>
-    select.allKeys(this.state, this.context.device.keys)
-
-  /** Returns the keys for the given role. */
-  public roleKeys = (roleName: string, generation?: number) =>
-    this.keys({ type: KeyType.ROLE, name: roleName, generation })
+  public allKeys = (decryptionKeys: KeysetWithSecrets = this.context.device.keys) =>
+    select.allKeys(this.state, decryptionKeys)
 
   /** Returns the keys for the given role. */
-  public roleKeysAllGenerations = (roleName: string) =>
-    this.keysAllGenerations({ type: KeyType.ROLE, name: roleName })
+  public roleKeys = (roleName: string, generation?: number, decryptionKeys: KeysetWithSecrets = this.context.device.keys) =>
+    this.keys({ type: KeyType.ROLE, name: roleName, generation }, decryptionKeys)
+
+  /** Returns the keys for the given role. */
+  public roleKeysAllGenerations = (roleName: string, decryptionKeys: KeysetWithSecrets = this.context.device.keys) =>
+    this.keysAllGenerations({ type: KeyType.ROLE, name: roleName }, decryptionKeys)
 
   /** Returns the current team keys or a specific generation of team keys */
   public teamKeys = (generation?: number) => this.keys({ ...TEAM_SCOPE, generation })
