@@ -806,11 +806,11 @@ export class Team extends EventEmitter<TeamEvents> {
     select.allKeys(this.state, decryptionKeys)
 
   /** Returns the keys for the given role. */
-  public roleKeys = (roleName: string, generation?: number, decryptionKeys: KeysetWithSecrets = this.context.device.keys) =>
+  public roleKeys = (roleName: string, generation?: number, decryptionKeys?: KeysetWithSecrets) =>
     this.keys({ type: KeyType.ROLE, name: roleName, generation }, decryptionKeys)
 
   /** Returns the keys for the given role. */
-  public roleKeysAllGenerations = (roleName: string, decryptionKeys: KeysetWithSecrets = this.context.device.keys) =>
+  public roleKeysAllGenerations = (roleName: string, decryptionKeys?: KeysetWithSecrets) =>
     this.keysAllGenerations({ type: KeyType.ROLE, name: roleName }, decryptionKeys)
 
   /** Returns the current team keys or a specific generation of team keys */
@@ -868,7 +868,7 @@ export class Team extends EventEmitter<TeamEvents> {
   }
 
   private readonly createMemberLockboxes = (member: Member) => {
-    const roleKeys = member.roles.map(this.roleKeys)
+    const roleKeys = member.roles.map((roleName: string) => this.roleKeys(roleName))
     const createLockboxRoleKeysForMember = (keys: KeysetWithSecrets) => {
       return lockbox.create(keys, member.keys)
     }
