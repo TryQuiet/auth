@@ -850,6 +850,13 @@ export class Team extends EventEmitter<TeamEvents> {
     if (isForServer) device.keys = newKeys // (a server plays the role of both a user and a device)
   }
 
+  /**
+   * Create a new lockbox containing a role's current generation keys encrypted to an arbitrary keyset
+   * 
+   * @param roleName Role whose keys we want to encapsulate in the lockbox (must be a role the user has!)
+   * @param encryptionKeys Keys to encrypt the lockbox to
+   * @returns Generated lockbox
+   */
   public createLockbox = (roleName: string, encryptionKeys: KeysetWithSecrets): lockbox.Lockbox => {
     const roleKeys = this.roleKeys(roleName)
     return lockbox.create(roleKeys, encryptionKeys)
