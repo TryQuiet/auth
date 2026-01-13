@@ -850,9 +850,9 @@ export class Team extends EventEmitter<TeamEvents> {
     if (isForServer) device.keys = newKeys // (a server plays the role of both a user and a device)
   }
 
-  public createLockbox = (roleName: string, encryptionKeys: KeysetWithSecrets): lockbox.Lockbox[] => {
-    const roleKeys = this.roleKeysAllGenerations(roleName)
-    return roleKeys.map(keys => lockbox.create(keys, encryptionKeys))
+  public createLockbox = (roleName: string, encryptionKeys: KeysetWithSecrets): lockbox.Lockbox => {
+    const roleKeys = this.roleKeys(roleName)
+    return lockbox.create(roleKeys, encryptionKeys)
   }
 
   private checkForPendingKeyRotations() {
