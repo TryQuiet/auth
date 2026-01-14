@@ -348,10 +348,10 @@ export class Team extends EventEmitter<TeamEvents> {
   }
 
   /** Give a member a role */
-  public addMemberRole = (userId: string, roleName: string) => {
+  public addMemberRole = (userId: string, roleName: string, decryptionKeys?: KeysetWithSecrets) => {
     // Make a lockbox for the role
     const member = this.members(userId)
-    const allGenKeys = this.roleKeysAllGenerations(roleName)
+    const allGenKeys = this.roleKeysAllGenerations(roleName, decryptionKeys)
     const lockboxRoleKeysForMember = allGenKeys.map(roleKeys => lockbox.create(roleKeys, member.keys))
 
     // Post the member role to the graph
@@ -359,6 +359,11 @@ export class Team extends EventEmitter<TeamEvents> {
       type: 'ADD_MEMBER_ROLE',
       payload: { userId, roleName, lockboxes: lockboxRoleKeysForMember },
     })
+  }
+
+  /** Give yourself a role */
+  public addMemberRoleToSelf = (roleName: string, decryptionKeys: KeysetWithSecrets) => {
+    this.addMemberRole(this.userId, roleName, decryptionKeys)
   }
 
   /** Remove a role from a member */
@@ -857,9 +862,9 @@ export class Team extends EventEmitter<TeamEvents> {
    * @param encryptionKeys Keys to encrypt the lockbox to
    * @returns Generated lockbox
    */
-  public createLockbox = (roleName: string, encryptionKeys: KeysetWithSecrets): lockbox.Lockbox => {
-    const roleKeys = this.roleKeys(roleName)
-    return lockbox.create(roleKeys, encryptionKeys)
+  public createLockbox = (roleName: string, encryptionKeys: KeysetWithSecrets): lockbox.Lockbox[] => {
+    const roleKeys = this.roleKeysAllGenerations(roleName)
+    return roleKeys.map((keys) => lockbox.create(keys, encryptionKeys))
   }
 
   private checkForPendingKeyRotations() {
