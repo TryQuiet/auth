@@ -2,8 +2,10 @@ import { ADMIN } from 'role/index.js'
 import * as teams from 'team/index.js'
 import { setup } from 'util/testing/index.js'
 import 'util/testing/expect/toLookLikeKeyset.js'
-import { symmetric } from '@localfirst/crypto'
+import { randomBytes, symmetric } from '@localfirst/crypto'
 import { describe, expect, it } from 'vitest'
+import { randomUUID } from 'crypto'
+import { createKeyset, KeyScope } from '@localfirst/crdx'
 
 const MANAGERS = 'managers'
 const managers = { roleName: MANAGERS }
@@ -110,6 +112,71 @@ describe('Team', () => {
       // 👨🏻‍🦲 Bob doesn't have admin keys any more
       const bobLooksForAdminKeys = () => bob.team.roleKeys(ADMIN)
       expect(bobLooksForAdminKeys).toThrow()
+    })
+
+    it('self-assigns a role', () => {
+      const { alice, bob } = setup('alice', 'bob')
+      
+      // 👩🏾 Alice creates MEMBER role
+      alice.team.addRole('MEMBER')
+
+      // 👩🏾 Alice is a MEMBER
+      expect(alice.team.hasRole('MEMBER')).toBe(true)
+      expect(alice.team.memberHasRole(alice.userId, 'MEMBER')).toBe(true)
+
+      // 👩🏾 Alice creates a lockbox for MEMBER keys under arbitrary keys
+      const randomSeed = randomUUID()
+      const arbitraryScope: KeyScope = { type: 'TESTING', name: 'TESTING' }
+      const keySet = createKeyset(arbitraryScope, randomSeed)
+      alice.team.createLockbox('MEMBER', keySet)
+      
+      // 👩🏾 Alice persists the team
+      const savedTeam = alice.team.save()
+
+      // 👨🏻‍🦲 Bob loads the team
+      bob.team = teams.load(savedTeam, bob.localContext, alice.team.teamKeys())
+
+      // 👨🏻‍🦲 Bob doesn't have the MEMBER role
+      expect(bob.team.memberHasRole(bob.userId, 'MEMBER')).toBe(false)
+
+      // 👨🏻‍🦲 Bob self-assigns the MEMBER role
+      bob.team.addMemberRoleToSelf('MEMBER', keySet)
+
+      // 👨🏻‍🦲 Bob has the MEMBER role keys
+      const bobsMemberKeys = bob.team.roleKeys('MEMBER')
+      expect(bobsMemberKeys).toLookLikeKeyset()
+    })
+
+    it(`attempts to self-assign a role that can't be self-assigned`, () => {
+      const { alice, bob } = setup('alice', 'bob')
+      
+      // 👩🏾 Alice creates FOOBAR role
+      alice.team.addRole('FOOBAR')
+
+      // 👩🏾 Alice is a FOOBAR
+      expect(alice.team.hasRole('FOOBAR')).toBe(true)
+      expect(alice.team.memberHasRole(alice.userId, 'FOOBAR')).toBe(true)
+
+      // 👩🏾 Alice creates a lockbox for FOOBAR keys under arbitrary keys
+      const randomSeed = randomUUID()
+      const arbitraryScope: KeyScope = { type: 'TESTING', name: 'TESTING' }
+      const keySet = createKeyset(arbitraryScope, randomSeed)
+      alice.team.createLockbox('FOOBAR', keySet)
+      
+      // 👩🏾 Alice persists the team
+      const savedTeam = alice.team.save()
+
+      // 👨🏻‍🦲 Bob loads the team
+      bob.team = teams.load(savedTeam, bob.localContext, alice.team.teamKeys())
+
+      // 👨🏻‍🦲 Bob doesn't have the FOOBAR role
+      expect(bob.team.memberHasRole(bob.userId, 'FOOBAR')).toBe(false)
+
+      // 👨🏻‍🦲 Bob attempts to self-assign the FOOBAR role
+      const attemptToSelfAssignRole = () => {
+        bob.team.addMemberRoleToSelf('FOOBAR', keySet)
+      }
+      expect(attemptToSelfAssignRole()).toThrow()
     })
 
     it('removes a role', () => {

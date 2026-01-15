@@ -71,6 +71,9 @@ export type TeamOptions = NewOrExisting & {
 
   /** Object containing the current user and device (and optionally information about the client & version). */
   context: LocalContext
+
+  /** Roles that can be self-assigned by a member on the chain */
+  selfAssignRoles?: string[]
 }
 
 /** Type guard for NewTeamOptions vs ExistingTeamOptions  */

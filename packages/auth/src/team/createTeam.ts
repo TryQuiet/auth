@@ -3,8 +3,8 @@ import { TEAM_SCOPE } from './constants.js'
 import { type LocalContext } from 'team/context.js'
 import { Team } from 'team/Team.js'
 
-export function createTeam(teamName: string, context: LocalContext, seed?: string) {
+export function createTeam(teamName: string, context: LocalContext, seed?: string, selfAssignRoles?: string[]) {
   const teamKeys = createKeyset(TEAM_SCOPE, seed)
 
-  return new Team({ teamName, context, teamKeys })
+  return new Team({ teamName, context, teamKeys, selfAssignRoles })
 }

@@ -66,6 +66,7 @@ export class Team extends EventEmitter<TeamEvents> {
   private readonly context: LocalUserContext
   private readonly log: (o: any, ...args: any[]) => void
   private readonly seed: string
+  private readonly selfAssignRoles: string[]
 
   /**
    * We can make a team instance either by creating a brand-new team, or restoring one from a stored graph.
@@ -139,6 +140,7 @@ export class Team extends EventEmitter<TeamEvents> {
     }
 
     this.state = this.store.getState()
+    this.selfAssignRoles = options.selfAssignRoles ?? []
 
     // Wire up event listeners
     this.on('updated', () => {
@@ -363,6 +365,7 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** Give yourself a role */
   public addMemberRoleToSelf = (roleName: string, decryptionKeys: KeysetWithSecrets) => {
+    assert(this.selfAssignRoles.includes(roleName), `Cannot self-assign role ${roleName}`)
     this.addMemberRole(this.userId, roleName, decryptionKeys)
   }
 
