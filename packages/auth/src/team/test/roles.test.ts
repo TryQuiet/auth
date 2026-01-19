@@ -119,6 +119,7 @@ describe('Team', () => {
       
       // 👩🏾 Alice creates MEMBER role
       alice.team.addRole('MEMBER')
+      alice.team.addMemberRole(alice.userId, 'MEMBER')
 
       // 👩🏾 Alice is a MEMBER
       expect(alice.team.hasRole('MEMBER')).toBe(true)
@@ -152,6 +153,7 @@ describe('Team', () => {
       
       // 👩🏾 Alice creates FOOBAR role
       alice.team.addRole('FOOBAR')
+      alice.team.addMemberRole(alice.userId, 'FOOBAR')
 
       // 👩🏾 Alice is a FOOBAR
       expect(alice.team.hasRole('FOOBAR')).toBe(true)
@@ -176,7 +178,7 @@ describe('Team', () => {
       const attemptToSelfAssignRole = () => {
         bob.team.addMemberRoleToSelf('FOOBAR', keySet)
       }
-      expect(attemptToSelfAssignRole()).toThrow()
+      expect(attemptToSelfAssignRole).toThrow()
     })
 
     it('removes a role', () => {
