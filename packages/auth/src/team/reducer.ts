@@ -248,6 +248,11 @@ const getTransforms = (action: TeamAction): Transform[] => {
       ]
     }
 
+    case 'ADD_LOCKBOXES': {
+      const { lockboxes } = action.payload
+      return [(state) => state]
+    }
+
     default: {
       // ignore coverage
       throw unrecognizedLinkType(action)

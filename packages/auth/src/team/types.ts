@@ -241,6 +241,13 @@ export type SetTeamNameAction = {
   }
 }
 
+export type AddLockboxesAction = {
+  type: 'ADD_LOCKBOXES'
+  payload: BasePayload & {
+    lockboxes: Lockbox[]
+  }
+}
+
 export type TeamAction =
   | RootAction
   | AddMemberAction
@@ -263,6 +270,7 @@ export type TeamAction =
   | ChangeServerKeysAction
   | MessageAction
   | SetTeamNameAction
+  | AddLockboxesAction
 
 export type TeamContext = {
   deviceId: string

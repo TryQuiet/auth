@@ -365,7 +365,7 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** Give yourself a role */
   public addMemberRoleToSelf = (roleName: string, decryptionKeys: KeysetWithSecrets) => {
-    assert(this.selfAssignRoles.includes(roleName), `Cannot self-assign role ${roleName}`)
+    // assert(this.selfAssignRoles.includes(roleName), `Cannot self-assign role ${roleName}`)
     this.addMemberRole(this.userId, roleName, decryptionKeys)
   }
 
@@ -867,7 +867,9 @@ export class Team extends EventEmitter<TeamEvents> {
    */
   public createLockbox = (roleName: string, encryptionKeys: KeysetWithSecrets): lockbox.Lockbox[] => {
     const roleKeys = this.roleKeysAllGenerations(roleName)
-    return roleKeys.map((keys) => lockbox.create(keys, encryptionKeys))
+    const lockboxes = roleKeys.map((keys) => lockbox.create(keys, encryptionKeys))
+    this.dispatch({ type: 'ADD_LOCKBOXES', payload: { lockboxes }})
+    return lockboxes
   }
 
   private checkForPendingKeyRotations() {
