@@ -107,9 +107,6 @@ export class Team extends EventEmitter<TeamEvents> {
 
       // We also store the founding user's keys in a lockbox for the user's device
       const lockboxUserKeysForDevice = lockbox.create(user.keys, this.context.device.keys)
-      this.dispatch({ type: 'SET_METADATA', payload: { metadata: {
-        selfAssignableRoles: options.selfAssignRoles ?? []
-      }}})
 
       // We're creating a new graph; this information is to be recorded in the root link
       const rootPayload = {
@@ -128,6 +125,10 @@ export class Team extends EventEmitter<TeamEvents> {
         rootPayload,
         keys: options.teamKeys,
       })
+
+      this.dispatch({ type: 'SET_METADATA', payload: { metadata: {
+        selfAssignableRoles: options.selfAssignRoles ?? []
+      }}})
     } else {
       // Rehydrate a team from an existing graph
       // Create CRDX store
