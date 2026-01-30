@@ -117,7 +117,11 @@ const validators: TeamStateValidatorSet = {
   canOnlySelfAddCertainRoles(...args) {
     const [previousState, link] = args
     if (link.body.type === 'ADD_MEMBER_ROLE') {
-      const { roleName, userId } = link.body.payload
+      const { userId: assigningUserId } = link.body
+      const { userId, roleName } = link.body.payload
+      if (userId !== assigningUserId) {
+        return VALID
+      }
       const metadata = select.getMetadata(previousState)
       if (metadata.selfAssignableRoles.includes(roleName)) {
         return VALID
