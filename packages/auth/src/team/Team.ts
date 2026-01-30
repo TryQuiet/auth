@@ -125,6 +125,10 @@ export class Team extends EventEmitter<TeamEvents> {
         rootPayload,
         keys: options.teamKeys,
       })
+
+      this.dispatch({ type: 'SET_METADATA', payload: { metadata: {
+        selfAssignableRoles: options.selfAssignRoles ?? []
+      }}}, options.teamKeys)
     } else {
       // Rehydrate a team from an existing graph
       // Create CRDX store
@@ -348,10 +352,10 @@ export class Team extends EventEmitter<TeamEvents> {
   }
 
   /** Give a member a role */
-  public addMemberRole = (userId: string, roleName: string) => {
+  public addMemberRole = (userId: string, roleName: string, decryptionKeys?: KeysetWithSecrets) => {
     // Make a lockbox for the role
     const member = this.members(userId)
-    const allGenKeys = this.roleKeysAllGenerations(roleName)
+    const allGenKeys = this.roleKeysAllGenerations(roleName, decryptionKeys)
     const lockboxRoleKeysForMember = allGenKeys.map(roleKeys => lockbox.create(roleKeys, member.keys))
 
     // Post the member role to the graph
@@ -359,6 +363,12 @@ export class Team extends EventEmitter<TeamEvents> {
       type: 'ADD_MEMBER_ROLE',
       payload: { userId, roleName, lockboxes: lockboxRoleKeysForMember },
     })
+  }
+
+  /** Give yourself a role */
+  public addMemberRoleToSelf = (roleName: string, decryptionKeys: KeysetWithSecrets) => {
+    assert(this.state.metadata.selfAssignableRoles.includes(roleName), `Cannot self-assign role ${roleName}`)
+    this.addMemberRole(this.userId, roleName, decryptionKeys)
   }
 
   /** Remove a role from a member */
@@ -796,22 +806,22 @@ export class Team extends EventEmitter<TeamEvents> {
    * get other members' public keys, look up the member - the `keys` property contains their public
    * keys.
    */
-  public keys = (scope: KeyMetadata | KeyScope) =>
-    select.keys(this.state, this.context.device.keys, scope)
+  public keys = (scope: KeyMetadata | KeyScope, decryptionKeys: KeysetWithSecrets = this.context.device.keys) =>
+    select.keys(this.state, decryptionKeys, scope)
 
-  public keysAllGenerations = (scope: KeyMetadata | KeyScope) =>
-    select.keysAllGen(this.state, this.context.device.keys, scope)
+  public keysAllGenerations = (scope: KeyMetadata | KeyScope, decryptionKeys: KeysetWithSecrets = this.context.device.keys) =>
+    select.keysAllGen(this.state, decryptionKeys, scope)
 
-  public allKeys = () =>
-    select.allKeys(this.state, this.context.device.keys)
-
-  /** Returns the keys for the given role. */
-  public roleKeys = (roleName: string, generation?: number) =>
-    this.keys({ type: KeyType.ROLE, name: roleName, generation })
+  public allKeys = (decryptionKeys: KeysetWithSecrets = this.context.device.keys) =>
+    select.allKeys(this.state, decryptionKeys)
 
   /** Returns the keys for the given role. */
-  public roleKeysAllGenerations = (roleName: string) =>
-    this.keysAllGenerations({ type: KeyType.ROLE, name: roleName })
+  public roleKeys = (roleName: string, generation?: number, decryptionKeys?: KeysetWithSecrets) =>
+    this.keys({ type: KeyType.ROLE, name: roleName, generation }, decryptionKeys)
+
+  /** Returns the keys for the given role. */
+  public roleKeysAllGenerations = (roleName: string, decryptionKeys?: KeysetWithSecrets) =>
+    this.keysAllGenerations({ type: KeyType.ROLE, name: roleName }, decryptionKeys)
 
   /** Returns the current team keys or a specific generation of team keys */
   public teamKeys = (generation?: number) => this.keys({ ...TEAM_SCOPE, generation })
@@ -850,6 +860,20 @@ export class Team extends EventEmitter<TeamEvents> {
     if (isForServer) device.keys = newKeys // (a server plays the role of both a user and a device)
   }
 
+  /**
+   * Create a new lockbox containing a role's current generation keys encrypted to an arbitrary keyset
+   * 
+   * @param roleName Role whose keys we want to encapsulate in the lockbox (must be a role the user has!)
+   * @param encryptionKeys Keys to encrypt the lockbox to
+   * @returns Generated lockbox
+   */
+  public createLockbox = (roleName: string, encryptionKeys: KeysetWithSecrets): lockbox.Lockbox[] => {
+    const roleKeys = this.roleKeysAllGenerations(roleName)
+    const lockboxes = roleKeys.map((keys) => lockbox.create(keys, encryptionKeys))
+    this.dispatch({ type: 'ADD_LOCKBOXES', payload: { lockboxes }})
+    return lockboxes
+  }
+
   private checkForPendingKeyRotations() {
     // Only admins can rotate keys
     if (!this.memberIsAdmin(this.userId)) {
@@ -868,7 +892,7 @@ export class Team extends EventEmitter<TeamEvents> {
   }
 
   private readonly createMemberLockboxes = (member: Member) => {
-    const roleKeys = member.roles.map(this.roleKeys)
+    const roleKeys = member.roles.map((roleName: string) => this.roleKeys(roleName))
     const createLockboxRoleKeysForMember = (keys: KeysetWithSecrets) => {
       return lockbox.create(keys, member.keys)
     }
