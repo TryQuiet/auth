@@ -112,6 +112,20 @@ const validators: TeamStateValidatorSet = {
     }
     return VALID
   },
+
+  /** Check for self-assigned roles that aren't in the allowed list set by the admin */
+  canOnlySelfAddCertainRoles(...args) {
+    const [previousState, link] = args
+    if (link.body.type === 'ADD_MEMBER_ROLE') {
+      const { roleName, userId } = link.body.payload
+      const metadata = select.getMetadata(previousState)
+      if (metadata.selfAssignableRoles.includes(roleName)) {
+        return VALID
+      }
+      return fail(`User ${userId} attempted to self-assign role ${roleName} illegally`, ...args)
+    }
+    return VALID
+  },
 }
 
 const fail = (message: string, previousState: TeamState, link: TeamLink) => {
