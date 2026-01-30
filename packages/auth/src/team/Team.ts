@@ -128,7 +128,7 @@ export class Team extends EventEmitter<TeamEvents> {
 
       this.dispatch({ type: 'SET_METADATA', payload: { metadata: {
         selfAssignableRoles: options.selfAssignRoles ?? []
-      }}})
+      }}}, options.teamKeys)
     } else {
       // Rehydrate a team from an existing graph
       // Create CRDX store
