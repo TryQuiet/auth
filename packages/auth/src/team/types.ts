@@ -73,7 +73,7 @@ export type TeamOptions = NewOrExisting & {
   context: LocalContext
 
   /** Roles that can be self-assigned by a member on the chain */
-  selfAssignRoles?: string[]
+  metadata: TeamMetadata
 }
 
 /** Type guard for NewTeamOptions vs ExistingTeamOptions  */
