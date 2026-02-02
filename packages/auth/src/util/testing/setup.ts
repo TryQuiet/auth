@@ -77,7 +77,7 @@ export const setup = (..._config: SetupConfig) => {
   const founderContext = { user: testUsers[founder], device: laptops[founder] }
   const teamName = 'Spies Я Us'
   const randomSeed = teamName
-  const team = teams.createTeam(teamName, founderContext, randomSeed, ['MEMBER'])
+  const team = teams.createTeam(teamName, founderContext, randomSeed, { selfAssignableRoles: ['MEMBER'] })
   const teamKeys = team.teamKeys()
 
   // Add members

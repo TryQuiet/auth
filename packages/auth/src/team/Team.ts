@@ -48,6 +48,7 @@ import type {
   SignedEnvelope,
   TeamAction,
   TeamGraph,
+  TeamMetadata,
   TeamOptions,
   TeamState,
 } from './types.js'
@@ -126,9 +127,10 @@ export class Team extends EventEmitter<TeamEvents> {
         keys: options.teamKeys,
       })
 
-      this.dispatch({ type: 'SET_METADATA', payload: { metadata: {
-        selfAssignableRoles: options.selfAssignRoles ?? []
-      }}}, options.teamKeys)
+      const metadata: TeamMetadata = options.metadata ?? {
+        selfAssignableRoles: []
+      }
+      this.dispatch({ type: 'SET_METADATA', payload: { metadata }}, options.teamKeys)
     } else {
       // Rehydrate a team from an existing graph
       // Create CRDX store

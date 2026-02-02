@@ -50,6 +50,9 @@ export type NewTeamOptions = {
 
   /** The team keys need to be provided for encryption and decryption. It's up to the application to persist these somewhere.  */
   teamKeys: KeysetWithSecrets
+
+  /** Team metadata (e.g. roles that can be self-assigned by a member on the chain) */
+  metadata?: TeamMetadata
 }
 
 /** Properties required when rehydrating from an existing graph  */
@@ -71,9 +74,6 @@ export type TeamOptions = NewOrExisting & {
 
   /** Object containing the current user and device (and optionally information about the client & version). */
   context: LocalContext
-
-  /** Roles that can be self-assigned by a member on the chain */
-  metadata: TeamMetadata
 }
 
 /** Type guard for NewTeamOptions vs ExistingTeamOptions  */
