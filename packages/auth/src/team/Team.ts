@@ -28,11 +28,11 @@ import * as invitations from 'invitation/index.js'
 import { type ProofOfInvitation } from 'invitation/index.js'
 import { normalize } from 'invitation/normalize.js'
 import * as lockbox from 'lockbox/index.js'
-import { ADMIN, type Role } from 'role/index.js'
+import { AddRoleInput, ADMIN, type Role } from 'role/index.js'
 import { castServer } from 'server/castServer.js'
 import { type Host, type Server } from 'server/types.js'
 import { type LocalUserContext } from 'team/context.js'
-import { KeyType, VALID, scopesMatch } from 'util/index.js'
+import { KeyType, Optional, VALID, scopesMatch } from 'util/index.js'
 import { ADMIN_SCOPE, ALL, TEAM_SCOPE, initialState } from './constants.js'
 import { membershipResolver as resolver } from './membershipResolver.js'
 import { redactUser } from './redactUser.js'
@@ -325,22 +325,37 @@ export class Team extends EventEmitter<TeamEvents> {
   public admins = (): Member[] => select.admins(this.state)
 
   /** Add a role to the team */
-  public addRole = (role: Role | string) => {
-    if (typeof role === 'string') {
-      role = { roleName: role }
+  public addRole = (input: AddRoleInput | string) => {
+    let role: Role
+    if (typeof input === 'string') {
+      role = { roleName: input, createdBy: this.userId }
+    } else {
+      role = {
+        ...input,
+        createdBy: this.userId,
+      }
     }
 
     // We're creating this role so we need to generate new keys
     const roleKeys = createKeyset({ type: KeyType.ROLE, name: role.roleName }, this.seed)
 
-    // Make a lockbox for the admin role, so that all admins can access this role's keys
-    const lockboxRoleKeysForAdmins = lockbox.create(roleKeys, this.adminKeys())
+    const lockboxes: lockbox.Lockbox[] = []
+    if (this.memberIsAdmin(this.userId)) {
+      // Make a lockbox for the admin role, so that all admins can access this role's keys
+      lockboxes.push(lockbox.create(roleKeys, this.adminKeys()))
+    }
 
     // Post the role to the graph
     this.dispatch({
       type: 'ADD_ROLE',
-      payload: { ...role, lockboxes: [lockboxRoleKeysForAdmins] },
+      payload: { ...(role as Role), lockboxes: lockboxes },
     })
+
+    if (!this.memberIsAdmin(this.userId)) {
+      // if we choose to add ourselves to the role we need to create our own lockbox and then dispatch
+      // the event to add the role to our member record
+      this._dispatchAddMemberRole(this.userId, role.roleName, [lockbox.create(roleKeys, this.context.device.keys)])
+    }
   }
 
   /** Remove a role from the team */
@@ -353,6 +368,14 @@ export class Team extends EventEmitter<TeamEvents> {
     })
   }
 
+  /** Dispatch the add role action */
+  private _dispatchAddMemberRole(userId: string, roleName: string, lockboxes: lockbox.Lockbox[]) {
+    this.dispatch({
+      type: 'ADD_MEMBER_ROLE',
+      payload: { userId, roleName, lockboxes },
+    })
+  }
+
   /** Give a member a role */
   public addMemberRole = (userId: string, roleName: string, decryptionKeys?: KeysetWithSecrets) => {
     // Make a lockbox for the role
@@ -361,10 +384,7 @@ export class Team extends EventEmitter<TeamEvents> {
     const lockboxRoleKeysForMember = allGenKeys.map(roleKeys => lockbox.create(roleKeys, member.keys))
 
     // Post the member role to the graph
-    this.dispatch({
-      type: 'ADD_MEMBER_ROLE',
-      payload: { userId, roleName, lockboxes: lockboxRoleKeysForMember },
-    })
+    this._dispatchAddMemberRole(userId, roleName, lockboxRoleKeysForMember)
   }
 
   /** Give yourself a role */

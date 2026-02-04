@@ -6,7 +6,7 @@ import { SigChain } from "../../chain.js"
 import { BaseChainService } from "../baseService.js"
 import { Permissions } from "./permissions.js"
 import { QuietRole, RoleName } from "./roles.js"
-import { LocalUserContext, Member, PermissionsMap, Role } from "@localfirst/auth"
+import { AddRoleInput, LocalUserContext, Member, PermissionsMap, Role } from "@localfirst/auth"
 
 class RoleService extends BaseChainService {
   public static init(sigChain: SigChain): RoleService {
@@ -20,12 +20,12 @@ class RoleService extends BaseChainService {
       permissions[Permissions.MODIFIABLE_MEMBERSHIP] = true
     }
 
-    const role: Role = {
+    const input: AddRoleInput = {
       roleName,
       permissions
     }
 
-    this.sigChain.team.addRole(role)
+    this.sigChain.team.addRole(input)
     // this.activeSigChain.persist()
   }
 

@@ -89,7 +89,7 @@ const getTransforms = (action: TeamAction): Transform[] => {
       const { name, rootMember, rootDevice } = action.payload
       return [
         setTeamName(name),
-        addRole({ roleName: ADMIN }), // Create the admin role
+        addRole({ roleName: ADMIN, createdBy: action.payload.rootMember.userId }), // Create the admin role
         addMember(rootMember), // Add the founding member
         addDevice(rootDevice), // Add the founding member's device
         ...addMemberRoles(rootMember.userId, [ADMIN]), // Make the founding member an admin
