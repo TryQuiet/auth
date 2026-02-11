@@ -351,11 +351,9 @@ export class Team extends EventEmitter<TeamEvents> {
       payload: { ...(role as Role), lockboxes: lockboxes },
     })
 
-    if (!this.memberIsAdmin(this.userId)) {
-      // if we choose to add ourselves to the role we need to create our own lockbox and then dispatch
-      // the event to add the role to our member record
-      this._dispatchAddMemberRole(this.userId, role.roleName, [lockbox.create(roleKeys, this.context.device.keys)])
-    }
+    // if we choose to add ourselves to the role we need to create our own lockbox and then dispatch
+    // the event to add the role to our member record
+    this._dispatchAddMemberRole(this.userId, role.roleName, [lockbox.create(roleKeys, this.context.user.keys)])
   }
 
   /** Remove a role from the team */
