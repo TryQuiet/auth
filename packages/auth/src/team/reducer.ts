@@ -32,6 +32,7 @@ import {
   type Transform,
 } from './types.js'
 import { validate } from './validate.js'
+import { setMetadata } from './transforms/setMetadata.js'
 
 /**
  * Each link has a `type` and a `payload`, just like a Redux action. So we can derive a `TeamState`
@@ -245,6 +246,18 @@ const getTransforms = (action: TeamAction): Transform[] => {
       const { teamName } = action.payload
       return [
         setTeamName(teamName), // Set the team's name
+      ]
+    }
+
+    case 'ADD_LOCKBOXES': {
+      // Note: lockboxes are handled by default so we don't need to do anything special here
+      return [(state) => state]
+    }
+
+    case 'SET_METADATA': {
+      const { metadata } = action.payload
+      return [
+        setMetadata(metadata)
       ]
     }
 

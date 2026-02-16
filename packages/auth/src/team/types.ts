@@ -50,6 +50,9 @@ export type NewTeamOptions = {
 
   /** The team keys need to be provided for encryption and decryption. It's up to the application to persist these somewhere.  */
   teamKeys: KeysetWithSecrets
+
+  /** Team metadata (e.g. roles that can be self-assigned by a member on the chain) */
+  metadata?: TeamMetadata
 }
 
 /** Properties required when rehydrating from an existing graph  */
@@ -238,6 +241,20 @@ export type SetTeamNameAction = {
   }
 }
 
+export type AddLockboxesAction = {
+  type: 'ADD_LOCKBOXES'
+  payload: BasePayload & {
+    lockboxes: Lockbox[]
+  }
+}
+
+export type SetMetadataAction = {
+  type: 'SET_METADATA'
+  payload: BasePayload & {
+    metadata: TeamMetadata
+  }
+}
+
 export type TeamAction =
   | RootAction
   | AddMemberAction
@@ -260,6 +277,8 @@ export type TeamAction =
   | ChangeServerKeysAction
   | MessageAction
   | SetTeamNameAction
+  | AddLockboxesAction
+  | SetMetadataAction
 
 export type TeamContext = {
   deviceId: string
@@ -301,6 +320,7 @@ export type TeamState = {
   // If a member's admission is reversed, we need to flag them as compromised so an admin can
   // rotate any keys they had access to at the first opportunity
   pendingKeyRotations: string[]
+  metadata: TeamMetadata
 }
 
 export type InvitationMap = Record<string, InvitationState>
@@ -341,3 +361,5 @@ export type LookupIdentityResult =
   | 'DEVICE_REMOVED'
 
 export type EncryptStreamTeamPayload = { recipient: KeyMetadata, encryptStream: AsyncGenerator<Uint8Array>, header: Uint8Array }
+
+export type TeamMetadata = { selfAssignableRoles: string[] }
