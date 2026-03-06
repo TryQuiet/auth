@@ -263,7 +263,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           // When admitting us, our peer added our user to the team graph. We've been given the
           // serialized and encrypted graph, and the team keyring. We can now decrypt the graph and
           // reconstruct the team in order to join it.
-          const team = new Team({ source: serializedGraph, context: { user, device }, teamKeyring })
+          const team = new Team({ source: serializedGraph, context: { user, device }, teamKeyring, sharedLogger: this.#sharedLogger })
 
           // We join the team, which adds our device to the team graph.
           team.join(teamKeyring)
