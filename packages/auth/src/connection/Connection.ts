@@ -372,7 +372,8 @@ export class Connection extends EventEmitter<ConnectionEvents> {
             prevSyncState,
             syncMessage,
             teamKeys,
-            decrypt
+            decrypt,
+            this.#sharedLogger
           )
 
           if (headsAreEqual(newChain.head, team.graph.head)) {
