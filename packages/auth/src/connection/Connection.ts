@@ -826,6 +826,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
    */
   public deliver(serializedMessage: Uint8Array) {
     const message = unpack(serializedMessage) as NumberedMessage<ConnectionMessage>
+    this.LOG('info', 'received message', message)
     this.#messageQueue.receive(message)
   }
 
@@ -835,6 +836,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
    */
   public send = (message: any) => {
     assert(this._sessionKey, "Can't send encrypted messages until we've finished connecting")
+    this.LOG('info', 'sending message', message)
     const encryptedMessage = symmetric.encryptBytes(message, this._sessionKey)
     this.LOG('debug', `encrypted message with session key ${base58.encode(this._sessionKey)}`)
     this.#queueMessage('ENCRYPTED_MESSAGE', encryptedMessage)
