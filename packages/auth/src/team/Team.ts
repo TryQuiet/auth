@@ -245,8 +245,6 @@ export class Team extends EventEmitter<TeamEvents> {
   public dispatch(action: TeamAction, teamKeys: KeysetWithSecrets = this.teamKeys()) {
     this.store.dispatch(action, teamKeys)
     this.state = this.store.getState()
-
-    this.emit('updated', { head: this.graph.head })
   }
 
   /** ************** MEMBERS */
