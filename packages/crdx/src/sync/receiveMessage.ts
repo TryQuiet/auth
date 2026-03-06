@@ -25,7 +25,8 @@ export const receiveMessage = <A extends Action, C>(
 
   keys: KeysetWithSecrets | Keyring,
 
-  decrypt: DecryptFn = decryptGraph
+  decrypt: DecryptFn = decryptGraph,
+  sharedLogger?: any
 ): [Graph<A, C>, SyncState] => {
   // if a keyset was provided, wrap it in a keyring
   const keyring = createKeyring(keys)
@@ -70,7 +71,7 @@ export const receiveMessage = <A extends Action, C>(
     const mergedGraph = merge(graph, theirGraph)
 
     // check the integrity of the merged graph
-    const validation = validate(mergedGraph)
+    const validation = validate(mergedGraph, undefined, sharedLogger)
     if (validation.isValid) {
       graph = mergedGraph
     } else {
