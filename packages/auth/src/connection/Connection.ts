@@ -247,6 +247,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
         joinTeam: assign(({ context, event }) => {
           assertEvent(event, 'ACCEPT_INVITATION')
+          this.LOG('info', 'Joining team post invitation acceptance', event)
           const { serializedGraph, teamKeyring } = event.payload
           const { device, invitationSeed } = context
           assert(invitationSeed)
