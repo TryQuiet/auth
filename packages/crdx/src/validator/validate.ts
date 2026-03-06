@@ -99,7 +99,7 @@ export const validate = <A extends Action, C>(
 
   const compositeValidator = composeValidators(validators, customValidators)
   for (const link of Object.values(graph.links)) {
-    log('debug', 'link', link)
+    log('info', 'link', link)
     const result = compositeValidator(link)
     if (!result.isValid) return result
   }
