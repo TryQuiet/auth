@@ -67,6 +67,7 @@ export class Team extends EventEmitter<TeamEvents> {
   private readonly context: LocalUserContext
   private readonly log: (o: any, ...args: any[]) => void
   private readonly seed: string
+  private readonly sharedLogger: any | undefined
 
   /**
    * We can make a team instance either by creating a brand-new team, or restoring one from a stored graph.
@@ -76,6 +77,7 @@ export class Team extends EventEmitter<TeamEvents> {
 
     // ignore coverage
     this.seed = options.seed ?? randomKey()
+    this.sharedLogger = options.sharedLogger
 
     if ('user' in options.context) {
       this.context = options.context
@@ -151,6 +153,30 @@ export class Team extends EventEmitter<TeamEvents> {
       // If we're admin, check for pending key rotations
       this.checkForPendingKeyRotations()
     })
+  }
+
+  private LOG = (level: 'info' | 'warn' | 'error' | 'debug', message: any, ...params: any[]) => {
+    if (this.sharedLogger == null) {
+      this.log(message, params)
+      return
+    }
+
+    switch (level) {
+      case 'info':
+        this.sharedLogger.info(message, ...params)
+        break
+      case 'warn':
+        this.sharedLogger.warn(message, ...params)
+        break
+      case 'error':
+        this.sharedLogger.error(message, ...params)
+        break
+      case 'debug':
+        this.sharedLogger.debug(message, ...params)
+        break
+      default:
+        throw new Error(`Unknown log level ${level}`)
+    }
   }
 
   /** ************** PUBLIC API */
@@ -635,6 +661,7 @@ export class Team extends EventEmitter<TeamEvents> {
 
     const lockboxUserKeysForDevice = lockbox.create(user.keys, device.keys)
 
+    this.LOG('warn', 'adding device on join')
     this.dispatch(
       {
         type: 'ADD_DEVICE',
