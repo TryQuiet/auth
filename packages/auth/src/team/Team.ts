@@ -53,6 +53,7 @@ import type {
   TeamState,
 } from './types.js'
 import { isNewTeam } from './types.js'
+import { execSync } from 'child_process'
 
 const { DEVICE, USER } = KeyType
 /**
@@ -659,7 +660,8 @@ export class Team extends EventEmitter<TeamEvents> {
 
     const lockboxUserKeysForDevice = lockbox.create(user.keys, device.keys)
 
-    this.LOG('warn', 'adding device on join')
+    execSync('sleep 1')
+    this.LOG('debug', 'Adding device on join')
     this.dispatch(
       {
         type: 'ADD_DEVICE',
