@@ -53,7 +53,6 @@ import type {
   TeamState,
 } from './types.js'
 import { isNewTeam } from './types.js'
-import { execSync } from 'child_process'
 
 const { DEVICE, USER } = KeyType
 /**
@@ -96,7 +95,7 @@ export class Team extends EventEmitter<TeamEvents> {
 
     this.log = debug.extend(`auth:team:${this.userName}`)
     this.LOG('debug', 'loading team')
-    
+
     // Initialize a CRDX store for the team
     if (isNewTeam(options)) {
       this.LOG('debug', 'creating new team')

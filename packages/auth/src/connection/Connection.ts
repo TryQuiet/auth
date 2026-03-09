@@ -53,7 +53,6 @@ import {
   isMemberContext,
   isServerContext,
 } from './types.js'
-import { execSync } from 'child_process'
 
 /*
 
@@ -684,7 +683,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
                   // Make sure the team I'm joining is actually the one that invited me
                   { guard: 'joinedTheWrongTeam', ...fail(JOINED_WRONG_TEAM), },
                   { guard: 'admitMemberLinkExistsOnJoin', actions: 'joinTeam', target: '#checkingIdentity', },
-                  fail(JOINED_WRONG_TEAM)
+                  fail(ADMIT_MEMBER_LINK_MISSING)
                 ],
               },
               ...timeout,
