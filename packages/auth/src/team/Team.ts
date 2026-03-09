@@ -81,8 +81,10 @@ export class Team extends EventEmitter<TeamEvents> {
     this.sharedLogger = options.sharedLogger
 
     if ('user' in options.context) {
+      this.LOG('debug', 'loading team as user')
       this.context = options.context
     } else {
+      this.LOG('debug', 'loading team as server')
       // If we're on a server, we'll use the server's hostname for everything
       // and the server's keys as both user keys and device keys
       const { server } = options.context
@@ -98,6 +100,7 @@ export class Team extends EventEmitter<TeamEvents> {
 
     // Initialize a CRDX store for the team
     if (isNewTeam(options)) {
+      this.LOG('debug', 'creating new team')
       // Create a new team with the current user as founding member
 
       assert(!this.isServer, `Servers can't create teams`)
