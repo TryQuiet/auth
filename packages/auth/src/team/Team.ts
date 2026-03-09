@@ -654,13 +654,13 @@ export class Team extends EventEmitter<TeamEvents> {
   /** Once the new member has received the graph and can instantiate the team, they call this to add their device. */
   public join = (teamKeyring: Keyring) => {
     assert(!this.isServer, "Can't join as member on server")
+    this.LOG('debug', 'joining pre-existing team')
 
     const { user, device } = this.context
     const teamKeys = getLatestGeneration(teamKeyring)
 
     const lockboxUserKeysForDevice = lockbox.create(user.keys, device.keys)
 
-    execSync('sleep 1')
     this.LOG('debug', 'Adding device on join')
     this.dispatch(
       {

@@ -22,3 +22,5 @@ export const EPHEMERAL_SCOPE: KeyScope = {
   type: 'EPHEMERAL',
   name: 'EPHEMERAL',
 }
+
+export const TIMESTAMP_FUZZ_FACTOR_MS = 500
