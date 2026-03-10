@@ -437,6 +437,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
               senderPublicKey,
               recipientSecretKey,
             })
+            this.emit('connectionSecured')
             // With the two keys, we derive a shared key
             return { sessionKey: deriveSharedKey(seed, theirSeed) }
           } catch (error) {
