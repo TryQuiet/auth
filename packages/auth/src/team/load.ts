@@ -6,8 +6,9 @@ import { Team } from 'team/Team.js'
 export const load = (
   source: Uint8Array | TeamGraph,
   context: LocalContext,
-  teamKeys: KeysetWithSecrets | Keyring
+  teamKeys: KeysetWithSecrets | Keyring,
+  sharedLogger?: any
 ) => {
   const teamKeyring = createKeyring(teamKeys)
-  return new Team({ source, context, teamKeyring })
+  return new Team({ source, context, teamKeyring, sharedLogger })
 }

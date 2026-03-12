@@ -74,6 +74,9 @@ export type TeamOptions = NewOrExisting & {
 
   /** Object containing the current user and device (and optionally information about the client & version). */
   context: LocalContext
+
+  /** Logging instance shared with main application */
+  sharedLogger?: any
 }
 
 /** Type guard for NewTeamOptions vs ExistingTeamOptions  */

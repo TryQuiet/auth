@@ -1,4 +1,5 @@
-﻿import { type ValidationResult, type ValidatorSet } from './types.js'
+﻿import { assert, debug } from '@localfirst/shared'
+import { type ValidationResult, type ValidatorSet } from './types.js'
 import { fail, validators } from './validators.js'
 import { VALID } from 'constants.js'
 import { hashEncryptedLink } from 'graph/hashLink.js'
@@ -13,8 +14,34 @@ export const validate = <A extends Action, C>(
   graph: Graph<A, C>,
 
   /** Any additional validators (besides the base validators that test the graph's integrity) */
-  customValidators: ValidatorSet = {}
+  customValidators: ValidatorSet = {},
+  sharedLogger?: any
 ): ValidationResult => {
+  const baseLog = debug.extend('auth:validate')
+  const log = (level: 'info' | 'warn' | 'error' | 'debug', message: any, ...params: any[]) => {
+    if (sharedLogger == null) {
+      baseLog(message, params)
+      return
+    }
+
+    switch (level) {
+      case 'info':
+        sharedLogger.info(message, ...params)
+        break
+      case 'warn':
+        sharedLogger.warn(message, ...params)
+        break
+      case 'error':
+        sharedLogger.error(message, ...params)
+        break
+      case 'debug':
+        sharedLogger.debug(message, ...params)
+        break
+      default:
+        throw new Error(`Unknown log level ${level}`)
+    }
+  }
+
   // Confirm that the root hash matches the computed hash of the root link
   {
     const rootHash = graph.root
@@ -72,6 +99,7 @@ export const validate = <A extends Action, C>(
 
   const compositeValidator = composeValidators(validators, customValidators)
   for (const link of Object.values(graph.links)) {
+    log('info', 'link', link)
     const result = compositeValidator(link)
     if (!result.isValid) return result
   }
