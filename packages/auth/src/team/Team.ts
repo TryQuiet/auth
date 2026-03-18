@@ -91,10 +91,7 @@ export class Team extends EventEmitter<TeamEvents> {
     }
     const { device, user } = this.context
 
-    let moduleName = `team:${this.userName}`
-    if (options.sharedLogger == null) {
-      moduleName = `auth:${moduleName}`
-    }
+    const moduleName = `auth:team:${this.userName}`
     this.logger = new Logger({ moduleName, sharedLogger: options.sharedLogger, extendSharedLogger: true })
     this.logger.debug('loading team')
 
