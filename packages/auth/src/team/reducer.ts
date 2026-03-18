@@ -33,6 +33,7 @@ import {
 } from './types.js'
 import { validate } from './validate.js'
 import { setMetadata } from './transforms/setMetadata.js'
+import { Logger } from '@localfirst/shared'
 
 /**
  * Each link has a `type` and a `payload`, just like a Redux action. So we can derive a `TeamState`
@@ -47,19 +48,21 @@ import { setMetadata } from './transforms/setMetadata.js'
  * @param state The team state as of the previous link in the signature chain.
  * @param link The current link being processed.
  */
-export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (state, link) => {
+export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (state, link, extendableLogger) => {
+  const logger = extendableLogger != null ? extendableLogger.extend('reducer') : new Logger({ moduleName: 'auth:reducer' })
   // Invalid links are marked to be discarded by the MembershipResolver due to conflicting
   // concurrent actions. In most cases we just ignore these links and they don't affect state at
   // all; but in some cases we need to clean up, for example when someone's admission is reversed
   // but they already joined and had access to the chain.
   if (link.isInvalid) {
+    logger.warn('Link is invalid', link)
     return invalidLinkReducer(state, link)
   }
 
   state = clone(state)
 
   // Make sure this link can be applied to the previous state & doesn't put us in an invalid state
-  const validation = validate(state, link)
+  const validation = validate(state, link, logger)
   if (!validation.isValid) {
     throw validation.error
   }

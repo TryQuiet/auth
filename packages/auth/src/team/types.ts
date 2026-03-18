@@ -19,7 +19,7 @@ import type { Lockbox } from 'lockbox/index.js'
 import type { PermissionsMap, Role } from 'role/index.js'
 import type { Host, Server } from 'server/index.js'
 import type { ValidationResult } from 'util/index.js'
-import { SharedLogger } from '@localfirst/shared'
+import { Logger, SharedLogger } from '@localfirst/shared'
 
 // ********* MEMBER
 
@@ -331,11 +331,11 @@ export type InvitationMap = Record<string, InvitationState>
 
 // ********* VALIDATION
 
-export type TeamStateValidator = (previousState: TeamState, link: TeamLink) => ValidationResult
+export type TeamStateValidator = (previousState: TeamState, link: TeamLink, extendableLogger: Logger) => ValidationResult
 
 export type TeamStateValidatorSet = Record<string, TeamStateValidator>
 
-export type ValidationArgs = [TeamState, TeamLink]
+export type ValidationArgs = [TeamState, TeamLink, Logger | undefined]
 
 // ********* CRYPTO
 

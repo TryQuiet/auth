@@ -26,8 +26,9 @@ export const receiveMessage = <A extends Action, C>(
   keys: KeysetWithSecrets | Keyring,
 
   decrypt: DecryptFn = decryptGraph,
-  logger?: Logger
+  extendableLogger?: Logger
 ): [Graph<A, C>, SyncState] => {
+  const logger = extendableLogger != null ? extendableLogger.extend('receiveMessage') : new Logger({ moduleName: 'auth:receiveMessage' })
   // if a keyset was provided, wrap it in a keyring
   const keyring = createKeyring(keys)
 

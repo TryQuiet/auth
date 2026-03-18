@@ -74,7 +74,7 @@ export class Store<
       this.graph = deserialize(graph, keys)
     }
 
-    this.logger = logger
+    this.logger = logger != null ? logger.extend('store') : new Logger({ moduleName: 'auth:store' })
     this.context = context
     this.initialState = initialState
     this.reducer = reducer
@@ -159,7 +159,7 @@ export class Store<
     const [head] = getHead(this.graph)
 
     // we don't need to pass the whole graph through the reducer, just the current state + the new head
-    this.state = this.reducer(this.state, head)
+    this.state = this.reducer(this.state, head, this.logger)
 
     // notify listeners
     this.emit('updated', { head: this.graph.head })

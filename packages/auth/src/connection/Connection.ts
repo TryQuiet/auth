@@ -109,8 +109,8 @@ export class Connection extends EventEmitter<ConnectionEvents> {
       sharedLogger = createLogger(loggerModuleName)
     }
 
-    this.#messageQueue = this.#initializeMessageQueue(sendMessage, createLogger, username)
     this.logger = new Logger({ moduleName: loggerModuleName, sharedLogger, extendSharedLogger: false })
+    this.#messageQueue = this.#initializeMessageQueue(sendMessage, this.logger, username)
 
     // On sync server, the server keys act as both user keys and device keys
     const initialContext = isServerContext(context) ? extendServerContext(context) : context
@@ -938,7 +938,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
   #initializeMessageQueue(
     sendMessage: (message: Uint8Array) => void,
-    createLogger?: (name: string) => any,
+    extendableLogger?: Logger,
     username?: string
   ) {
     // To send messages to our peer, we give them to the ordered message queue, which will deliver
@@ -949,7 +949,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
         const serialized = pack(message)
         sendMessage(Uint8Array.from(serialized))
       },
-      createLogger,
+      extendableLogger,
     })
       .on('message', message => {
         this.#logMessage('in', message)
