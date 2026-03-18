@@ -40,6 +40,7 @@ export class Store<
   private readonly reducer: Reducer<S, A, C>
   private readonly resolver: Resolver<A, C>
   private readonly validators?: ValidatorSet
+  private readonly sharedLogger?: any
 
   private keyring: Keyring
 
@@ -56,6 +57,7 @@ export class Store<
     validators,
     resolver = baseResolver,
     keys,
+    sharedLogger,
   }: StoreOptions<S, A, C>) {
     super()
 
@@ -72,6 +74,7 @@ export class Store<
       this.graph = deserialize(graph, keys)
     }
 
+    this.sharedLogger = sharedLogger
     this.context = context
     this.initialState = initialState
     this.reducer = reducer
@@ -191,7 +194,7 @@ export class Store<
       resolver: this.resolver,
       validators: this.validators,
     })
-    this.state = machine(this.graph)
+    this.state = machine(this.graph, this.sharedLogger)
 
     // notify listeners
     this.emit('updated', { head: this.graph.head })

@@ -8,9 +8,9 @@ export const makeMachine = <S, A extends Action, C>({
   resolver,
   validators,
 }: MachineParams<S, A, C>) => {
-  return (graph: Graph<A, C>) => {
+  return (graph: Graph<A, C>, sharedLogger?: any) => {
     // Validate the graph's integrity.
-    validate(graph, validators)
+    validate(graph, validators, sharedLogger)
 
     // Use the filter & sequencer to turn the graph into an ordered sequence
     const sequence = getSequence(graph, resolver)

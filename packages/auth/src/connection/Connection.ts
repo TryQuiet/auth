@@ -265,7 +265,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
             // yet, so we need to get those from the graph. We use the invitation seed to generate
             // the starter keys for the new device. We can use these to unlock a lockbox on the team
             // graph that contains our user keys.
-            getDeviceUserFromGraph({ serializedGraph, teamKeyring, invitationSeed })
+            getDeviceUserFromGraph({ serializedGraph, teamKeyring, invitationSeed, sharedLogger: this.#sharedLogger })
 
           // When admitting us, our peer added our user to the team graph. We've been given the
           // serialized and encrypted graph, and the team keyring. We can now decrypt the graph and
@@ -555,7 +555,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
           // Make sure my invitation exists on the graph of the team I'm about to join. This check
           // prevents an attack in which a fake team pretends to accept my invitation.
-          const state = getTeamState(serializedGraph, teamKeyring)
+          const state = getTeamState(serializedGraph, teamKeyring, this.#sharedLogger)
           const { id } = invitations.generateProof(invitationSeed)
           const result = select.hasInvitation(state, id)
           this.LOG('debug', 'GUARD: does invitation match team?', result)
@@ -568,7 +568,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           const { serializedGraph, teamKeyring } = event.payload
 
           // Make sure we have been added as a member on the chain before joining and adding our device
-          const state = getTeamState(serializedGraph, teamKeyring)
+          const state = getTeamState(serializedGraph, teamKeyring, this.#sharedLogger)
           const result = state.members.filter((member) => {
             return member.userName === (context.ourIdentityClaim as InviteeMemberIdentityClaim)?.userName
           }).length === 1

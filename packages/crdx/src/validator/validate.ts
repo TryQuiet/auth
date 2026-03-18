@@ -18,7 +18,7 @@ export const validate = <A extends Action, C>(
   sharedLogger?: any
 ): ValidationResult => {
   const baseLog = debug.extend('auth:validate')
-  const log = (level: 'info' | 'warn' | 'error' | 'debug', message: any, ...params: any[]) => {
+  const LOG = (level: 'info' | 'warn' | 'error' | 'debug', message: any, ...params: any[]) => {
     if (sharedLogger == null) {
       baseLog(message, params)
       return
@@ -100,7 +100,10 @@ export const validate = <A extends Action, C>(
   const compositeValidator = composeValidators(validators, customValidators)
   for (const link of Object.values(graph.links)) {
     const result = compositeValidator(link)
-    if (!result.isValid) return result
+    if (!result.isValid) {
+      LOG('error', 'Link validation failed with result', result.isValid, result.error)
+      return result
+    }
   }
 
   return VALID

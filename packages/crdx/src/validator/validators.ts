@@ -62,7 +62,7 @@ const _validators: ValidatorSet = {
     // vs clients)
     const now = Date.now()
     if (timestamp > now + TIMESTAMP_FUZZ_FACTOR_MS) {
-      return fail(`The link's timestamp is in the future.`, { link, now })
+      return fail(`The link's timestamp is in the future.`, { link, now, timestamp })
     }
 
     // timestamp can't be earlier than any previous link's timestamp

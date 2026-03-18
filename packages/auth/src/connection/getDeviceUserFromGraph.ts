@@ -17,14 +17,16 @@ export const getDeviceUserFromGraph = ({
   serializedGraph,
   teamKeyring,
   invitationSeed,
+  sharedLogger,
 }: {
   serializedGraph: Uint8Array
   teamKeyring: Keyring
   invitationSeed: string
+  sharedLogger?: any
 }): UserWithSecrets => {
   const starterKeys = generateStarterKeys(invitationSeed)
   const invitationId = generateProof(invitationSeed).id
-  const state = getTeamState(serializedGraph, teamKeyring)
+  const state = getTeamState(serializedGraph, teamKeyring, sharedLogger)
 
   const { userId } = select.getInvitation(state, invitationId)
   assert(userId) // since this is a device invitation the invitation info includes the userId that created it

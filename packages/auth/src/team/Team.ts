@@ -129,6 +129,7 @@ export class Team extends EventEmitter<TeamEvents> {
         initialState,
         rootPayload,
         keys: options.teamKeys,
+        sharedLogger: this.sharedLogger,
       })
 
       const metadata: TeamMetadata = options.metadata ?? {
@@ -145,6 +146,7 @@ export class Team extends EventEmitter<TeamEvents> {
         initialState,
         graph: maybeDeserialize(options.source, options.teamKeyring),
         keys: options.teamKeyring,
+        sharedLogger: this.sharedLogger,
       })
     }
 

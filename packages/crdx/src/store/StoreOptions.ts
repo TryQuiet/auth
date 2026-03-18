@@ -34,4 +34,6 @@ export type StoreOptions<S, A extends Action, C> = {
   rootPayload?: unknown
 
   keys: KeysetWithSecrets | Keyring
+
+  sharedLogger?: any
 }
