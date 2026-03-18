@@ -19,6 +19,7 @@ import type { Lockbox } from 'lockbox/index.js'
 import type { PermissionsMap, Role } from 'role/index.js'
 import type { Host, Server } from 'server/index.js'
 import type { ValidationResult } from 'util/index.js'
+import { SharedLogger } from '@localfirst/shared'
 
 // ********* MEMBER
 
@@ -76,7 +77,7 @@ export type TeamOptions = NewOrExisting & {
   context: LocalContext
 
   /** Logging instance shared with main application */
-  sharedLogger?: any
+  sharedLogger?: SharedLogger
 }
 
 /** Type guard for NewTeamOptions vs ExistingTeamOptions  */

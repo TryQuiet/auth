@@ -1,3 +1,4 @@
+import { Logger } from '@localfirst/shared'
 import { type Reducer } from './types.js'
 import { type Action, getSequence, type Graph, type Resolver } from 'graph/index.js'
 import { validate, type ValidatorSet } from 'validator/index.js'
@@ -8,9 +9,9 @@ export const makeMachine = <S, A extends Action, C>({
   resolver,
   validators,
 }: MachineParams<S, A, C>) => {
-  return (graph: Graph<A, C>, sharedLogger?: any) => {
+  return (graph: Graph<A, C>, logger?: Logger) => {
     // Validate the graph's integrity.
-    validate(graph, validators, sharedLogger)
+    validate(graph, validators, logger)
 
     // Use the filter & sequencer to turn the graph into an ordered sequence
     const sequence = getSequence(graph, resolver)

@@ -1,3 +1,4 @@
+import { Logger } from '@localfirst/shared'
 import { type Reducer } from './types.js'
 import { type Action, type Graph, type Resolver } from 'graph/index.js'
 import { type Keyring, type KeysetWithSecrets } from 'keyset/index.js'
@@ -35,5 +36,5 @@ export type StoreOptions<S, A extends Action, C> = {
 
   keys: KeysetWithSecrets | Keyring
 
-  sharedLogger?: any
+  logger?: Logger
 }
