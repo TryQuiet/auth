@@ -53,6 +53,9 @@ export type ConnectionEvents = {
   disconnected: (event: ConnectionMessage) => void
 
   sync: ({ team, user }: { team: Team; user: UserWithSecrets }) => void
+
+  /** Identities have been validated on both ends of the connection and the connection is encrypted */
+  connectionSecured: () => void
 }
 
 // IDENTITY CLAIMS

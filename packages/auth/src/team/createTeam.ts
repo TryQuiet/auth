@@ -4,8 +4,10 @@ import { type LocalContext } from 'team/context.js'
 import { Team } from 'team/Team.js'
 import { TeamMetadata } from './index.js'
 
-export function createTeam(teamName: string, context: LocalContext, seed?: string, metadata?: TeamMetadata) {
+export function createTeam(teamName: string, context: LocalContext, seed?: string, metadata?: TeamMetadata, sharedLogger?: any) {
   const teamKeys = createKeyset(TEAM_SCOPE, seed)
-
-  return new Team({ teamName, context, teamKeys, metadata: metadata ?? { selfAssignableRoles: [] } })
+  const defaultMetadata: TeamMetadata = {
+    selfAssignableRoles: []
+  }
+  return new Team({ teamName, context, teamKeys, metadata: metadata ?? defaultMetadata, sharedLogger })
 }

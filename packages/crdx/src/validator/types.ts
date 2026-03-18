@@ -24,7 +24,7 @@ export type ValidationResult = ValidResult | InvalidResult
 
 export type Validator = <A extends Action, C>(
   link: Link<A, C>,
-  graph: Graph<A, C>
+  graph: Graph<A, C>,
 ) => ValidationResult
 
 export type ValidatorSet = Record<string, Validator>

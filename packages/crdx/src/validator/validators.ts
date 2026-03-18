@@ -1,6 +1,6 @@
 ﻿import { memoize } from '@localfirst/shared'
 import { hash } from '@localfirst/crypto'
-import { ROOT, VALID } from 'constants.js'
+import { ROOT, TIMESTAMP_FUZZ_FACTOR_MS, VALID } from 'constants.js'
 import { getRoot } from 'graph/getRoot.js'
 import { hashEncryptedLink } from 'graph/hashLink.js'
 import type { Graph, Link } from 'index.js'
@@ -57,15 +57,21 @@ const _validators: ValidatorSet = {
     const { timestamp } = link.body
 
     // timestamp can't be in the future
+    // NOTE FROM ISLA: we are allowing a small bit of wiggle room for link timestamps to be ahead of
+    // our clock to account for slight mismatches in system clocks across systems (particularly QSS
+    // vs clients)
     const now = Date.now()
-    if (timestamp > now) {
+    if (timestamp > now + TIMESTAMP_FUZZ_FACTOR_MS) {
       return fail(`The link's timestamp is in the future.`, { link, now })
     }
 
     // timestamp can't be earlier than any previous link's timestamp
+    // NOTE FROM ISLA: we are allowing a small bit of wiggle room for link timestamps to be ahead of
+    // their prececessor(s) to account for slight mismatches in system clocks across systems 
+    // (particularly QSS vs clients)
     for (const hash of link.body.prev) {
       const prevLink = graph.links[hash]
-      if (prevLink.body.timestamp > timestamp)
+      if (prevLink.body.timestamp - TIMESTAMP_FUZZ_FACTOR_MS > timestamp)
         return fail(`This link's timestamp can't be earlier than a previous link.`, {
           link,
           prevLink,

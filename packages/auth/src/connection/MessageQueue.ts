@@ -88,7 +88,7 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
 
   #processOutbound() {
     // send outbound messages in order
-    this.#LOG('info', 'processOutbound')
+    this.#LOG('debug', 'processOutbound')
     while (this.#outbound[this.#nextOutbound]) {
       const message = this.#outbound[this.#nextOutbound]
       this.#sendMessage(message)
@@ -99,7 +99,7 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
    * Receives any messages that are pending in the inbound queue, and requests any missing messages.
    */
   #processInbound() {
-    this.#LOG('info', 'processInbound')
+    this.#LOG('debug', 'processInbound')
     // emit received messages in order
     while (this.#inbound[this.#nextInbound]) {
       const message = this.#inbound[this.#nextInbound]
@@ -122,7 +122,7 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
     }
   }
 
-  #LOG(level: 'info' | 'warn' | 'error', message: string, ...params: any[]) {
+  #LOG(level: 'info' | 'warn' | 'error' | 'debug', message: string, ...params: any[]) {
     if (this.#sharedLogger == null) {
       log(message, params)
       return
@@ -137,6 +137,9 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
         break
       case 'error':
         this.#sharedLogger.error(message, ...params)
+        break
+      case 'debug':
+        this.#sharedLogger.debug(message, ...params)
         break
       default:
         throw new Error(`Unknown log level ${level}`)

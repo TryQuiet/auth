@@ -229,6 +229,24 @@ describe('graphs', () => {
 
         expect(validate(graph2)).not.toBeValid()
       })
+
+      test(`timestamp in the future but within fuzz factor`, () => {
+        const now = Date.now()
+        const SLIGHTLY_IN_THE_FUTURE = now + 50
+        const graph = setupGraph()
+
+        // 🦹‍♀️ Eve sets her system clock forward when appending a link
+        setSystemTime(SLIGHTLY_IN_THE_FUTURE)
+        const graph2 = append({
+          graph,
+          action: { type: 'FOO', payload: 'pizza' },
+          user: eve,
+          keys,
+        })
+        setSystemTime(now)
+
+        expect(validate(graph2)).toBeValid()
+      })
     })
   })
 })
