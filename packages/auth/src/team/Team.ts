@@ -66,7 +66,7 @@ export class Team extends EventEmitter<TeamEvents> {
   private readonly store: Store<TeamState, TeamAction>
   private readonly context: LocalUserContext
   private readonly seed: string
-  private readonly logger: Logger
+  private logger: Logger
 
   /**
    * We can make a team instance either by creating a brand-new team, or restoring one from a stored graph.
@@ -91,12 +91,16 @@ export class Team extends EventEmitter<TeamEvents> {
     }
     const { device, user } = this.context
 
-    this.logger = new Logger({ moduleName: `auth:team:${this.userName}`, sharedLogger: options.sharedLogger, extendSharedLogger: true })
+    let moduleName = `team:${this.userName}`
+    if (options.sharedLogger == null) {
+      moduleName = `auth:${moduleName}`
+    }
+    this.logger = new Logger({ moduleName, sharedLogger: options.sharedLogger, extendSharedLogger: true })
     this.logger.debug('loading team')
 
     // Initialize a CRDX store for the team
     if (isNewTeam(options)) {
-      this.logger.debug('creating new team')
+      this.logger.debug('creating new team', options.teamName)
       // Create a new team with the current user as founding member
 
       assert(!this.isServer, `Servers can't create teams`)
@@ -128,13 +132,13 @@ export class Team extends EventEmitter<TeamEvents> {
         rootPayload,
         keys: options.teamKeys,
         logger: this.logger,
-      })
-
+      })      
       const metadata: TeamMetadata = options.metadata ?? {
         selfAssignableRoles: []
       }
       this.dispatch({ type: 'SET_METADATA', payload: { metadata }}, options.teamKeys)
     } else {
+      this.logger.debug('loading existing team')
       // Rehydrate a team from an existing graph
       // Create CRDX store
       this.store = createStore({
@@ -149,6 +153,8 @@ export class Team extends EventEmitter<TeamEvents> {
     }
 
     this.state = this.store.getState()
+    this.logger = this.logger.extend(this.id)
+    this.logger.debug('team loaded')
 
     // Wire up event listeners
     this.on('updated', () => {
