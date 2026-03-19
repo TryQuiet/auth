@@ -25,7 +25,11 @@ const _validators: ValidatorSet = {
     for (const hash of link.body.prev)
       if (!(hash in graph.links))
         return fail(
-          `The link referenced by one of the hashes in the \`prev\` property does not exist.`
+          `The link referenced by one of the hashes in the \`prev\` property does not exist.`,
+          {
+            hash,
+            linkHashes: Object.keys(graph.links),
+          }
         )
 
     return VALID
@@ -48,7 +52,7 @@ const _validators: ValidatorSet = {
         hasNoPrevLink
         ? `Non-ROOT links must have predecessors` // not ROOT but has no prev link
         : 'The link referenced by the graph `root` property must be a ROOT link' // not ROOT but is the graph root
-    return fail(message, { link, graph })
+    return fail(message, { link, graph, hash: link.hash })
   },
 
   /** Sanity check on timestamps: They can't be in the future, relative to the current time on this
@@ -62,7 +66,7 @@ const _validators: ValidatorSet = {
     // vs clients)
     const now = Date.now()
     if (timestamp > now + TIMESTAMP_FUZZ_FACTOR_MS) {
-      return fail(`The link's timestamp is in the future.`, { link, now, timestamp })
+      return fail(`The link's timestamp is in the future.`, { link, hash: link.hash, now, timestamp })
     }
 
     // timestamp can't be earlier than any previous link's timestamp
@@ -75,6 +79,10 @@ const _validators: ValidatorSet = {
         return fail(`This link's timestamp can't be earlier than a previous link.`, {
           link,
           prevLink,
+          hash: link.hash,
+          prevHash: prevLink.hash,
+          prevTimestamp: prevLink.body.timestamp,
+          timestamp: link.body.timestamp
         })
     }
 
