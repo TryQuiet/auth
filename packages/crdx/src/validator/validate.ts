@@ -78,7 +78,7 @@ export const validate = <A extends Action, C>(
   for (const link of Object.values(graph.links)) {
     const result = compositeValidator(link)
     if (!result.isValid) {
-      logger.error('Link validation failed with result', result.isValid, result.error)
+      logger.error('Link validation failed with result', result.isValid, result.error, result.error.details ?? {})
       return result
     }
   }
