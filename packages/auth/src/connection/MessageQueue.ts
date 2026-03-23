@@ -1,5 +1,5 @@
 import { EventEmitter } from '@herbcaudill/eventemitter42'
-import { debug } from '@localfirst/shared'
+import { debug, Logger } from '@localfirst/shared'
 
 const log = debug.extend('message-queue')
 /**
@@ -19,18 +19,16 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
   #outbound: Record<number, NumberedMessage<T>> = {}
   #nextOutbound = 0
   readonly #sendMessage: (message: NumberedMessage<T>) => void
-  #sharedLogger: any | undefined
+  private readonly logger: Logger
 
-  constructor({ sendMessage, timeout = 1000, createLogger = undefined }: Options<T>) {
+  constructor({ sendMessage, timeout = 1000, extendableLogger = undefined }: Options<T>) {
     super()
     this.#sendMessage = (message: NumberedMessage<T>) => {
       this.#nextOutbound = message.index + 1
       sendMessage(message)
     }
     this.#timeout = timeout
-    if (createLogger != null) {
-      this.#sharedLogger = createLogger('message-queue')
-    }
+    this.logger = extendableLogger != null ? extendableLogger.extend('message-queue') : new Logger({ moduleName: 'auth:message-queue' })
   }
 
   /**
@@ -88,7 +86,7 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
 
   #processOutbound() {
     // send outbound messages in order
-    this.#LOG('debug', 'processOutbound')
+    this.logger.debug('processOutbound')
     while (this.#outbound[this.#nextOutbound]) {
       const message = this.#outbound[this.#nextOutbound]
       this.#sendMessage(message)
@@ -99,7 +97,7 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
    * Receives any messages that are pending in the inbound queue, and requests any missing messages.
    */
   #processInbound() {
-    this.#LOG('debug', 'processInbound')
+    this.logger.debug('processInbound')
     // emit received messages in order
     while (this.#inbound[this.#nextInbound]) {
       const message = this.#inbound[this.#nextInbound]
@@ -119,30 +117,6 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
         // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
         delete this.#waiting[i]
       }, this.#timeout)
-    }
-  }
-
-  #LOG(level: 'info' | 'warn' | 'error' | 'debug', message: string, ...params: any[]) {
-    if (this.#sharedLogger == null) {
-      log(message, params)
-      return
-    }
-
-    switch (level) {
-      case 'info':
-        this.#sharedLogger.info(message, ...params)
-        break
-      case 'warn':
-        this.#sharedLogger.warn(message, ...params)
-        break
-      case 'error':
-        this.#sharedLogger.error(message, ...params)
-        break
-      case 'debug':
-        this.#sharedLogger.debug(message, ...params)
-        break
-      default:
-        throw new Error(`Unknown log level ${level}`)
     }
   }
 
@@ -207,7 +181,7 @@ type Options<T> = {
   /** Time to wait (in ms) before requesting a missing message */
   timeout?: number
 
-  createLogger?: (name: string) => any
+  extendableLogger?: Logger
   username?: string
 }
 

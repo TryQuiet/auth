@@ -1,4 +1,4 @@
-﻿import { assert, debug } from '@localfirst/shared'
+﻿import { assert, debug, Logger } from '@localfirst/shared'
 import { type ValidationResult, type ValidatorSet } from './types.js'
 import { fail, validators } from './validators.js'
 import { VALID } from 'constants.js'
@@ -15,32 +15,9 @@ export const validate = <A extends Action, C>(
 
   /** Any additional validators (besides the base validators that test the graph's integrity) */
   customValidators: ValidatorSet = {},
-  sharedLogger?: any
+  extendableLogger?: Logger
 ): ValidationResult => {
-  const baseLog = debug.extend('auth:validate')
-  const log = (level: 'info' | 'warn' | 'error' | 'debug', message: any, ...params: any[]) => {
-    if (sharedLogger == null) {
-      baseLog(message, params)
-      return
-    }
-
-    switch (level) {
-      case 'info':
-        sharedLogger.info(message, ...params)
-        break
-      case 'warn':
-        sharedLogger.warn(message, ...params)
-        break
-      case 'error':
-        sharedLogger.error(message, ...params)
-        break
-      case 'debug':
-        sharedLogger.debug(message, ...params)
-        break
-      default:
-        throw new Error(`Unknown log level ${level}`)
-    }
-  }
+  const logger = extendableLogger != null ? extendableLogger.extend('validate') : new Logger({ moduleName: 'auth:validate' })
 
   // Confirm that the root hash matches the computed hash of the root link
   {
@@ -100,7 +77,10 @@ export const validate = <A extends Action, C>(
   const compositeValidator = composeValidators(validators, customValidators)
   for (const link of Object.values(graph.links)) {
     const result = compositeValidator(link)
-    if (!result.isValid) return result
+    if (!result.isValid) {
+      logger.error('Link validation failed with result', result.isValid, result.error, result.error.details ?? {})
+      return result
+    }
   }
 
   return VALID

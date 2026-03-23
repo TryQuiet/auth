@@ -1,4 +1,4 @@
-import { debug, truncateHashes } from '@localfirst/shared'
+import { debug, Logger, truncateHashes } from '@localfirst/shared'
 import { ROOT } from '@localfirst/crdx'
 import { invitationCanBeUsed } from 'invitation/index.js'
 import { VALID, ValidationError, actionFingerprint } from 'util/index.js'
@@ -12,12 +12,12 @@ import {
   type ValidationArgs,
 } from './types.js'
 
-const log = debug.extend('auth:validate')
-
-export const validate: TeamStateValidator = (...args: ValidationArgs) => {
+export const validate: TeamStateValidator = (previousState: TeamState, link: TeamLink, extendableLogger?: Logger) => {
+  const logger = extendableLogger != null ? extendableLogger.extend('validate') : new Logger({ moduleName: 'auth:validate' })
+  logger.debug('Validating link')
   for (const key in validators) {
     const validator = validators[key]
-    const validation = validator(...args)
+    const validation = validator(previousState, link, logger)
     if (!validation.isValid) {
       return validation
     }
@@ -27,22 +27,22 @@ export const validate: TeamStateValidator = (...args: ValidationArgs) => {
 }
 
 const validators: TeamStateValidatorSet = {
-  rootDeviceBelongsToRootUser(...args) {
-    const [_previousState, link] = args
+  rootDeviceBelongsToRootUser(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('rootDeviceBelongsToRootUser')
     const { type, payload } = link.body
     if (type !== 'ROOT') return VALID
 
     const { rootDevice, rootMember } = payload
     if (rootDevice.userId !== rootMember.userId) {
       const msg = 'The founding device must belong to the founding member (userIds must match).'
-      return fail(msg, ...args)
+      return fail(msg, previousState, link, logger)
     }
     return VALID
   },
 
   /** The user who made these changes was a member with appropriate rights at the time */
-  mustBeAdmin(...args) {
-    const [previousState, link] = args
+  mustBeAdmin(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('mustBeAdmin')
     const action = link.body
     const { type, userId } = action
 
@@ -53,15 +53,15 @@ const validators: TeamStateValidatorSet = {
     if (isAdminOnlyAction(action)) {
       const isntAdmin = !select.memberIsAdmin(previousState, userId)
       if (isntAdmin) {
-        return fail(`Member '${userId}' is not an admin`, ...args)
+        return fail(`Member '${userId}' is not an admin`, previousState, link, logger)
       }
     }
     return VALID
   },
 
   /** Unless I'm an admin, I can't remove anyone's devices but my own */
-  canOnlyRemoveYourOwnDevices(...args) {
-    const [previousState, link] = args
+  canOnlyRemoveYourOwnDevices(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('canOnlyRemoveYourOwnDevices')
     const author = link.body.userId
 
     // Only admins can remove another user's devices
@@ -73,15 +73,15 @@ const validators: TeamStateValidatorSet = {
       const device = select.device(previousState, target)
       const deviceOwner = device.userId
       if (author !== deviceOwner) {
-        return fail("Can't remove another user's device.", ...args)
+        return fail("Can't remove another user's device.", previousState, link, logger)
       }
     }
     return VALID
   },
 
   /** Unless I'm an admin, I can't change anyone's keys but my own */
-  canOnlyChangeYourOwnKeys(...args) {
-    const [previousState, link] = args
+  canOnlyChangeYourOwnKeys(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('canOnlyChangeYourOwnKeys')
     const author = link.body.userId
 
     // Only admins can change another user's keys
@@ -90,12 +90,12 @@ const validators: TeamStateValidatorSet = {
       if (link.body.type === 'CHANGE_MEMBER_KEYS') {
         const target = link.body.payload.keys.name
         if (author !== target) {
-          return fail("Can't change another user's keys.", ...args)
+          return fail("Can't change another user's keys.", previousState, link, logger)
         }
       } else if (link.body.type === 'CHANGE_SERVER_KEYS') {
         const target = link.body.payload.keys.name
         if (author !== target) {
-          return fail("Can't change another server's keys.", ...args)
+          return fail("Can't change another server's keys.", previousState, link, logger)
         }
       }
     }
@@ -103,8 +103,8 @@ const validators: TeamStateValidatorSet = {
   },
 
   /** Check for ADMIT with invitations that are revoked OR have been used more than maxUses OR are expired */
-  cantAdmitWithInvalidInvitation(...args) {
-    const [previousState, link] = args
+  cantAdmitWithInvalidInvitation(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('cantAdmitWithInvalidInvitation')
     if (link.body.type === 'ADMIT_MEMBER' || link.body.type === 'ADMIT_DEVICE') {
       const { id } = link.body.payload
       const invitation = select.getInvitation(previousState, id)
@@ -114,8 +114,8 @@ const validators: TeamStateValidatorSet = {
   },
 
   /** Check for self-assigned roles that aren't in the allowed list set by the admin */
-  canOnlySelfAddCertainRoles(...args) {
-    const [previousState, link] = args
+  canOnlySelfAddCertainRoles(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('canOnlySelfAddCertainRoles')
     if (link.body.type === 'ADD_MEMBER_ROLE') {
       const { userId: assigningUserId } = link.body
       const { userId, roleName } = link.body.payload
@@ -130,15 +130,16 @@ const validators: TeamStateValidatorSet = {
       if (role.createdBy === assigningUserId) {
         return VALID
       } 
-      return fail(`User ${userId} attempted to self-assign role ${roleName} illegally`, ...args)
+      return fail(`User ${userId} attempted to self-assign role ${roleName} illegally`, previousState, link, logger)
     }
     return VALID
   },
 }
 
-const fail = (message: string, previousState: TeamState, link: TeamLink) => {
+const fail = (message: string, previousState: TeamState, link: TeamLink, extendableLogger: Logger) => {
+  const logger = extendableLogger.extend('fail')
   message = truncateHashes(`${actionFingerprint(link)} ${message}`)
-  log(message)
+  logger.error(message, link.hash)
   return {
     isValid: false,
     error: new ValidationError(message, { prevState: previousState, link }),

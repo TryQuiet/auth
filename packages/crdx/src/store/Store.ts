@@ -1,5 +1,5 @@
 import { EventEmitter } from '@herbcaudill/eventemitter42'
-import { assert } from '@localfirst/shared'
+import { assert, Logger } from '@localfirst/shared'
 import {
   append,
   baseResolver,
@@ -40,6 +40,7 @@ export class Store<
   private readonly reducer: Reducer<S, A, C>
   private readonly resolver: Resolver<A, C>
   private readonly validators?: ValidatorSet
+  private readonly logger?: Logger
 
   private keyring: Keyring
 
@@ -56,6 +57,7 @@ export class Store<
     validators,
     resolver = baseResolver,
     keys,
+    logger,
   }: StoreOptions<S, A, C>) {
     super()
 
@@ -72,6 +74,7 @@ export class Store<
       this.graph = deserialize(graph, keys)
     }
 
+    this.logger = logger != null ? logger.extend('store') : new Logger({ moduleName: 'auth:store' })
     this.context = context
     this.initialState = initialState
     this.reducer = reducer
@@ -156,7 +159,7 @@ export class Store<
     const [head] = getHead(this.graph)
 
     // we don't need to pass the whole graph through the reducer, just the current state + the new head
-    this.state = this.reducer(this.state, head)
+    this.state = this.reducer(this.state, head, this.logger)
 
     // notify listeners
     this.emit('updated', { head: this.graph.head })
@@ -191,7 +194,7 @@ export class Store<
       resolver: this.resolver,
       validators: this.validators,
     })
-    this.state = machine(this.graph)
+    this.state = machine(this.graph, this.logger)
 
     // notify listeners
     this.emit('updated', { head: this.graph.head })
