@@ -19,7 +19,7 @@ import {
   redactKeys,
 } from '@localfirst/crdx'
 import { randomKey, signatures, symmetric, type Base58 } from '@localfirst/crypto'
-import { assert, debug } from '@localfirst/shared'
+import { assert, debug, Logger } from '@localfirst/shared'
 import * as identity from 'connection/identity.js'
 import { type Challenge } from 'connection/types.js'
 import * as devices from 'device/index.js'
@@ -65,9 +65,8 @@ export class Team extends EventEmitter<TeamEvents> {
 
   private readonly store: Store<TeamState, TeamAction>
   private readonly context: LocalUserContext
-  private readonly log: (o: any, ...args: any[]) => void
   private readonly seed: string
-  private readonly sharedLogger: any | undefined
+  private logger: Logger
 
   /**
    * We can make a team instance either by creating a brand-new team, or restoring one from a stored graph.
@@ -77,7 +76,6 @@ export class Team extends EventEmitter<TeamEvents> {
 
     // ignore coverage
     this.seed = options.seed ?? randomKey()
-    this.sharedLogger = options.sharedLogger
 
     if ('user' in options.context) {
       this.context = options.context
@@ -93,12 +91,13 @@ export class Team extends EventEmitter<TeamEvents> {
     }
     const { device, user } = this.context
 
-    this.log = debug.extend(`auth:team:${this.userName}`)
-    this.LOG('debug', 'loading team')
+    const moduleName = `auth:team:${this.userName}`
+    this.logger = new Logger({ moduleName, sharedLogger: options.sharedLogger, extendSharedLogger: true })
+    this.logger.debug('loading team')
 
     // Initialize a CRDX store for the team
     if (isNewTeam(options)) {
-      this.LOG('debug', 'creating new team')
+      this.logger.debug('creating new team', options.teamName)
       // Create a new team with the current user as founding member
 
       assert(!this.isServer, `Servers can't create teams`)
@@ -129,13 +128,14 @@ export class Team extends EventEmitter<TeamEvents> {
         initialState,
         rootPayload,
         keys: options.teamKeys,
-      })
-
+        logger: this.logger,
+      })      
       const metadata: TeamMetadata = options.metadata ?? {
         selfAssignableRoles: []
       }
       this.dispatch({ type: 'SET_METADATA', payload: { metadata }}, options.teamKeys)
     } else {
+      this.logger.debug('loading existing team')
       // Rehydrate a team from an existing graph
       // Create CRDX store
       this.store = createStore({
@@ -145,40 +145,19 @@ export class Team extends EventEmitter<TeamEvents> {
         initialState,
         graph: maybeDeserialize(options.source, options.teamKeyring),
         keys: options.teamKeyring,
+        logger: this.logger,
       })
     }
 
     this.state = this.store.getState()
+    this.logger = this.logger.extend(this.id)
+    this.logger.debug('team loaded')
 
     // Wire up event listeners
     this.on('updated', () => {
       // If we're admin, check for pending key rotations
       this.checkForPendingKeyRotations()
     })
-  }
-
-  private LOG = (level: 'info' | 'warn' | 'error' | 'debug', message: any, ...params: any[]) => {
-    if (this.sharedLogger == null) {
-      this.log(message, params)
-      return
-    }
-
-    switch (level) {
-      case 'info':
-        this.sharedLogger.info(message, ...params)
-        break
-      case 'warn':
-        this.sharedLogger.warn(message, ...params)
-        break
-      case 'error':
-        this.sharedLogger.error(message, ...params)
-        break
-      case 'debug':
-        this.sharedLogger.debug(message, ...params)
-        break
-      default:
-        throw new Error(`Unknown log level ${level}`)
-    }
   }
 
   /** ************** PUBLIC API */
@@ -656,14 +635,14 @@ export class Team extends EventEmitter<TeamEvents> {
   /** Once the new member has received the graph and can instantiate the team, they call this to add their device. */
   public join = (teamKeyring: Keyring) => {
     assert(!this.isServer, "Can't join as member on server")
-    this.LOG('debug', 'joining pre-existing team')
+    this.logger.debug('joining pre-existing team')
 
     const { user, device } = this.context
     const teamKeys = getLatestGeneration(teamKeyring)
 
     const lockboxUserKeysForDevice = lockbox.create(user.keys, device.keys)
 
-    this.LOG('debug', 'Adding device on join')
+    this.logger.debug('Adding device on join')
     this.dispatch(
       {
         type: 'ADD_DEVICE',

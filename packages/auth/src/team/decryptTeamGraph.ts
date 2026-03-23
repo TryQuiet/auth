@@ -16,6 +16,7 @@ import {
   type TeamLink,
   type TeamState,
 } from './types.js'
+import { Logger } from '@localfirst/shared'
 
 /**
  * Decrypts a graph.
@@ -31,6 +32,7 @@ export const decryptTeamGraph = ({
   encryptedGraph,
   teamKeys,
   deviceKeys,
+  extendableLogger,
 }: {
   encryptedGraph: MaybePartlyDecryptedGraph<TeamAction, TeamContext>
 
@@ -45,7 +47,10 @@ export const decryptTeamGraph = ({
    * rotated.
    */
   deviceKeys: KeysetWithSecrets
+
+  extendableLogger?: Logger
 }): TeamGraph => {
+  const logger = extendableLogger != null ? extendableLogger.extend('decryptTeamGraph') : new Logger({ moduleName: 'auth:decryptTeamGraph' })
   const keyring = createKeyring(teamKeys)
 
   const { encryptedLinks, childMap, root } = encryptedGraph
@@ -70,7 +75,7 @@ export const decryptTeamGraph = ({
     }
 
     // Reduce & see if there are new team keys
-    const newState = reducer(previousState, decryptedLink)
+    const newState = reducer(previousState, decryptedLink, logger)
     let newKeys: KeysetWithSecrets | undefined
     try {
       newKeys = keys(newState, deviceKeys, TEAM_SCOPE)

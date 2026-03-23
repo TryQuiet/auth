@@ -1,4 +1,4 @@
-import { assert } from '@localfirst/shared'
+import { assert, Logger } from '@localfirst/shared'
 import { decryptGraph, type DecryptFn } from 'graph/decrypt.js'
 import { getChildMap, invertLinkMap, merge, type Action, type Graph } from 'graph/index.js'
 import { createKeyring, type Keyring, type KeysetWithSecrets } from 'keyset/index.js'
@@ -26,8 +26,9 @@ export const receiveMessage = <A extends Action, C>(
   keys: KeysetWithSecrets | Keyring,
 
   decrypt: DecryptFn = decryptGraph,
-  sharedLogger?: any
+  extendableLogger?: Logger
 ): [Graph<A, C>, SyncState] => {
+  const logger = extendableLogger != null ? extendableLogger.extend('receiveMessage') : new Logger({ moduleName: 'auth:receiveMessage' })
   // if a keyset was provided, wrap it in a keyring
   const keyring = createKeyring(keys)
 
@@ -71,7 +72,7 @@ export const receiveMessage = <A extends Action, C>(
     const mergedGraph = merge(graph, theirGraph)
 
     // check the integrity of the merged graph
-    const validation = validate(mergedGraph, undefined, sharedLogger)
+    const validation = validate(mergedGraph, undefined, logger)
     if (validation.isValid) {
       graph = mergedGraph
     } else {
