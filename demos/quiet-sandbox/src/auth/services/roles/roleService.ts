@@ -22,7 +22,8 @@ class RoleService extends BaseChainService {
 
     const input: AddRoleInput = {
       roleName,
-      permissions
+      permissions,
+      subRoles: [],
     }
 
     this.sigChain.team.addRole(input)

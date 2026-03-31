@@ -334,7 +334,7 @@ export class Team extends EventEmitter<TeamEvents> {
   public addRole = (input: AddRoleInput | string) => {
     let role: Role
     if (typeof input === 'string') {
-      role = { roleName: input, createdBy: this.userId }
+      role = { roleName: input, createdBy: this.userId, subRoles: [] }
     } else {
       role = {
         ...input,
@@ -389,6 +389,25 @@ export class Team extends EventEmitter<TeamEvents> {
 
     // Post the member role to the graph
     this._dispatchAddMemberRole(userId, roleName, lockboxRoleKeysForMember)
+  }
+
+  /** Dispatch the add sub role action */
+  private _dispatchAddSubRole(parentRoleName: string, roleName: string, lockboxes: lockbox.Lockbox[]) {
+    this.dispatch({
+      type: 'ADD_SUB_ROLE',
+      payload: { parentRoleName, roleName, lockboxes },
+    })
+  }
+
+  /** Give another role a role */
+  public addSubRoleToRole = (parentRoleName: string, roleName: string) => {
+    // Make a lockbox for the role
+    const parentRoleKeys = this.roleKeys(parentRoleName)
+    const allGenKeys = this.roleKeysAllGenerations(roleName)
+    const lockboxRoleKeysForParentRole = allGenKeys.map(roleKeys => lockbox.create(roleKeys, parentRoleKeys))
+
+    // Post the sub role to the graph
+    this._dispatchAddSubRole(parentRoleName, roleName, lockboxRoleKeysForParentRole)
   }
 
   /** Give yourself a role */

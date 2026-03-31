@@ -136,6 +136,15 @@ export type AddMemberRoleAction = {
   }
 }
 
+export type AddSubRoleAction = {
+  type: 'ADD_SUB_ROLE'
+  payload: BasePayload & {
+    parentRoleName: string
+    roleName: string
+    permissions?: PermissionsMap
+  }
+}
+
 export type RemoveMemberRoleAction = {
   type: 'REMOVE_MEMBER_ROLE'
   payload: BasePayload & {
@@ -265,6 +274,7 @@ export type TeamAction =
   | AddDeviceAction
   | AddRoleAction
   | AddMemberRoleAction
+  | AddSubRoleAction
   | RemoveMemberAction
   | RemoveDeviceAction
   | RemoveRoleAction

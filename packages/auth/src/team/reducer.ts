@@ -34,6 +34,7 @@ import {
 import { validate } from './validate.js'
 import { setMetadata } from './transforms/setMetadata.js'
 import { Logger } from '@localfirst/shared'
+import { addSubRoles } from './transforms/addSubRoles.js'
 
 /**
  * Each link has a `type` and a `payload`, just like a Redux action. So we can derive a `TeamState`
@@ -92,7 +93,7 @@ const getTransforms = (action: TeamAction): Transform[] => {
       const { name, rootMember, rootDevice } = action.payload
       return [
         setTeamName(name),
-        addRole({ roleName: ADMIN, createdBy: action.payload.rootMember.userId }), // Create the admin role
+        addRole({ roleName: ADMIN, createdBy: action.payload.rootMember.userId, subRoles: [] }), // Create the admin role
         addMember(rootMember), // Add the founding member
         addDevice(rootDevice), // Add the founding member's device
         ...addMemberRoles(rootMember.userId, [ADMIN]), // Make the founding member an admin
@@ -118,6 +119,13 @@ const getTransforms = (action: TeamAction): Transform[] => {
       const { userId, roleName } = action.payload
       return [
         ...addMemberRoles(userId, [roleName]), // Add this role to the member's list of roles
+      ]
+    }
+
+    case 'ADD_SUB_ROLE': {
+      const { parentRoleName, roleName } = action.payload
+      return [
+        addSubRoles(parentRoleName, [roleName]), // Add this role to the parent role's list of sub roles
       ]
     }
 

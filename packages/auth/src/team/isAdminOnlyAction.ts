@@ -11,6 +11,7 @@ export const isAdminOnlyAction = (action: TeamLinkBody) => {
     'ADMIT_MEMBER',
     'ADMIT_DEVICE',
     'ADD_MEMBER_ROLE',
+    'ADD_SUB_ROLE',
     'ADD_ROLE',
     'SET_METADATA',
   ]
