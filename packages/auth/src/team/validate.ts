@@ -1,4 +1,4 @@
-import { debug, Logger, truncateHashes } from '@localfirst/shared'
+import { Logger, truncateHashes } from '@localfirst/shared'
 import { ROOT } from '@localfirst/crdx'
 import { invitationCanBeUsed } from 'invitation/index.js'
 import { VALID, ValidationError, actionFingerprint } from 'util/index.js'
@@ -9,9 +9,8 @@ import {
   type TeamState,
   type TeamStateValidator,
   type TeamStateValidatorSet,
-  type ValidationArgs,
 } from './types.js'
-import { RolePermissions } from 'role/types.js'
+import { RolePermissions } from 'role/constants.js'
 
 export const validate: TeamStateValidator = (previousState: TeamState, link: TeamLink, extendableLogger?: Logger) => {
   const logger = extendableLogger != null ? extendableLogger.extend('validate') : new Logger({ moduleName: 'auth:validate' })
