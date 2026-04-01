@@ -11,6 +11,7 @@ import {
   type TeamStateValidatorSet,
   type ValidationArgs,
 } from './types.js'
+import { RolePermissions } from 'role/types.js'
 
 export const validate: TeamStateValidator = (previousState: TeamState, link: TeamLink, extendableLogger?: Logger) => {
   const logger = extendableLogger != null ? extendableLogger.extend('validate') : new Logger({ moduleName: 'auth:validate' })
@@ -131,6 +132,55 @@ const validators: TeamStateValidatorSet = {
         return VALID
       } 
       return fail(`User ${userId} attempted to self-assign role ${roleName} illegally`, previousState, link, logger)
+    }
+    return VALID
+  },
+
+  /** Check for sub roles that are already on the parent role */
+  cantReaddSubRoles(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('cantReadSubRoles')
+    if (link.body.type === 'ADD_SUB_ROLE') {
+      const { parentRoleName, roleName } = link.body.payload
+      const parentRole = select.role(previousState, parentRoleName)
+      if (!parentRole.subRoles.includes(roleName)) {
+        return VALID
+      }
+      return fail(`Role ${parentRoleName} already has ${roleName} as sub role`, previousState, link, logger)
+    }
+    return VALID
+  },
+
+  /** Check for sub roles that would create circular role dependencies */
+  cantAddCircularSubRoles(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('cantAddCircularSubRoles')
+    if (link.body.type === 'ADD_SUB_ROLE') {
+      const { parentRoleName, roleName } = link.body.payload
+      if (parentRoleName === roleName) {
+        return fail(`Role ${parentRoleName} can't have itself as sub role`, previousState, link, logger)
+      }
+      const parentRole = select.role(previousState, parentRoleName)
+      const subRole = select.role(previousState, roleName)
+      if (subRole.subRoles.includes(parentRoleName)) {
+        return fail(`Intended sub role ${roleName} already has parent role ${parentRoleName} as its sub role`, previousState, link, logger)
+      }
+      if (parentRole.subRoles.includes(roleName)) {
+        return fail(`Role ${parentRoleName} already has ${roleName} as sub role`, previousState, link, logger)
+      }
+      return VALID
+    }
+    return VALID
+  },
+
+  /** Check for roles that aren't allowed to have sub roles */
+  canAddSubRolesToRole(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('canAddSubRolesToRole')
+    if (link.body.type === 'ADD_SUB_ROLE') {
+      const { parentRoleName } = link.body.payload
+      const { permissions: parentPermissions } = select.role(previousState, parentRoleName)
+      if (parentPermissions?.[RolePermissions.CAN_HAVE_SUB_ROLES]) {
+        return VALID
+      }
+      return fail(`Role ${parentRoleName} doesn't allow sub roles`, previousState, link, logger)
     }
     return VALID
   },
