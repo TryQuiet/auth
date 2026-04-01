@@ -1,5 +1,5 @@
 import { ROOT, type Reducer } from '@localfirst/crdx'
-import { ADMIN } from 'role/index.js'
+import { ADMIN, PermissionsMap, RolePermissions } from 'role/index.js'
 import { clone, composeTransforms } from 'util/index.js'
 import { invalidLinkReducer } from './invalidLinkReducer.js'
 import { setHead } from './setHead.js'
@@ -91,9 +91,13 @@ const getTransforms = (action: TeamAction): Transform[] => {
   switch (action.type) {
     case ROOT: {
       const { name, rootMember, rootDevice } = action.payload
+      const adminPermissions: PermissionsMap = {
+        [RolePermissions.MODIFIABLE_MEMBERSHIP]: true,
+        [RolePermissions.CAN_HAVE_SUB_ROLES]: true
+      }
       return [
         setTeamName(name),
-        addRole({ roleName: ADMIN, createdBy: action.payload.rootMember.userId, subRoles: [] }), // Create the admin role
+        addRole({ roleName: ADMIN, createdBy: action.payload.rootMember.userId, subRoles: [], permissions: adminPermissions }), // Create the admin role
         addMember(rootMember), // Add the founding member
         addDevice(rootDevice), // Add the founding member's device
         ...addMemberRoles(rootMember.userId, [ADMIN]), // Make the founding member an admin
