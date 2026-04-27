@@ -1,4 +1,14 @@
-export type PermissionsMap = Record<string, boolean>
+export enum Permission {
+  MODIFIABLE_MEMBERSHIP = 'modifiable-membership',
+}
+
+export interface ModifiableMembershipPermissionConfig {
+  memberIds: string[]
+}
+
+export type PermissionsMap = { 
+  [Permission.MODIFIABLE_MEMBERSHIP]?: true | ModifiableMembershipPermissionConfig 
+}
 
 export type Role = {
   roleName: string

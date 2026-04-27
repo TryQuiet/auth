@@ -11,6 +11,7 @@ import {
   type TeamStateValidatorSet,
   type ValidationArgs,
 } from './types.js'
+import { Permission } from 'role/types.js'
 
 export const validate: TeamStateValidator = (previousState: TeamState, link: TeamLink, extendableLogger?: Logger) => {
   const logger = extendableLogger != null ? extendableLogger.extend('validate') : new Logger({ moduleName: 'auth:validate' })
@@ -131,6 +132,27 @@ const validators: TeamStateValidatorSet = {
         return VALID
       } 
       return fail(`User ${userId} attempted to self-assign role ${roleName} illegally`, previousState, link, logger)
+    }
+    return VALID
+  },
+
+  /** Check that members not listed in the permissions map for a role aren't added */
+  cantAddNewMembersToStaticRole(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('cantAddNewMembersToStaticRole')
+    if (link.body.type === 'ADD_MEMBER_ROLE') {
+      const { userId: assigningUserId } = link.body
+      const { userId, roleName } = link.body.payload
+      const role = select.role(previousState, roleName)
+      if (role.permissions == null) {
+        return VALID
+      }
+      if (role.permissions[Permission.MODIFIABLE_MEMBERSHIP] == null || role.permissions[Permission.MODIFIABLE_MEMBERSHIP] === true) {
+        return VALID
+      }
+      if (role.permissions[Permission.MODIFIABLE_MEMBERSHIP].memberIds.includes(userId)) {
+        return VALID
+      }
+      return fail(`User ${assigningUserId} attempted to assign role ${roleName} to member ${userId} not specified in role's permissions`, previousState, link, logger)
     }
     return VALID
   },
