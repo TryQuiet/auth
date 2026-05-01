@@ -42,7 +42,13 @@ import { syncMessageSummary } from 'util/testing/messageSummary.js'
 import { and, assertEvent, assign, createActor, setup } from 'xstate'
 import { MessageQueue, type NumberedMessage } from './MessageQueue.js'
 import { extendServerContext, getUserName, messageSummary, stateSummary } from './helpers.js'
-import type { ConnectionContext, ConnectionEvents, Context, IdentityClaim, InviteeMemberIdentityClaim } from './types.js'
+import type {
+  ConnectionContext,
+  ConnectionEvents,
+  Context,
+  IdentityClaim,
+  InviteeMemberIdentityClaim,
+} from './types.js'
 import {
   isInviteeClaim,
   isInviteeContext,
@@ -109,7 +115,11 @@ export class Connection extends EventEmitter<ConnectionEvents> {
       sharedLogger = createLogger(loggerModuleName)
     }
 
-    this.logger = new Logger({ moduleName: loggerModuleName, sharedLogger, extendSharedLogger: false })
+    this.logger = new Logger({
+      moduleName: loggerModuleName,
+      sharedLogger,
+      extendSharedLogger: false,
+    })
     this.#messageQueue = this.#initializeMessageQueue(sendMessage, this.logger, username)
 
     // On sync server, the server keys act as both user keys and device keys
@@ -243,12 +253,22 @@ export class Connection extends EventEmitter<ConnectionEvents> {
             // yet, so we need to get those from the graph. We use the invitation seed to generate
             // the starter keys for the new device. We can use these to unlock a lockbox on the team
             // graph that contains our user keys.
-            getDeviceUserFromGraph({ serializedGraph, teamKeyring, invitationSeed, logger: this.logger.extend('getDeviceUser') })
+            getDeviceUserFromGraph({
+              serializedGraph,
+              teamKeyring,
+              invitationSeed,
+              logger: this.logger.extend('getDeviceUser'),
+            })
 
           // When admitting us, our peer added our user to the team graph. We've been given the
           // serialized and encrypted graph, and the team keyring. We can now decrypt the graph and
           // reconstruct the team in order to join it.
-          const team = new Team({ source: serializedGraph, context: { user, device }, teamKeyring, sharedLogger: this.logger.sharedLogger })
+          const team = new Team({
+            source: serializedGraph,
+            context: { user, device },
+            teamKeyring,
+            sharedLogger: this.logger.sharedLogger,
+          })
 
           // We join the team, which adds our device to the team graph.
           team.join(teamKeyring)
@@ -542,9 +562,13 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
           // Make sure we have been added as a member on the chain before joining and adding our device
           const state = getTeamState(serializedGraph, teamKeyring, this.logger)
-          const result = state.members.filter((member) => {
-            return member.userName === (context.ourIdentityClaim as InviteeMemberIdentityClaim)?.userName
-          }).length === 1
+          const result =
+            state.members.filter(member => {
+              return (
+                member.userId ===
+                (context.ourIdentityClaim as InviteeMemberIdentityClaim)?.userKeys.name
+              )
+            }).length === 1
           this.logger.debug('GUARD: does ADMIT_MEMBER link exist on chain for our user?', result)
           return result
         },
@@ -655,9 +679,13 @@ export class Connection extends EventEmitter<ConnectionEvents> {
               on: {
                 ACCEPT_INVITATION: [
                   // Make sure the team I'm joining is actually the one that invited me
-                  { guard: 'joinedTheWrongTeam', ...fail(JOINED_WRONG_TEAM), },
-                  { guard: 'admitMemberLinkExistsOnJoin', actions: 'joinTeam', target: '#checkingIdentity', },
-                  fail(ADMIT_MEMBER_LINK_MISSING)
+                  { guard: 'joinedTheWrongTeam', ...fail(JOINED_WRONG_TEAM) },
+                  {
+                    guard: 'admitMemberLinkExistsOnJoin',
+                    actions: 'joinTeam',
+                    target: '#checkingIdentity',
+                  },
+                  fail(ADMIT_MEMBER_LINK_MISSING),
                 ],
               },
               ...timeout,
@@ -988,7 +1016,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
   #logMessage(direction: 'in' | 'out', message: NumberedMessage<ConnectionMessage>) {
     const arrow = direction === 'in' ? '<-' : '->'
-    const peerUserName = this.#started ? (this._context.peer?.userName ?? '?') : '?'
+    const peerUserName = this.#started ? this._context.peer?.userName ?? '?' : '?'
     this.logger.debug(`${arrow}${peerUserName} #${message.index} ${message.type}`)
   }
 }
