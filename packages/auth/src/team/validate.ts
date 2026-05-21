@@ -126,6 +126,10 @@ const validators: TeamStateValidatorSet = {
       if (metadata.selfAssignableRoles.includes(roleName)) {
         return VALID
       }
+      const role = select.role(previousState, roleName)
+      if (role.createdBy === assigningUserId) {
+        return VALID
+      } 
       return fail(`User ${userId} attempted to self-assign role ${roleName} illegally`, previousState, link, logger)
     }
     return VALID

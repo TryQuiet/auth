@@ -1,4 +1,4 @@
-import { ADMIN } from 'role/index.js'
+import { AddRoleInput, ADMIN } from 'role/index.js'
 import * as teams from 'team/index.js'
 import { setup } from 'util/testing/index.js'
 import 'util/testing/expect/toLookLikeKeyset.js'
@@ -8,7 +8,10 @@ import { randomUUID } from 'crypto'
 import { createKeyset, KeyScope } from '@localfirst/crdx'
 
 const MANAGERS = 'managers'
-const managers = { roleName: MANAGERS }
+const managers: AddRoleInput = { roleName: MANAGERS }
+
+const FOOBAR = 'foobar'
+const foobar: AddRoleInput = { roleName: FOOBAR }
 
 describe('Team', () => {
   describe('roles', () => {
@@ -39,6 +42,7 @@ describe('Team', () => {
       alice.team.addRole(managers)
       expect(alice.team.roles().map(r => r.roleName)).toEqual([ADMIN, MANAGERS])
       expect(alice.team.roles(MANAGERS).roleName).toBe(MANAGERS)
+      expect(alice.team.roles(MANAGERS).createdBy).toBe(alice.userId)
       expect(alice.team.hasRole(MANAGERS)).toBe(true)
 
       // 👩🏾 Alice adds 👨🏻‍🦲 Bob to the managers role
@@ -83,6 +87,31 @@ describe('Team', () => {
       expect(bobsAdminKeys).toLookLikeKeyset()
     })
 
+    it('non-admin adds self to a role when creating', () => {
+      const { alice, bob } = setup('alice', { user: 'bob', admin: false })
+
+      // 👨🏻‍🦲 Bob isn't an admin
+      expect(alice.team.memberIsAdmin(bob.userId)).toBe(false)
+
+      // 👨🏻‍🦲 Bob adds a role and gives himself that role
+      bob.team.addRole(foobar)
+
+      // Now 👨🏻‍🦲 Bob is a foobar
+      expect(bob.team.hasRole(FOOBAR)).toBe(true)
+
+      // Bob persists the team
+      const savedTeam = bob.team.save()
+
+      // 👩🏾 Alice loads the team
+      alice.team = teams.load(savedTeam, alice.localContext, bob.team.teamKeys())
+
+      // 👩🏾 Alice sees 👨🏻‍🦲 Bob has the foobar role
+      expect(alice.team.memberHasRole(bob.userId, FOOBAR)).toBe(true)
+
+      // 👩🏾 Alice doesn't have the foobar role
+      expect(alice.team.memberHasRole(alice.userId, FOOBAR)).toBe(false)
+    })
+
     it('removes a member from a role', () => {
       const { alice, bob } = setup('alice', 'bob')
 
@@ -114,7 +143,7 @@ describe('Team', () => {
       expect(bobLooksForAdminKeys).toThrow()
     })
 
-    it('self-assigns a role', () => {
+    it('self-assigns a role using pre-shared keys', () => {
       const { alice, bob } = setup('alice', 'bob')
       
       // 👩🏾 Alice creates MEMBER role
