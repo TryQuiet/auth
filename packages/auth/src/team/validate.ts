@@ -136,8 +136,8 @@ const validators: TeamStateValidatorSet = {
   },
 
   /** Check that members not listed in the permissions map for a role aren't added */
-  cantAddNewMembersToStaticRole(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
-    const logger = extendableLogger.extend('cantAddNewMembersToStaticRole')
+  cantModifyStaticRolesWithAddMemberRole(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('cantModifyStaticRolesWithAddMemberRole')
     if (link.body.type === 'ADD_MEMBER_ROLE') {
       const { userId: assigningUserId } = link.body
       const { userId, roleName } = link.body.payload
@@ -147,6 +147,24 @@ const validators: TeamStateValidatorSet = {
       }
       if (role.permissions[Permission.MODIFIABLE_MEMBERSHIP] == null || role.permissions[Permission.MODIFIABLE_MEMBERSHIP] === true) {
         return VALID
+      }
+      return fail(`User ${assigningUserId} attempted to assign role ${roleName} to member ${userId} using ADD_MEMBER_ROLE but the role is static`, previousState, link, logger)
+    }
+    return VALID
+  },
+
+  /** Check that members not listed in the permissions map for a role aren't added */
+  cantAddNewMembersToStaticRole(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('cantAddNewMembersToStaticRole')
+    if (link.body.type === 'ADD_MEMBER_STATIC_ROLE') {
+      const { userId: assigningUserId } = link.body
+      const { userId, roleName } = link.body.payload
+      const role = select.role(previousState, roleName)
+      if (role.permissions == null) {
+        return fail(`User ${assigningUserId} attempted to assign role ${roleName} to member ${userId} using ADD_MEMBER_STATIC_ROLE but the role has no permissions`, previousState, link, logger)
+      }
+      if (role.permissions[Permission.MODIFIABLE_MEMBERSHIP] == null || role.permissions[Permission.MODIFIABLE_MEMBERSHIP] === true) {
+        return fail(`User ${assigningUserId} attempted to assign role ${roleName} to member ${userId} using ADD_MEMBER_STATIC_ROLE but the role is not static`, previousState, link, logger)
       }
       if (role.permissions[Permission.MODIFIABLE_MEMBERSHIP].memberIds.includes(userId)) {
         return VALID

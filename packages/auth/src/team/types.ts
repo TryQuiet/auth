@@ -120,6 +120,11 @@ export type AddRoleAction = {
   payload: BasePayload & Role
 }
 
+export type AddStaticRoleAction = {
+  type: 'ADD_STATIC_ROLE'
+  payload: BasePayload & Role
+}
+
 export type RemoveRoleAction = {
   type: 'REMOVE_ROLE'
   payload: BasePayload & {
@@ -129,6 +134,15 @@ export type RemoveRoleAction = {
 
 export type AddMemberRoleAction = {
   type: 'ADD_MEMBER_ROLE'
+  payload: BasePayload & {
+    userId: string
+    roleName: string
+    permissions?: PermissionsMap
+  }
+}
+
+export type AddMemberStaticRoleAction = {
+  type: 'ADD_MEMBER_STATIC_ROLE'
   payload: BasePayload & {
     userId: string
     roleName: string
@@ -269,6 +283,8 @@ export type TeamAction =
   | RemoveDeviceAction
   | RemoveRoleAction
   | RemoveMemberRoleAction
+  | AddStaticRoleAction
+  | AddMemberStaticRoleAction
   | InviteMemberAction
   | InviteDeviceAction
   | RevokeInvitationAction

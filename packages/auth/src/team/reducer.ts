@@ -1,5 +1,5 @@
 import { ROOT, type Reducer } from '@localfirst/crdx'
-import { ADMIN } from 'role/index.js'
+import { ADMIN, Permission, type Role } from 'role/index.js'
 import { clone, composeTransforms } from 'util/index.js'
 import { invalidLinkReducer } from './invalidLinkReducer.js'
 import { setHead } from './setHead.js'
@@ -125,6 +125,20 @@ const getTransforms = (action: TeamAction): Transform[] => {
       const { userId } = action.payload
       return [
         removeMember(userId), // Remove this member from the team
+      ]
+    }
+
+    case 'ADD_STATIC_ROLE': {
+      const newRole = action.payload
+      return [
+        addRole(newRole), // Add this role to the team
+      ]
+    }
+
+    case 'ADD_MEMBER_STATIC_ROLE': {
+      const { userId, roleName } = action.payload
+      return [
+        ...addMemberRoles(userId, [roleName]), // Add this role to the member's list of roles
       ]
     }
 

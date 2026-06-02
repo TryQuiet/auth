@@ -14,6 +14,7 @@ import {
   type TeamLink,
   type TeamGraph,
   type AdmitMemberAction,
+  type AddMemberStaticRoleAction,
 } from 'team/types.js'
 import { arraysAreEqual } from 'util/arraysAreEqual.js'
 
@@ -123,7 +124,7 @@ const leastSenior = (chain: TeamGraph, userNames: string[]) =>
   userNames.sort(bySeniority(chain)).pop()!
 
 const isAddAction = (link: TeamLink): link is AddActionLink =>
-  ['ADD_MEMBER', 'ADD_MEMBER_ROLE', 'ADMIT_MEMBER'].includes(link.body.type)
+  ['ADD_MEMBER', 'ADD_MEMBER_ROLE', 'ADD_MEMBER_STATIC_ROLE', 'ADMIT_MEMBER', ].includes(link.body.type)
 
 const isRemovalAction = (link: TeamLink): boolean => link.body.type === 'REMOVE_MEMBER'
 
@@ -168,6 +169,11 @@ const addedUserId = (link: AddActionLink): string => {
       return addAction.payload.userId
     }
 
+    case 'ADD_MEMBER_STATIC_ROLE': {
+      const addAction = link.body
+      return addAction.payload.userId
+    }
+
     case 'ADMIT_MEMBER': {
       const addAction = link.body
       return addAction.payload.memberKeys.name
@@ -185,4 +191,4 @@ const usesInvitation = (invitation: Invitation) => (l: TeamLink) =>
   l.body.payload.id === invitation.id
 
 type RemoveActionLink = Link<RemoveMemberAction | RemoveMemberRoleAction, TeamContext>
-type AddActionLink = Link<AddMemberAction | AddMemberRoleAction | AdmitMemberAction, TeamContext>
+type AddActionLink = Link<AddMemberAction | AddMemberRoleAction | AddMemberStaticRoleAction | AdmitMemberAction, TeamContext>

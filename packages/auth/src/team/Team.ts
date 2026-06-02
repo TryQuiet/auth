@@ -28,7 +28,7 @@ import * as invitations from 'invitation/index.js'
 import { type ProofOfInvitation } from 'invitation/index.js'
 import { normalize } from 'invitation/normalize.js'
 import * as lockbox from 'lockbox/index.js'
-import { AddRoleInput, ADMIN, type Role } from 'role/index.js'
+import { AddRoleInput, ADMIN, Permission, type Role } from 'role/index.js'
 import { castServer } from 'server/castServer.js'
 import { type Host, type Server } from 'server/types.js'
 import { type LocalUserContext } from 'team/context.js'
@@ -352,8 +352,9 @@ export class Team extends EventEmitter<TeamEvents> {
     }
 
     // Post the role to the graph
+    const eventType = role.permissions && role.permissions[Permission.MODIFIABLE_MEMBERSHIP] === true ? 'ADD_ROLE' : 'ADD_STATIC_ROLE'
     this.dispatch({
-      type: 'ADD_ROLE',
+      type: eventType,
       payload: { ...(role as Role), lockboxes: lockboxes },
     })
 
@@ -374,8 +375,10 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** Dispatch the add role action */
   private _dispatchAddMemberRole(userId: string, roleName: string, lockboxes: lockbox.Lockbox[]) {
+    const role = select.role(this.state, roleName)
+    const eventType = role.permissions && role.permissions[Permission.MODIFIABLE_MEMBERSHIP] === true ? 'ADD_MEMBER_ROLE' : 'ADD_MEMBER_STATIC_ROLE'
     this.dispatch({
-      type: 'ADD_MEMBER_ROLE',
+      type: eventType,
       payload: { userId, roleName, lockboxes },
     })
   }

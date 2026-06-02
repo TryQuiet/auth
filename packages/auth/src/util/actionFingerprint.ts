@@ -15,11 +15,13 @@ export const actionFingerprint = (link: TeamLink) => {
         return action.payload.userId
       }
 
-      case 'ADD_ROLE': {
+      case 'ADD_ROLE': 
+      case 'ADD_STATIC_ROLE': {
         return action.payload.roleName
       }
 
       case 'ADD_MEMBER_ROLE':
+      case 'ADD_MEMBER_STATIC_ROLE':
       case 'REMOVE_MEMBER_ROLE': {
         return `${action.payload.roleName}:${action.payload.userId}`
       }
