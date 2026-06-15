@@ -9,6 +9,7 @@ import {
   type TeamState,
   type TeamStateValidator,
   type TeamStateValidatorSet,
+  type ValidationArgs,
 } from './types.js'
 
 export const validate: TeamStateValidator = (previousState: TeamState, link: TeamLink, extendableLogger?: Logger) => {
@@ -113,11 +114,14 @@ const validators: TeamStateValidatorSet = {
   },
 
   /** Check for self-assigned roles that aren't in the allowed list set by the admin */
-  nonAdminsCanOnlyModifyCertainRoles(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
-    const logger = extendableLogger.extend('nonAdminsCanOnlyModifyCertainRoles')
+  canOnlySelfAddCertainRoles(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('canOnlySelfAddCertainRoles')
     if (link.body.type === 'ADD_MEMBER_ROLE') {
       const { userId: assigningUserId } = link.body
-      const { roleName } = link.body.payload
+      const { userId, roleName } = link.body.payload
+      if (userId !== assigningUserId) {
+        return VALID
+      }
       const metadata = select.getMetadata(previousState)
       if (metadata.selfAssignableRoles.includes(roleName)) {
         return VALID
@@ -125,11 +129,8 @@ const validators: TeamStateValidatorSet = {
       const role = select.role(previousState, roleName)
       if (role.createdBy === assigningUserId) {
         return VALID
-      }
-      if (select.memberIsAdmin(previousState, assigningUserId)) {
-        return VALID
-      }
-      return fail(`User ${assigningUserId} attempted to assign role ${roleName} illegally`, previousState, link, logger)
+      } 
+      return fail(`User ${userId} attempted to self-assign role ${roleName} illegally`, previousState, link, logger)
     }
     return VALID
   },
