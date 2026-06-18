@@ -10,6 +10,7 @@ export const isAdminOnlyAction = (action: TeamLinkBody) => {
     'CHANGE_SERVER_KEYS',
     'ADMIT_MEMBER',
     'ADMIT_DEVICE',
+    'ADD_ROLE',
     'ADD_MEMBER_ROLE',
     'ADD_STATIC_ROLE',
     'ADD_MEMBER_STATIC_ROLE',
