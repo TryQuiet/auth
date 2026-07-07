@@ -25,6 +25,21 @@ export const validate: TeamStateValidator = (previousState: TeamState, link: Tea
   return VALID
 }
 
+export const canUserAddMemberToRole = (roleName: string, assigningUserId: string, previousState: TeamState): boolean => {
+    const metadata = select.getMetadata(previousState)
+    if (metadata.selfAssignableRoles.includes(roleName)) {
+      return true
+    }
+    const role = select.role(previousState, roleName)
+    if (role.createdBy === assigningUserId) {
+      return true
+    }
+    if (select.memberIsAdmin(previousState, assigningUserId)) {
+      return true
+    }
+    return false
+  }
+
 const validators: TeamStateValidatorSet = {
   rootDeviceBelongsToRootUser(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
     const logger = extendableLogger.extend('rootDeviceBelongsToRootUser')
@@ -118,17 +133,7 @@ const validators: TeamStateValidatorSet = {
     if (link.body.type === 'ADD_MEMBER_ROLE') {
       const { userId: assigningUserId } = link.body
       const { roleName } = link.body.payload
-      const metadata = select.getMetadata(previousState)
-      if (metadata.selfAssignableRoles.includes(roleName)) {
-        return VALID
-      }
-      const role = select.role(previousState, roleName)
-      if (role.createdBy === assigningUserId) {
-        return VALID
-      }
-      if (select.memberIsAdmin(previousState, assigningUserId)) {
-        return VALID
-      }
+      if (canUserAddMemberToRole(roleName, assigningUserId, previousState)) return VALID
       return fail(`User ${assigningUserId} attempted to assign role ${roleName} illegally`, previousState, link, logger)
     }
     return VALID

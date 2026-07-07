@@ -53,6 +53,8 @@ import type {
   TeamState,
 } from './types.js'
 import { isNewTeam } from './types.js'
+import { canUserAddMemberToRole } from './validate.js'
+import { isAdminOnlyActionType } from './isAdminOnlyAction.js'
 
 const { DEVICE, USER } = KeyType
 /**
@@ -412,6 +414,20 @@ export class Team extends EventEmitter<TeamEvents> {
       type: 'REMOVE_MEMBER_ROLE',
       payload: { userId, roleName, lockboxes },
     })
+  }
+
+  /** Check if member has permissions to add members to a role */
+  public memberCanAddMembersToRole(roleName: string, memberId: string): boolean {
+    return canUserAddMemberToRole(roleName, memberId, this.state)
+  }
+
+  /** Check if member has permissions to create roles */
+  public memberCanCreateRole(memberId: string): boolean {
+    if (!isAdminOnlyActionType('ADD_ROLE')) {
+      return true
+    }
+
+    return this.memberIsAdmin(memberId)
   }
 
   /** ************** DEVICES */
