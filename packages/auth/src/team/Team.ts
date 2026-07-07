@@ -416,18 +416,33 @@ export class Team extends EventEmitter<TeamEvents> {
     })
   }
 
-  /** Check if member has permissions to add members to a role */
-  public memberCanAddMembersToRole(roleName: string, memberId: string): boolean {
-    return canUserAddMemberToRole(roleName, memberId, this.state)
-  }
-
   /** Check if member has permissions to create roles */
-  public memberCanCreateRole(memberId: string): boolean {
-    if (!isAdminOnlyActionType('ADD_ROLE')) {
+  public memberCanPerformAction(memberId: string, actionType: TeamAction['type']): boolean {
+    if (!isAdminOnlyActionType(actionType)) {
       return true
     }
 
     return this.memberIsAdmin(memberId)
+  }
+
+  /** Check if member has permissions to add members to a role */
+  public memberCanAddMembersToRole(roleName: string, memberId: string): boolean {
+    if (!this.memberCanPerformAction(memberId, 'ADD_MEMBER_ROLE')) {
+      return false
+    }
+    return canUserAddMemberToRole(roleName, memberId, this.state)
+  }
+
+  public memberCanRemoveMembersFromRole(roleName: string, memberId: string): boolean {
+    return this.memberCanPerformAction(memberId, 'REMOVE_MEMBER_ROLE')
+  }
+
+  public memberCanCreateRole(memberId: string): boolean {
+    return this.memberCanPerformAction(memberId, 'ADD_ROLE')
+  }
+
+  public memberCanDeleteRole(roleName: string, memberId: string): boolean {
+    return this.memberCanPerformAction(memberId, 'REMOVE_ROLE')
   }
 
   /** ************** DEVICES */
