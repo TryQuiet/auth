@@ -30,10 +30,6 @@ export const canUserAddMemberToRole = (roleName: string, assigningUserId: string
     if (metadata.selfAssignableRoles.includes(roleName)) {
       return true
     }
-    const role = select.role(previousState, roleName)
-    if (role.createdBy === assigningUserId) {
-      return true
-    }
     if (select.memberIsAdmin(previousState, assigningUserId)) {
       return true
     }
