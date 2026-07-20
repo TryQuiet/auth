@@ -1,6 +1,10 @@
 import { type TeamAction, type TeamLinkBody } from './types.js'
 
 export const isAdminOnlyAction = (action: TeamLinkBody) => {
+  return isAdminOnlyActionType(action.type)
+}
+
+export const isAdminOnlyActionType = (actionType: TeamAction['type']): boolean => {
   // Any team member can do these things
   const nonAdminActions: Array<TeamAction['type']> = [
     'INVITE_DEVICE',
@@ -14,5 +18,5 @@ export const isAdminOnlyAction = (action: TeamLinkBody) => {
     'SET_METADATA',
   ]
 
-  return !nonAdminActions.includes(action.type)
+  return !nonAdminActions.includes(actionType)
 }

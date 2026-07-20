@@ -53,6 +53,8 @@ import type {
   TeamState,
 } from './types.js'
 import { isNewTeam } from './types.js'
+import { canUserAddMemberToRole } from './validate.js'
+import { isAdminOnlyActionType } from './isAdminOnlyAction.js'
 
 const { DEVICE, USER } = KeyType
 /**
@@ -364,12 +366,21 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** Remove a role from the team */
   public removeRole = (roleName: string) => {
-    assert(roleName !== ADMIN, 'Cannot remove admin role')
+    this._isRoleRemovable(roleName, true)
 
     this.dispatch({
       type: 'REMOVE_ROLE',
       payload: { roleName },
     })
+  }
+
+  private _isRoleRemovable = (roleName: string, assertOnFalse: boolean): boolean => {
+    const anyRoleButAdmin = roleName !== ADMIN
+    if (assertOnFalse) {
+      assert(anyRoleButAdmin, 'Cannot remove admin role')
+    }
+
+    return anyRoleButAdmin
   }
 
   /** Dispatch the add role action */
@@ -412,6 +423,49 @@ export class Team extends EventEmitter<TeamEvents> {
       type: 'REMOVE_MEMBER_ROLE',
       payload: { userId, roleName, lockboxes },
     })
+  }
+
+  /** Check if member is priveleged enough to perform a specific action */
+  private _memberHasPrivelegeToPerformAction(memberId: string, actionType: TeamAction['type']): boolean {
+    if (!isAdminOnlyActionType(actionType)) {
+      return true
+    }
+    return this.memberIsAdmin(memberId)
+  }
+
+  /** Check if member has permissions to add members to a role */
+  public memberCanAddMembersToRole(roleName: string, memberId: string): boolean {
+    if (!this._memberHasPrivelegeToPerformAction(memberId, 'ADD_MEMBER_ROLE')) {
+      return false
+    }
+    if (!this.memberHasRole(memberId, roleName)) {
+      return false
+    }
+    return canUserAddMemberToRole(roleName, memberId, this.state)
+  }
+
+  /** Check if member has permissions to reevoke membership from a role */
+  public memberCanRemoveMembersFromRole(roleName: string, memberId: string): boolean {
+    if (!this._memberHasPrivelegeToPerformAction(memberId, 'REMOVE_MEMBER_ROLE')) {
+      return false
+    }
+    return this.memberHasRole(memberId, roleName)
+  }
+
+  /** Check if member has permissions to create roles */
+  public memberCanCreateRole(memberId: string): boolean {
+    return this._memberHasPrivelegeToPerformAction(memberId, 'ADD_ROLE')
+  }
+
+  /** Check if member has permissions to delete a specific role */
+  public memberCanDeleteRole(roleName: string, memberId: string): boolean {
+    if (!this._memberHasPrivelegeToPerformAction(memberId, 'REMOVE_ROLE')) {
+      return false
+    }
+    if (!this.memberHasRole(memberId, roleName)) {
+      return false
+    }
+    return this._isRoleRemovable(roleName, false) 
   }
 
   /** ************** DEVICES */
