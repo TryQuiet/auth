@@ -383,3 +383,5 @@ export type LookupIdentityResult =
 export type EncryptStreamTeamPayload = { recipient: KeyMetadata, encryptStream: AsyncGenerator<Uint8Array>, header: Uint8Array }
 
 export type TeamMetadata = { selfAssignableRoles: string[] }
+
+export type ValidationFuncResult = { valid: boolean, reason?: string }

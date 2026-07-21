@@ -53,7 +53,7 @@ import type {
   TeamState,
 } from './types.js'
 import { isNewTeam } from './types.js'
-import { canUserAddMemberToRole } from './validate.js'
+import { canUserAddMemberToRole, canUserAddMemberToStaticRole } from './validate.js'
 import { isAdminOnlyActionType } from './isAdminOnlyAction.js'
 
 const { DEVICE, USER } = KeyType
@@ -438,13 +438,19 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** Check if member has permissions to add members to a role */
   public memberCanAddMembersToRole(roleName: string, memberId: string): boolean {
-    if (!this._memberHasPrivelegeToPerformAction(memberId, 'ADD_MEMBER_ROLE')) {
+    const role = this.roles(roleName)
+    const isRoleStatic = this._isRoleStatic(role)
+    const action: TeamAction['type'] = isRoleStatic ? 'ADD_MEMBER_STATIC_ROLE' : 'ADD_MEMBER_ROLE'
+    if (!this._memberHasPrivelegeToPerformAction(memberId, action)) {
       return false
     }
     if (!this.memberHasRole(memberId, roleName)) {
       return false
     }
-    return canUserAddMemberToRole(roleName, memberId, this.state)
+    if (isRoleStatic) {
+      return canUserAddMemberToStaticRole(role, memberId, this.state).valid
+    }
+    return canUserAddMemberToRole(role, memberId, this.state)
   }
 
   /** Check if member has permissions to reevoke membership from a role */
@@ -452,12 +458,24 @@ export class Team extends EventEmitter<TeamEvents> {
     if (!this._memberHasPrivelegeToPerformAction(memberId, 'REMOVE_MEMBER_ROLE')) {
       return false
     }
-    return this.memberHasRole(memberId, roleName)
+    if (!this.memberHasRole(memberId, roleName)) {
+      return false
+    }
+    const isRoleStatic = this._isRoleStatic(roleName)
+    if (isRoleStatic) {
+      return false
+    }
+    return true
   }
 
   /** Check if member has permissions to create roles */
   public memberCanCreateRole(memberId: string): boolean {
     return this._memberHasPrivelegeToPerformAction(memberId, 'ADD_ROLE')
+  }
+
+  /** Check if member has permissions to create static roles */
+  public memberCanCreateStaticRole(memberId: string): boolean {
+    return this._memberHasPrivelegeToPerformAction(memberId, 'ADD_STATIC_ROLE')
   }
 
   /** Check if member has permissions to delete a specific role */
@@ -469,6 +487,31 @@ export class Team extends EventEmitter<TeamEvents> {
       return false
     }
     return this._isRoleRemovable(roleName, false) 
+  }
+
+  private _isRoleStatic(roleName: string): boolean
+  private _isRoleStatic(role: Role): boolean
+  private _isRoleStatic(roleNameOrRole: string | Role): boolean {
+    let role: Role
+    if (typeof roleNameOrRole === 'string') {
+      role = this.roles(roleNameOrRole)
+    } else {
+      role = roleNameOrRole
+    }
+
+    if (role.permissions == null) {
+      return false
+    }
+
+    if (role.permissions[Permission.MODIFIABLE_MEMBERSHIP] == null) {
+      return false
+    }
+
+    if (role.permissions[Permission.MODIFIABLE_MEMBERSHIP] === true) {
+      return false
+    }
+
+    return true
   }
 
   /** ************** DEVICES */
