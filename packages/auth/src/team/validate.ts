@@ -9,7 +9,6 @@ import {
   type TeamState,
   type TeamStateValidator,
   type TeamStateValidatorSet,
-  type ValidationArgs,
 } from './types.js'
 import { Permission } from 'role/types.js'
 
@@ -26,6 +25,17 @@ export const validate: TeamStateValidator = (previousState: TeamState, link: Tea
 
   return VALID
 }
+
+export const canUserAddMemberToRole = (roleName: string, assigningUserId: string, previousState: TeamState): boolean => {
+    const metadata = select.getMetadata(previousState)
+    if (metadata.selfAssignableRoles.includes(roleName)) {
+      return true
+    }
+    if (select.memberIsAdmin(previousState, assigningUserId)) {
+      return true
+    }
+    return false
+  }
 
 const validators: TeamStateValidatorSet = {
   rootDeviceBelongsToRootUser(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
@@ -115,23 +125,13 @@ const validators: TeamStateValidatorSet = {
   },
 
   /** Check for self-assigned roles that aren't in the allowed list set by the admin */
-  canOnlySelfAddCertainRoles(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
-    const logger = extendableLogger.extend('canOnlySelfAddCertainRoles')
+  nonAdminsCanOnlyModifyCertainRoles(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('nonAdminsCanOnlyModifyCertainRoles')
     if (link.body.type === 'ADD_MEMBER_ROLE') {
       const { userId: assigningUserId } = link.body
-      const { userId, roleName } = link.body.payload
-      if (userId !== assigningUserId) {
-        return VALID
-      }
-      const metadata = select.getMetadata(previousState)
-      if (metadata.selfAssignableRoles.includes(roleName)) {
-        return VALID
-      }
-      const role = select.role(previousState, roleName)
-      if (role.createdBy === assigningUserId) {
-        return VALID
-      } 
-      return fail(`User ${userId} attempted to self-assign role ${roleName} illegally`, previousState, link, logger)
+      const { roleName } = link.body.payload
+      if (canUserAddMemberToRole(roleName, assigningUserId, previousState)) return VALID
+      return fail(`User ${assigningUserId} attempted to assign role ${roleName} illegally`, previousState, link, logger)
     }
     return VALID
   },
