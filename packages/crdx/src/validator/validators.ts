@@ -54,37 +54,39 @@ const _validators: ValidatorSet = {
     return fail(message, { hash: link.hash, isTheGraphRoot, hasRootType, predececessorHashes: link.body.prev })
   },
 
-  /** Sanity check on timestamps: They can't be in the future, relative to the current time on this
-   * device. And they can't be earlier than any links they depend on. */
-  validateTimestamps(link, graph) {
-    const { timestamp } = link.body
+  // NOTE FROM ISLA: Commenting this out for now to make sure we don't have any unintended consequences but this
+  //                 causes problems with QSS since there can be deviations in wall clock between client and server
+  // /** Sanity check on timestamps: They can't be in the future, relative to the current time on this
+  //  * device. And they can't be earlier than any links they depend on. */
+  // validateTimestamps(link, graph) {
+  //   const { timestamp } = link.body
 
-    // timestamp can't be in the future
-    // NOTE FROM ISLA: we are allowing a small bit of wiggle room for link timestamps to be ahead of
-    // our clock to account for slight mismatches in system clocks across systems (particularly QSS
-    // vs clients)
-    const now = Date.now()
-    if (timestamp > now + TIMESTAMP_FUZZ_FACTOR_MS) {
-      return fail(`The link's timestamp is in the future.`, { hash: link.hash, now, timestamp })
-    }
+  //   // timestamp can't be in the future
+  //   // NOTE FROM ISLA: we are allowing a small bit of wiggle room for link timestamps to be ahead of
+  //   // our clock to account for slight mismatches in system clocks across systems (particularly QSS
+  //   // vs clients)
+  //   const now = Date.now()
+  //   if (timestamp > now + TIMESTAMP_FUZZ_FACTOR_MS) {
+  //     return fail(`The link's timestamp is in the future.`, { hash: link.hash, now, timestamp })
+  //   }
 
-    // timestamp can't be earlier than any previous link's timestamp
-    // NOTE FROM ISLA: we are allowing a small bit of wiggle room for link timestamps to be ahead of
-    // their prececessor(s) to account for slight mismatches in system clocks across systems 
-    // (particularly QSS vs clients)
-    for (const hash of link.body.prev) {
-      const prevLink = graph.links[hash]
-      if (prevLink.body.timestamp - TIMESTAMP_FUZZ_FACTOR_MS > timestamp)
-        return fail(`This link's timestamp can't be earlier than a previous link.`, {
-          hash: link.hash,
-          prevHash: prevLink.hash,
-          prevTimestamp: prevLink.body.timestamp,
-          timestamp: link.body.timestamp
-        })
-    }
+  //   // timestamp can't be earlier than any previous link's timestamp
+  //   // NOTE FROM ISLA: we are allowing a small bit of wiggle room for link timestamps to be ahead of
+  //   // their prececessor(s) to account for slight mismatches in system clocks across systems 
+  //   // (particularly QSS vs clients)
+  //   for (const hash of link.body.prev) {
+  //     const prevLink = graph.links[hash]
+  //     if (prevLink.body.timestamp - TIMESTAMP_FUZZ_FACTOR_MS > timestamp)
+  //       return fail(`This link's timestamp can't be earlier than a previous link.`, {
+  //         hash: link.hash,
+  //         prevHash: prevLink.hash,
+  //         prevTimestamp: prevLink.body.timestamp,
+  //         timestamp: link.body.timestamp
+  //       })
+  //   }
 
-    return VALID
-  },
+  //   return VALID
+  // },
 }
 
 export const fail = (msg: string, args?: any) => {
