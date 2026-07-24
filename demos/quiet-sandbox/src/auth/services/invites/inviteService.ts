@@ -4,7 +4,16 @@
 
 import { BaseChainService } from "../baseService.js"
 import { ValidationResult } from "../../../../../../packages/crdx/dist/validator/types.js"
-import { Base58, InvitationMap, InvitationState, InviteResult, Keyset, ProofOfInvitation, UnixTimestamp } from "@localfirst/auth"
+import {
+  Base58,
+  Device,
+  InvitationClaim,
+  InvitationState,
+  InviteResult,
+  Keyset,
+  ProofOfInvitation,
+  UnixTimestamp
+} from "@localfirst/auth"
 import { SigChain } from "../../chain.js"
 import { RoleName } from "../roles/roles.js"
 
@@ -35,27 +44,71 @@ class InviteService extends BaseChainService {
     return this.sigChain.team.getInvitation(id)
   }
 
-  public static generateProof(seed: string): ProofOfInvitation {
-    return SigChain.lfa.invitation.generateProof(seed)
+  public static generateProof(
+    seed: string,
+    claim: InvitationClaim,
+    acceptorNonce: Base58,
+    inviteeNonce: Base58
+  ): ProofOfInvitation {
+    return SigChain.lfa.invitation.generateProof({
+      seed,
+      claim,
+      acceptorNonce,
+      inviteeNonce
+    })
   }
 
-  public validateProof(proof: ProofOfInvitation): boolean {
-    const validationResult = this.sigChain.team.validateInvitation(proof) as ValidationResult
+  public validateProof(
+    proof: ProofOfInvitation,
+    claim: InvitationClaim,
+    expectedAcceptorNonce: Base58
+  ): boolean {
+    const validationResult = this.sigChain.team.validateInvitation(
+      proof,
+      claim.invitationKind,
+      claim,
+      expectedAcceptorNonce
+    ) as ValidationResult
     if (!validationResult.isValid) {
       console.error(`Proof was invalid or was on an invalid invitation`, validationResult.error)
-      return true
+      return false
     }
 
     return true
   }
 
-  public acceptProof(proof: ProofOfInvitation, username: string, publicKeys: Keyset) {
-    this.sigChain.team.admitMember(proof, publicKeys, username)
+  public acceptProof(
+    proof: ProofOfInvitation,
+    username: string,
+    publicKeys: Keyset,
+    device: Device,
+    expectedAcceptorNonce: Base58
+  ) {
+    this.sigChain.team.admitMember(
+      proof,
+      publicKeys,
+      username,
+      device,
+      expectedAcceptorNonce
+    )
     // this.activeSigChain.persist()
   }
 
-  public admitMemberFromInvite(proof: ProofOfInvitation, username: string, userId: string, publicKeys: Keyset): string {
-    this.sigChain.team.admitMember(proof, publicKeys, username)
+  public admitMemberFromInvite(
+    proof: ProofOfInvitation,
+    username: string,
+    userId: string,
+    publicKeys: Keyset,
+    device: Device,
+    expectedAcceptorNonce: Base58
+  ): string {
+    this.sigChain.team.admitMember(
+      proof,
+      publicKeys,
+      username,
+      device,
+      expectedAcceptorNonce
+    )
     this.sigChain.roles.addMember(userId, RoleName.MEMBER)
     // this.activeSigChain.persist()
     return username

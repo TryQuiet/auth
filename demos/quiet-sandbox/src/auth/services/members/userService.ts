@@ -35,13 +35,27 @@ class UserService extends BaseChainService {
 
   public static createFromInviteSeed(name: string, seed: string): ProspectiveUser {
     const context = this.create(name)
-    const inviteProof = InviteService.generateProof(seed)
     const publicKeys = UserService.redactUser(context.user).keys
+    const claim = {
+      invitationKind: 'member',
+      userName: context.user.userName,
+      userKeys: publicKeys,
+      device: SigChain.lfa.redactDevice(context.device)
+    } as const
+    const acceptorNonce = SigChain.lfa.invitation.randomSeed()
+    const inviteeNonce = SigChain.lfa.invitation.randomSeed()
+    const inviteProof = InviteService.generateProof(
+      seed,
+      claim,
+      acceptorNonce,
+      inviteeNonce
+    )
 
     return {
       context,
       inviteProof,
-      publicKeys
+      publicKeys,
+      acceptorNonce
     }
   }
 
