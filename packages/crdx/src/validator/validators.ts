@@ -1,9 +1,6 @@
-﻿import { memoize } from '@localfirst/shared'
-import { hash } from '@localfirst/crypto'
-import { ROOT, TIMESTAMP_FUZZ_FACTOR_MS, VALID } from 'constants.js'
+﻿import { ROOT, VALID } from 'constants.js'
 import { getRoot } from 'graph/getRoot.js'
 import { hashEncryptedLink } from 'graph/hashLink.js'
-import type { Graph, Link } from 'index.js'
 import { ValidationError, type ValidatorSet } from './types.js'
 
 const _validators: ValidatorSet = {
@@ -96,14 +93,4 @@ export const fail = (msg: string, args?: any) => {
   }
 }
 
-const memoizeFunctionMap = (source: ValidatorSet) => {
-  const result = {} as ValidatorSet
-  const memoizeResolver = (link: Link<any, any>, graph: Graph<any, any>) => {
-    return `${link.hash}:${graph.root}`
-  }
-
-  for (const key in source) result[key] = memoize(source[key], memoizeResolver)
-  return result
-}
-
-export const validators = memoizeFunctionMap(_validators)
+export const validators = _validators
