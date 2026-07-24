@@ -594,6 +594,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           assertEvent(event, 'ERROR')
           const error = event.payload
           this.logger.error('receiveError', error)
+          this.emit('remoteError', error)
           return { error }
         }),
 
