@@ -530,7 +530,10 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           this.logger.debug('GUARD: validating invitation')
           const { team, theirIdentityClaim } = context
           assert(isInviteeClaim(theirIdentityClaim!))
-          const result = team!.validateInvitation(theirIdentityClaim.proofOfInvitation).isValid
+          const expectedKind = isInviteeMemberClaim(theirIdentityClaim) ? 'member' : 'device'
+          const result = team!
+            .validateInvitation(theirIdentityClaim.proofOfInvitation, expectedKind)
+            .isValid
           this.logger.debug('GUARD: is invitation valid?', result)
           return result
         },

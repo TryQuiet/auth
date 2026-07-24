@@ -1,5 +1,7 @@
 import { type Base58, type UnixTimestamp } from '@localfirst/crdx'
 
+export type InvitationKind = 'member' | 'device'
+
 /**
  * The public record of the invitation that Alice adds to the signature chain after inviting Bob
  * (or, that Bob's laptop adds after inviting Bob's phone).
@@ -26,6 +28,9 @@ export type Invitation = {
  * by the reducer.
  * */
 export type InvitationState = {
+  /** Whether this invitation admits a new member or a new device. Derived from its graph action. */
+  kind: InvitationKind
+
   /** Number of times the invitation has been used */
   uses: number
 

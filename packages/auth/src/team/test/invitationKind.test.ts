@@ -1,0 +1,70 @@
+import { redactKeys } from '@localfirst/crdx'
+import { redactDevice } from 'device/index.js'
+import { generateProof } from 'invitation/index.js'
+import { setup } from 'util/testing/index.js'
+import { describe, expect, it } from 'vitest'
+
+describe('invitation kind', () => {
+  it('rejects a device invitation used for a member without consuming it', () => {
+    const { alice, bob } = setup('alice', { user: 'bob', member: false })
+    const { id, seed } = alice.team.inviteDevice()
+
+    expect(() =>
+      alice.team.admitMember(generateProof(seed), bob.user.keys, bob.userName)
+    ).toThrow(/device invitation cannot admit a member/)
+    expect(alice.team.getInvitation(id).uses).toBe(0)
+  })
+
+  it('rejects a member invitation used for a device', () => {
+    const { alice, bob } = setup('alice', { user: 'bob', member: false })
+    const { seed } = alice.team.inviteMember()
+
+    expect(() =>
+      alice.team.admitDevice(generateProof(seed), redactDevice(bob.device))
+    ).toThrow(/member invitation cannot admit a device/)
+  })
+
+  it('rejects a forged ADMIT_MEMBER that references an INVITE_DEVICE action', () => {
+    const { alice, bob } = setup('alice', { user: 'bob', member: false })
+    const { id } = alice.team.inviteDevice()
+
+    expect(() =>
+      alice.team.dispatch({
+        type: 'ADMIT_MEMBER',
+        payload: {
+          id,
+          userName: bob.userName,
+          memberKeys: redactKeys(bob.user.keys),
+        },
+      })
+    ).toThrow(/device invitation cannot be used by ADMIT_MEMBER/)
+    expect(alice.team.getInvitation(id).uses).toBe(0)
+  })
+
+  it('rejects a forged ADMIT_DEVICE that references an INVITE_MEMBER action', () => {
+    const { alice, bob } = setup('alice', { user: 'bob', member: false })
+    const { id } = alice.team.inviteMember()
+
+    expect(() =>
+      alice.team.dispatch({
+        type: 'ADMIT_DEVICE',
+        payload: { id, device: redactDevice(bob.device) },
+      })
+    ).toThrow(/member invitation cannot be used by ADMIT_DEVICE/)
+  })
+
+  it('derives invitation kind from legacy action types without changing their payload', () => {
+    const { alice } = setup('alice')
+    const memberInvitation = alice.team.inviteMember()
+    const deviceInvitation = alice.team.inviteDevice()
+    const invitationLinks = Object.values(alice.team.graph.links).filter(
+      link => link.body.type === 'INVITE_MEMBER' || link.body.type === 'INVITE_DEVICE'
+    )
+
+    for (const link of invitationLinks) {
+      expect(link.body.payload.invitation).not.toHaveProperty('kind')
+    }
+    expect(alice.team.getInvitation(memberInvitation.id).kind).toBe('member')
+    expect(alice.team.getInvitation(deviceInvitation.id).kind).toBe('device')
+  })
+})

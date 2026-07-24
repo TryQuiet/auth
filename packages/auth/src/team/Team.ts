@@ -26,7 +26,7 @@ import { type Challenge } from 'connection/types.js'
 import * as devices from 'device/index.js'
 import { redactDevice, type Device } from 'device/index.js'
 import * as invitations from 'invitation/index.js'
-import { type ProofOfInvitation } from 'invitation/index.js'
+import { type InvitationKind, type ProofOfInvitation } from 'invitation/index.js'
 import { normalize } from 'invitation/normalize.js'
 import * as lockbox from 'lockbox/index.js'
 import { AddRoleInput, ADMIN, type Role } from 'role/index.js'
@@ -646,11 +646,16 @@ export class Team extends EventEmitter<TeamEvents> {
   public getInvitation = (id: Base58) => select.getInvitation(this.state, id)
 
   /** Check whether (1) the invitation is still valid, and (2) the proof of invitation checks out. */
-  public validateInvitation = (proof: ProofOfInvitation) => {
+  public validateInvitation = (proof: ProofOfInvitation, expectedKind: InvitationKind) => {
     const { id } = proof
     if (!this.hasInvitation(id)) return invitations.fail("This invitation code doesn't match.")
 
     const invitation = this.getInvitation(id)
+    if (invitation.kind !== expectedKind) {
+      return invitations.fail(
+        `This ${invitation.kind} invitation cannot admit a ${expectedKind}.`
+      )
+    }
 
     // Make sure the invitation hasn't already been used, hasn't expired, and hasn't been revoked
     const canBeUsedResult = invitations.invitationCanBeUsed(invitation, Date.now())
@@ -670,7 +675,7 @@ export class Team extends EventEmitter<TeamEvents> {
     memberKeys: Keyset | KeysetWithSecrets, // We accept KeysetWithSecrets here to simplify testing - in practice we'll only receive Keyset
     userName: string // The new member's desired user-facing name
   ) => {
-    const validation = this.validateInvitation(proof)
+    const validation = this.validateInvitation(proof, 'member')
     if (!validation.isValid) throw validation.error
 
     const { id } = proof
@@ -692,12 +697,13 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** An existing team member calls this to admit a new device based on proof of invitation */
   public admitDevice = (proof: ProofOfInvitation, firstUseDevice: devices.FirstUseDevice) => {
-    const validation = this.validateInvitation(proof)
+    const validation = this.validateInvitation(proof, 'device')
     if (!validation.isValid) throw validation.error
 
     const { id } = proof
     const invitation = this.getInvitation(id)
-    const userId = invitation.userId!
+    const userId = invitation.userId
+    assert(userId, 'A device invitation must identify its owner.')
 
     // Now we can add the userId to the device and post it to the graph
     const device: Device = { ...firstUseDevice, userId }

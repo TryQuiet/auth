@@ -159,14 +159,14 @@ const getTransforms = (action: TeamAction): Transform[] => {
     case 'INVITE_MEMBER': {
       const { invitation } = action.payload
       return [
-        postInvitation(invitation), // Add the invitation to the list of open invitations.
+        postInvitation(invitation, 'member'), // Derive kind from the authenticated graph action.
       ]
     }
 
     case 'INVITE_DEVICE': {
       const { invitation } = action.payload
       return [
-        postInvitation(invitation), // Add the invitation to the list of open invitations.
+        postInvitation(invitation, 'device'), // Derive kind from the authenticated graph action.
       ]
     }
 

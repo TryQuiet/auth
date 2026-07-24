@@ -169,6 +169,45 @@ const validators: TeamStateValidatorSet = {
     return VALID
   },
 
+  admissionMatchesInvitationKind(
+    previousState: TeamState,
+    link: TeamLink,
+    extendableLogger: Logger
+  ) {
+    const logger = extendableLogger.extend('admissionMatchesInvitationKind')
+    if (link.body.type !== 'ADMIT_MEMBER' && link.body.type !== 'ADMIT_DEVICE') {
+      return VALID
+    }
+
+    const { id } = link.body.payload
+    const invitation = select.getInvitation(previousState, id)
+    const expectedKind = link.body.type === 'ADMIT_MEMBER' ? 'member' : 'device'
+    if (invitation.kind !== expectedKind) {
+      return fail(
+        `${invitation.kind} invitation cannot be used by ${link.body.type}`,
+        previousState,
+        link,
+        logger
+      )
+    }
+
+    if (link.body.type === 'ADMIT_DEVICE') {
+      if (!invitation.userId) {
+        return fail('Device invitation has no owner', previousState, link, logger)
+      }
+      if (link.body.payload.device.userId !== invitation.userId) {
+        return fail(
+          'Admitted device owner does not match the invitation owner',
+          previousState,
+          link,
+          logger
+        )
+      }
+    }
+
+    return VALID
+  },
+
   /** Check for self-assigned roles that aren't in the allowed list set by the admin */
   nonAdminsCanOnlyModifyCertainRoles(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
     const logger = extendableLogger.extend('nonAdminsCanOnlyModifyCertainRoles')
