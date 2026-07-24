@@ -1,7 +1,10 @@
 import { redactKeys } from '@localfirst/crdx'
 import { redactDevice } from 'device/index.js'
-import { generateProof } from 'invitation/index.js'
-import { setup } from 'util/testing/index.js'
+import {
+  deviceInvitationProof,
+  memberInvitationProof,
+  setup,
+} from 'util/testing/index.js'
 import { describe, expect, it } from 'vitest'
 
 describe('invitation kind', () => {
@@ -10,7 +13,12 @@ describe('invitation kind', () => {
     const { id, seed } = alice.team.inviteDevice()
 
     expect(() =>
-      alice.team.admitMember(generateProof(seed), bob.user.keys, bob.userName)
+      alice.team.admitMember(
+        memberInvitationProof(seed, bob.user, bob.device),
+        bob.user.keys,
+        bob.userName,
+        redactDevice(bob.device)
+      )
     ).toThrow(/device invitation cannot admit a member/)
     expect(alice.team.getInvitation(id).uses).toBe(0)
   })
@@ -20,7 +28,11 @@ describe('invitation kind', () => {
     const { seed } = alice.team.inviteMember()
 
     expect(() =>
-      alice.team.admitDevice(generateProof(seed), redactDevice(bob.device))
+      alice.team.admitDevice(
+        deviceInvitationProof(seed, bob.userName, bob.device),
+        redactDevice(bob.device),
+        bob.userName
+      )
     ).toThrow(/member invitation cannot admit a device/)
   })
 

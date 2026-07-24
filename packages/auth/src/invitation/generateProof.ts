@@ -1,22 +1,30 @@
-import { memoize } from '@localfirst/shared'
-import { signatures } from '@localfirst/crypto'
+import { signatures, type Base58 } from '@localfirst/crypto'
 import { deriveId } from 'invitation/deriveId.js'
-import { type ProofOfInvitation } from 'invitation/types.js'
+import type { InvitationClaim, ProofOfInvitationV2 } from 'invitation/types.js'
 import { generateStarterKeys } from './generateStarterKeys.js'
+import { invitationProofPayload } from './invitationProofPayload.js'
 import { normalize } from './normalize.js'
 
-export const generateProof = memoize((seed: string): ProofOfInvitation => {
+export const generateProof = ({
+  seed,
+  claim,
+  acceptorNonce,
+  inviteeNonce,
+}: {
+  seed: string
+  claim: InvitationClaim
+  acceptorNonce: Base58
+  inviteeNonce: Base58
+}): ProofOfInvitationV2 => {
   seed = normalize(seed)
 
-  // Bob independently derives the invitation id and the ephemeral keys
   const id = deriveId(seed)
-  const ephemeralKeys = generateStarterKeys(seed)
+  const starterKeys = generateStarterKeys(seed)
+  const proofFields = { id, acceptorNonce, inviteeNonce }
+  const signature = signatures.sign(
+    invitationProofPayload(proofFields, claim),
+    starterKeys.signature.secretKey
+  )
 
-  // Bob uses the ephemeral keys to sign a message consisting of the invitation id
-  const payload = { id }
-  const signature = signatures.sign(payload, ephemeralKeys.signature.secretKey)
-
-  // This signature will be shown to an existing team admin as proof that Bob knows the secret
-  // invitation key.
-  return { id, signature }
-})
+  return { version: 2, ...proofFields, signature }
+}

@@ -26,7 +26,11 @@ import { type Challenge } from 'connection/types.js'
 import * as devices from 'device/index.js'
 import { redactDevice, type Device } from 'device/index.js'
 import * as invitations from 'invitation/index.js'
-import { type InvitationKind, type ProofOfInvitation } from 'invitation/index.js'
+import {
+  type InvitationClaim,
+  type InvitationKind,
+  type ProofOfInvitation,
+} from 'invitation/index.js'
 import { normalize } from 'invitation/normalize.js'
 import * as lockbox from 'lockbox/index.js'
 import { AddRoleInput, ADMIN, type Role } from 'role/index.js'
@@ -646,7 +650,12 @@ export class Team extends EventEmitter<TeamEvents> {
   public getInvitation = (id: Base58) => select.getInvitation(this.state, id)
 
   /** Check whether (1) the invitation is still valid, and (2) the proof of invitation checks out. */
-  public validateInvitation = (proof: ProofOfInvitation, expectedKind: InvitationKind) => {
+  public validateInvitation = (
+    proof: ProofOfInvitation,
+    expectedKind: InvitationKind,
+    claim: InvitationClaim,
+    expectedAcceptorNonce?: Base58
+  ) => {
     const { id } = proof
     if (!this.hasInvitation(id)) return invitations.fail("This invitation code doesn't match.")
 
@@ -656,13 +665,16 @@ export class Team extends EventEmitter<TeamEvents> {
         `This ${invitation.kind} invitation cannot admit a ${expectedKind}.`
       )
     }
+    if (claim.invitationKind !== expectedKind) {
+      return invitations.fail('Invitation claim kind does not match the requested admission.')
+    }
 
     // Make sure the invitation hasn't already been used, hasn't expired, and hasn't been revoked
     const canBeUsedResult = invitations.invitationCanBeUsed(invitation, Date.now())
     if (canBeUsedResult !== VALID) return canBeUsedResult
 
     // Validate the proof of invitation
-    return invitations.validate(proof, invitation)
+    return invitations.validate(proof, invitation, claim, expectedAcceptorNonce)
   }
 
   public invitations(): InvitationMap {
@@ -673,9 +685,23 @@ export class Team extends EventEmitter<TeamEvents> {
   public admitMember = (
     proof: ProofOfInvitation,
     memberKeys: Keyset | KeysetWithSecrets, // We accept KeysetWithSecrets here to simplify testing - in practice we'll only receive Keyset
-    userName: string // The new member's desired user-facing name
+    userName: string, // The new member's desired user-facing name
+    device: Device,
+    expectedAcceptorNonce?: Base58
   ) => {
-    const validation = this.validateInvitation(proof, 'member')
+    const publicMemberKeys = redactKeys(memberKeys)
+    const claim: InvitationClaim = {
+      invitationKind: 'member',
+      userName,
+      userKeys: publicMemberKeys,
+      device,
+    }
+    const validation = this.validateInvitation(
+      proof,
+      'member',
+      claim,
+      expectedAcceptorNonce
+    )
     if (!validation.isValid) throw validation.error
 
     const { id } = proof
@@ -689,15 +715,30 @@ export class Team extends EventEmitter<TeamEvents> {
       payload: {
         id,
         userName,
-        memberKeys: redactKeys(memberKeys),
+        memberKeys: publicMemberKeys,
         lockboxes: [lockboxTeamKeysForMember],
       },
     })
   }
 
   /** An existing team member calls this to admit a new device based on proof of invitation */
-  public admitDevice = (proof: ProofOfInvitation, firstUseDevice: devices.FirstUseDevice) => {
-    const validation = this.validateInvitation(proof, 'device')
+  public admitDevice = (
+    proof: ProofOfInvitation,
+    firstUseDevice: devices.FirstUseDevice,
+    userName: string,
+    expectedAcceptorNonce?: Base58
+  ) => {
+    const claim: InvitationClaim = {
+      invitationKind: 'device',
+      userName,
+      device: firstUseDevice,
+    }
+    const validation = this.validateInvitation(
+      proof,
+      'device',
+      claim,
+      expectedAcceptorNonce
+    )
     if (!validation.isValid) throw validation.error
 
     const { id } = proof

@@ -2,7 +2,7 @@ import { type UnixTimestamp } from '@localfirst/crdx'
 import { generateStarterKeys } from './generateStarterKeys.js'
 import { deriveId } from 'invitation/deriveId.js'
 import { normalize } from 'invitation/normalize.js'
-import { type Invitation } from 'invitation/types.js'
+import { type InvitationV2 } from 'invitation/types.js'
 
 export const IKEY_LENGTH = 16
 
@@ -15,7 +15,7 @@ export const create = ({
   maxUses = 1, // By default an invitation can only be used once
   expiration = 0 as UnixTimestamp, // By default an invitation never expires
   userId,
-}: Params): Invitation => {
+}: Params): InvitationV2 => {
   seed = normalize(seed)
 
   // The ID of the invitation is derived from the seed
@@ -23,9 +23,18 @@ export const create = ({
 
   // The ephemeral public signature key will be used to verify Bob's proof of invitation
   const starterKeys = generateStarterKeys(seed)
-  const { publicKey } = starterKeys.signature
+  const signaturePublicKey = starterKeys.signature.publicKey
+  const encryptionPublicKey = starterKeys.encryption.publicKey
 
-  return { id, publicKey, expiration, maxUses, userId }
+  return {
+    version: 2,
+    id,
+    signaturePublicKey,
+    encryptionPublicKey,
+    expiration,
+    maxUses,
+    userId,
+  }
 }
 
 type Params = {

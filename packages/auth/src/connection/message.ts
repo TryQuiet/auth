@@ -4,6 +4,9 @@ import type { ErrorMessage, LocalErrorMessage } from './errors.js'
 
 export type ReadyMessage = {
   type: 'REQUEST_IDENTITY'
+  payload: {
+    acceptorNonce: Base58
+  }
 }
 
 export type DisconnectMessage = {

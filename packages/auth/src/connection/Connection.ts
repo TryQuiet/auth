@@ -8,7 +8,14 @@ import {
   receiveMessage,
   redactKeys,
 } from '@localfirst/crdx'
-import { asymmetric, base58, randomKeyBytes, symmetric, type Hash } from '@localfirst/crypto'
+import {
+  asymmetric,
+  base58,
+  randomKey,
+  randomKeyBytes,
+  symmetric,
+  type Hash,
+} from '@localfirst/crypto'
 import { assert, debug, Logger, SharedLogger } from '@localfirst/shared'
 import { deriveSharedKey } from 'connection/deriveSharedKey.js'
 import {
@@ -118,7 +125,12 @@ export class Connection extends EventEmitter<ConnectionEvents> {
     this.#messageQueue = this.#initializeMessageQueue(sendMessage, this.logger, username)
 
     // On sync server, the server keys act as both user keys and device keys
-    const initialContext = isServerContext(context) ? extendServerContext(context) : context
+    const baseContext = isServerContext(context) ? extendServerContext(context) : context
+    const initialContext = {
+      ...baseContext,
+      acceptorNonce: randomKey(),
+      inviteeNonce: randomKey(),
+    }
 
     const machine = setup({
       types: {
@@ -132,12 +144,15 @@ export class Connection extends EventEmitter<ConnectionEvents> {
       actions: {
         // IDENTITY CLAIMS
 
-        requestIdentityClaim: () => {
+        requestIdentityClaim: ({ context }) => {
           this.logger.debug('requesting identity claim')
-          this.#queueMessage('REQUEST_IDENTITY')
+          this.#queueMessage('REQUEST_IDENTITY', {
+            acceptorNonce: context.acceptorNonce,
+          })
         },
 
-        sendIdentityClaim: assign(({ context }) => {
+        sendIdentityClaim: assign(({ context, event }) => {
+          assertEvent(event, 'REQUEST_IDENTITY')
           this.logger.debug('sending identity claim')
           const createIdentityClaim = (context: ConnectionContext): IdentityClaim => {
             if (isMemberContext(context)) {
@@ -150,21 +165,44 @@ export class Connection extends EventEmitter<ConnectionEvents> {
               // I'm a new user and I have an invitation
               assert(context.invitationSeed)
               const { userName, keys } = context.user
-              return {
-                proofOfInvitation: invitations.generateProof(context.invitationSeed),
+              const claim = {
+                invitationKind: 'member',
                 userName,
                 userKeys: redactKeys(keys),
                 device: redactDevice(context.device),
+              } as const
+              return {
+                ...claim,
+                proofOfInvitation: invitations.generateProof({
+                  seed: context.invitationSeed,
+                  claim,
+                  acceptorNonce: event.payload.acceptorNonce,
+                  inviteeNonce: context.inviteeNonce,
+                }),
               }
             }
             if (isInviteeDeviceContext(context)) {
               // I'm a new device for an existing user and I have an invitation
               assert(context.invitationSeed)
               const { userName, device } = context
-              return {
-                proofOfInvitation: invitations.generateProof(context.invitationSeed),
+              const {
+                userId: _untrustedUserId,
+                keys,
+                ...deviceInfo
+              } = device as typeof device & { userId?: string }
+              const claim = {
+                invitationKind: 'device',
                 userName,
-                device: redactDevice(device),
+                device: { ...deviceInfo, keys: redactKeys(keys) },
+              } as const
+              return {
+                ...claim,
+                proofOfInvitation: invitations.generateProof({
+                  seed: context.invitationSeed,
+                  claim,
+                  acceptorNonce: event.payload.acceptorNonce,
+                  inviteeNonce: context.inviteeNonce,
+                }),
               }
             }
             // ignore coverage - that should have been exhaustive
@@ -203,7 +241,13 @@ export class Connection extends EventEmitter<ConnectionEvents> {
               this.logger.debug('handling member invite action')
               // New member
               const { userName, userKeys } = theirIdentityClaim
-              team.admitMember(proofOfInvitation, userKeys, userName)
+              team.admitMember(
+                proofOfInvitation,
+                userKeys,
+                userName,
+                theirIdentityClaim.device,
+                context.acceptorNonce
+              )
               const userId = userKeys.name
               if (
                 context.server == null &&
@@ -218,7 +262,12 @@ export class Connection extends EventEmitter<ConnectionEvents> {
               this.logger.debug('handling device invite action')
               // New device for existing member
               const { device } = theirIdentityClaim
-              team.admitDevice(proofOfInvitation, device)
+              team.admitDevice(
+                proofOfInvitation,
+                device,
+                theirIdentityClaim.userName,
+                context.acceptorNonce
+              )
               const { deviceId } = device
               const { userId } = team.memberByDeviceId(deviceId)
               return team.members(userId)
@@ -531,8 +580,14 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           const { team, theirIdentityClaim } = context
           assert(isInviteeClaim(theirIdentityClaim!))
           const expectedKind = isInviteeMemberClaim(theirIdentityClaim) ? 'member' : 'device'
+          const { proofOfInvitation, ...claim } = theirIdentityClaim
           const result = team!
-            .validateInvitation(theirIdentityClaim.proofOfInvitation, expectedKind)
+            .validateInvitation(
+              proofOfInvitation,
+              expectedKind,
+              claim,
+              context.acceptorNonce
+            )
             .isValid
           this.logger.debug('GUARD: is invitation valid?', result)
           return result
@@ -547,7 +602,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           // Make sure my invitation exists on the graph of the team I'm about to join. This check
           // prevents an attack in which a fake team pretends to accept my invitation.
           const state = getTeamState(serializedGraph, teamKeyring, this.logger)
-          const { id } = invitations.generateProof(invitationSeed)
+          const id = invitations.deriveId(invitationSeed)
           const result = select.hasInvitation(state, id)
           this.logger.debug('GUARD: does invitation match team?', result)
           return !result

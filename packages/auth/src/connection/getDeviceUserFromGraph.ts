@@ -1,6 +1,6 @@
 import type { Keyring, UserWithSecrets } from '@localfirst/crdx'
 import { assert, Logger } from '@localfirst/shared'
-import { generateProof } from 'invitation/generateProof.js'
+import { deriveId } from 'invitation/deriveId.js'
 import { generateStarterKeys } from 'invitation/generateStarterKeys.js'
 import { KeyType } from 'util/index.js'
 import { getTeamState } from '../team/getTeamState.js'
@@ -25,7 +25,7 @@ export const getDeviceUserFromGraph = ({
   logger: Logger
 }): UserWithSecrets => {
   const starterKeys = generateStarterKeys(invitationSeed)
-  const invitationId = generateProof(invitationSeed).id
+  const invitationId = deriveId(invitationSeed)
   const state = getTeamState(serializedGraph, teamKeyring, logger)
 
   const { userId } = select.getInvitation(state, invitationId)
