@@ -1,11 +1,14 @@
 import { createUser } from '@localfirst/crdx'
 import { eventPromise } from '@localfirst/shared'
 import { createDevice } from 'device/index.js'
+import { pack, unpack } from 'msgpackr'
 import * as teams from 'team/index.js'
 import { all, asFirstUseDevice, joinTestChannel, setup, TestChannel } from 'util/testing/index.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Connection } from '../Connection.js'
-import { ADMIT_MEMBER_LINK_MISSING } from '../errors.js'
+import { ADMIT_MEMBER_LINK_MISSING, ENCRYPTION_FAILURE } from '../errors.js'
+import type { ConnectionMessage } from '../message.js'
+import type { NumberedMessage } from '../MessageQueue.js'
 import type { InviteeDeviceContext, InviteeMemberContext, MemberContext } from '../types.js'
 
 describe('connection invitation admission', () => {
@@ -95,6 +98,46 @@ describe('connection invitation admission', () => {
     expect(admission.team.members(bob.userId).devices).toHaveLength(2)
   })
 
+  it('emits joined only after the invitation connection is secured', async () => {
+    const { alice, bob } = setup('alice', { user: 'bob', member: false })
+    alice.team.addRole('member')
+    const { seed } = alice.team.inviteMember()
+    const inviteeContext: InviteeMemberContext = {
+      user: bob.user,
+      device: bob.device,
+      invitationSeed: seed,
+    }
+    const connections = createConnectionPair(memberContext(alice), inviteeContext)
+    const events: string[] = []
+    connections.invitee.on('connectionSecured', () => events.push('connectionSecured'))
+    connections.invitee.on('joined', () => events.push('joined'))
+
+    await connect(connections)
+
+    expect(events).toEqual(['connectionSecured', 'joined'])
+  })
+
+  it('does not emit joined when session negotiation fails after admission', async () => {
+    const { alice, bob } = setup('alice', { user: 'bob', member: false })
+    alice.team.addRole('member')
+    const { seed } = alice.team.inviteMember()
+    const inviteeContext: InviteeMemberContext = {
+      user: bob.user,
+      device: bob.device,
+      invitationSeed: seed,
+    }
+    const channel = new TamperedSeedChannel(alice.device.deviceId)
+    const connections = createConnectionPair(memberContext(alice), inviteeContext, channel)
+    const joined = vi.fn()
+    connections.invitee.on('joined', joined)
+    const error = eventPromise(connections.invitee, 'localError')
+
+    start(connections)
+
+    await expect(error).resolves.toMatchObject({ type: ENCRYPTION_FAILURE })
+    expect(joined).not.toHaveBeenCalled()
+  })
+
   it('rejects a graph that contains the invitation but omits the invited device', async () => {
     const { bob } = setup('bob')
     bob.team.addRole('member')
@@ -151,9 +194,10 @@ describe('connection invitation admission', () => {
 
   const createConnectionPair = (
     existingMember: MemberContext,
-    invitee: InviteeDeviceContext | InviteeMemberContext
+    invitee: InviteeDeviceContext | InviteeMemberContext,
+    channel = new TestChannel()
   ) => {
-    const join = joinTestChannel(new TestChannel())
+    const join = joinTestChannel(channel)
     const connections = {
       member: join(existingMember),
       invitee: join(invitee),
@@ -182,3 +226,27 @@ describe('connection invitation admission', () => {
     await disconnected
   }
 })
+
+class TamperedSeedChannel extends TestChannel {
+  constructor(private readonly senderToTamper: string) {
+    super()
+  }
+
+  override write(senderId: string, message: Uint8Array) {
+    const numberedMessage = unpack(message) as NumberedMessage<ConnectionMessage>
+    if (senderId === this.senderToTamper && numberedMessage.type === 'SEED') {
+      const encryptedSeed = numberedMessage.payload.encryptedSeed.slice()
+      encryptedSeed[Math.floor(encryptedSeed.length / 2)] ^= 1
+      const tampered = pack({
+        ...numberedMessage,
+        payload: { encryptedSeed },
+      })
+      super.write(
+        senderId,
+        new Uint8Array(tampered.buffer, tampered.byteOffset, tampered.byteLength)
+      )
+      return
+    }
+    super.write(senderId, message)
+  }
+}

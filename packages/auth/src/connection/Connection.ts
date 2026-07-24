@@ -376,7 +376,6 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
           // We join the team, which adds our device to the team graph.
           team.join(teamKeyring)
-          this.emit('joined', { team, user, teamKeyring })
           return {
             user,
             team,
@@ -539,9 +538,19 @@ export class Connection extends EventEmitter<ConnectionEvents> {
               senderPublicKey,
               recipientSecretKey,
             })
+            const sessionKey = deriveSharedKey(seed, theirSeed)
             this.emit('connectionSecured')
-            // With the two keys, we derive a shared key
-            return { sessionKey: deriveSharedKey(seed, theirSeed) }
+            if (context.invitationAcceptance !== undefined) {
+              assert(context.team)
+              assert(context.user)
+              assert(context.invitationAcceptanceValidation)
+              this.emit('joined', {
+                team: context.team,
+                user: context.user,
+                teamKeyring: context.invitationAcceptance.teamKeyring,
+              })
+            }
+            return { sessionKey }
           } catch (error) {
             if (String(error).includes('incorrect key pair')) {
               this.logger.error(`failed to decrypt seed using public key ${senderPublicKey}`, error)
