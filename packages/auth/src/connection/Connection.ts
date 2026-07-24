@@ -558,10 +558,8 @@ export class Connection extends EventEmitter<ConnectionEvents> {
             }
             return { sessionKey }
           } catch (error) {
-            if (String(error).includes('incorrect key pair')) {
-              this.logger.error(`failed to decrypt seed using public key ${senderPublicKey}`, error)
-              return this.#fail(ENCRYPTION_FAILURE)
-            } else throw error
+            this.logger.error(`failed to decrypt seed using public key ${senderPublicKey}`, error)
+            return this.#fail(ENCRYPTION_FAILURE)
           }
         }),
 
@@ -577,13 +575,11 @@ export class Connection extends EventEmitter<ConnectionEvents> {
             const decryptedMessage = symmetric.decryptBytes(encryptedMessage, sessionKey)
             this.emit('message', decryptedMessage)
           } catch (error) {
-            if (String(error).includes('wrong secret key')) {
-              this.logger.error(
-                `failed to decrypt message using session key ${base58.encode(sessionKey)}`,
-                error
-              )
-              return this.#fail(ENCRYPTION_FAILURE)
-            } else throw error
+            this.logger.error(
+              `failed to decrypt message using session key ${base58.encode(sessionKey)}`,
+              error
+            )
+            return this.#fail(ENCRYPTION_FAILURE)
           }
         },
 
