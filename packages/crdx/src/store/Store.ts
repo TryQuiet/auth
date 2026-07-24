@@ -99,6 +99,11 @@ export class Store<
     return this.graph
   }
 
+  /** Returns the encryption keys retained for this graph. */
+  public getKeyring(): Keyring {
+    return { ...this.keyring }
+  }
+
   /**
    * Returns the current hash graph in serialized form; this can be used to rehydrate this
    * store from storage.

@@ -64,7 +64,8 @@ export const decryptTeamGraph = ({
   ): Record<Hash, TeamLink> => {
     // Decrypt this link
     const encryptedLink = encryptedLinks[hash]
-    const decryptedLink = decryptLink<TeamAction, TeamContext>(encryptedLink, previousKeys)
+    const decryptionKeys = keyring[encryptedLink.recipientPublicKey] ?? previousKeys
+    const decryptedLink = decryptLink<TeamAction, TeamContext>(encryptedLink, decryptionKeys)
     let decryptedLinks = {
       [hash]: decryptedLink,
     }
@@ -84,6 +85,7 @@ export const decryptTeamGraph = ({
 
     if (children) {
       for (const hash of children) {
+        if (encryptedLinks[hash] === undefined) continue
         decryptedLinks = {
           ...decryptedLinks,
           ...decrypt(hash, newKeys, decryptedLinks, newState),

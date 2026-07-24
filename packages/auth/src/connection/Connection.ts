@@ -481,7 +481,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           const { syncState: prevSyncState = initSyncState(), team, device } = context
 
           assert(team)
-          const teamKeys = team.teamKeys()
+          const teamKeyring = team.teamKeyring()
           const deviceKeys = device.keys
 
           // handle errors here
@@ -492,7 +492,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
             team.graph,
             prevSyncState,
             syncMessage,
-            teamKeys,
+            teamKeyring,
             decrypt,
             this.logger
           )

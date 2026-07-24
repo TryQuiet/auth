@@ -974,7 +974,10 @@ export class Team extends EventEmitter<TeamEvents> {
   /** Returns the current team keys or a specific generation of team keys */
   public teamKeys = (generation?: number) => this.keys({ ...TEAM_SCOPE, generation })
 
-  public teamKeyring = () => select.teamKeyring(this.state, this.context.device.keys)
+  public teamKeyring = () => ({
+    ...this.store.getKeyring(),
+    ...select.teamKeyring(this.state, this.context.device.keys),
+  })
 
   /** Returns the admin keyset. */
   public adminKeys = (generation?: number) => this.roleKeys(ADMIN, generation)
