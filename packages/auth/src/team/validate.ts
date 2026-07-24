@@ -37,6 +37,52 @@ export const canUserAddMemberToRole = (roleName: string, assigningUserId: string
   }
 
 const validators: TeamStateValidatorSet = {
+  /** The authenticated encryption key must belong to the user or server claimed by the action. */
+  actionAuthorIsAuthenticated(
+    previousState: TeamState,
+    link: TeamLink,
+    extendableLogger: Logger
+  ) {
+    const logger = extendableLogger.extend('actionAuthorIsAuthenticated')
+    const { senderPublicKey } = link
+    const { type, userId } = link.body
+
+    if (type === ROOT) {
+      const { rootMember } = link.body.payload
+      if (
+        userId !== rootMember.userId ||
+        senderPublicKey !== rootMember.keys.encryption
+      ) {
+        return fail('Root action author does not match the founding member', previousState, link, logger)
+      }
+      return VALID
+    }
+
+    const matchingMembers = previousState.members.filter(member => member.userId === userId)
+    const matchingServers = previousState.servers.filter(server => server.host === userId)
+    const matchingAuthors = [...matchingMembers, ...matchingServers]
+
+    if (matchingAuthors.length !== 1) {
+      return fail(
+        `Action author '${userId}' is unknown or ambiguous`,
+        previousState,
+        link,
+        logger
+      )
+    }
+
+    if (senderPublicKey !== matchingAuthors[0].keys.encryption) {
+      return fail(
+        `Action author '${userId}' did not authenticate with their current encryption key`,
+        previousState,
+        link,
+        logger
+      )
+    }
+
+    return VALID
+  },
+
   rootDeviceBelongsToRootUser(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
     const logger = extendableLogger.extend('rootDeviceBelongsToRootUser')
     const { type, payload } = link.body

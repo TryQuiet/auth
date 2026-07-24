@@ -55,9 +55,6 @@ export const decryptTeamGraph = ({
 
   const { encryptedLinks, childMap, root } = encryptedGraph
 
-  // ignore coverage
-  const links = encryptedGraph.links ?? {}
-
   /** Recursively decrypts a link and its children. */
   const decrypt = (
     hash: Hash,
@@ -67,9 +64,7 @@ export const decryptTeamGraph = ({
   ): Record<Hash, TeamLink> => {
     // Decrypt this link
     const encryptedLink = encryptedLinks[hash]
-    const decryptedLink =
-      links[hash] ?? // If it's already decrypted, don't bother decrypting it again
-      decryptLink<TeamAction, TeamContext>(encryptedLink, previousKeys)
+    const decryptedLink = decryptLink<TeamAction, TeamContext>(encryptedLink, previousKeys)
     let decryptedLinks = {
       [hash]: decryptedLink,
     }

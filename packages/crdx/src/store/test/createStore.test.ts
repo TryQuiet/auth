@@ -85,18 +85,14 @@ describe('createStore', () => {
     const tamperedSerializedGraph = serialize(tamperedGraph)
 
     // 👩🏾 Alice tries to load the modified graph
-    const aliceStoreTheNextDay = createStore<
-      CounterState,
-      IncrementAction,
-      Record<string, unknown>
-    >({
-      user: alice,
-      graph: tamperedSerializedGraph,
-      reducer: counterReducer,
-      keys,
-    })
-
-    // 👩🏾 Alice is not fooled because the graph is no longer valid
-    expect(aliceStoreTheNextDay.validate()).not.toBeValid()
+    // 👩🏾 Alice is not fooled because invalid graphs fail closed during initial load
+    expect(() =>
+      createStore<CounterState, IncrementAction, Record<string, unknown>>({
+        user: alice,
+        graph: tamperedSerializedGraph,
+        reducer: counterReducer,
+        keys,
+      })
+    ).toThrow()
   })
 })

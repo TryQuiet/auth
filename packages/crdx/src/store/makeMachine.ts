@@ -14,7 +14,10 @@ export const makeMachine = <S, A extends Action, C>({
     const logger = extendableLogger != null ? extendableLogger.extend('makeMachine') : new Logger({ moduleName: 'auth:makeMachine' })
 
     // Validate the graph's integrity.
-    validate(graph, validators, logger)
+    const validation = validate(graph, validators, logger)
+    if (!validation.isValid) {
+      throw validation.error
+    }
 
     // Use the filter & sequencer to turn the graph into an ordered sequence
     const sequence = getSequence(graph, resolver)

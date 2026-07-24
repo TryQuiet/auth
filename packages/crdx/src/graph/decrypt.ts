@@ -36,6 +36,7 @@ export const decryptLink = <A extends Action, C>(
 
   return {
     hash: hashEncryptedLink(encryptedBody),
+    senderPublicKey,
     body: decryptedLinkBody,
   }
 }
@@ -51,7 +52,6 @@ export const decryptGraph: DecryptFn = <A extends Action, C>({
   keys: KeysetWithSecrets | KeysetWithSecrets[] | Keyring
 }): Graph<A, C> => {
   const { encryptedLinks, root, childMap = {} } = encryptedGraph
-  const links = encryptedGraph.links ?? {}
   const toVisit = [root]
   const visited: Set<Hash> = new Set()
   const decryptedLinks: Record<Hash, Link<A, C>> = {}
@@ -64,9 +64,7 @@ export const decryptGraph: DecryptFn = <A extends Action, C>({
     }
 
     const encryptedLink = encryptedLinks[current]
-    const decryptedLink =
-      links[current] ?? // if it's already decrypted, don't bother decrypting it again
-      decryptLink(encryptedLink, keys)
+    const decryptedLink = decryptLink<A, C>(encryptedLink, keys)
 
     decryptedLinks[current] = decryptedLink
 

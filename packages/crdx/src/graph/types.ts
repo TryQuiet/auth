@@ -114,6 +114,9 @@ export type Link<A extends Action, C> = {
   /** Hash of the body */
   hash: Hash
 
+  /** Authenticated public encryption key of the link author */
+  senderPublicKey: Base58
+
   /** The part of the link that is encrypted */
   body: LinkBody<A, C>
 

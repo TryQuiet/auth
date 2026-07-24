@@ -147,7 +147,7 @@ export class Store<
     }
 
     // append this action as a new link to the graph
-    this.graph = append({
+    const nextGraph = append({
       graph: this.graph,
       action: actionWithPayload,
       user: this.user,
@@ -156,10 +156,14 @@ export class Store<
     })
 
     // get the newly appended link (at this point we're guaranteed a single head, which is the one we appended)
-    const [head] = getHead(this.graph)
+    const [head] = getHead(nextGraph)
 
     // we don't need to pass the whole graph through the reducer, just the current state + the new head
-    this.state = this.reducer(this.state, head, this.logger)
+    const nextState = this.reducer(this.state, head, this.logger)
+
+    // Commit the graph and state together only after the action has passed application validation.
+    this.graph = nextGraph
+    this.state = nextState
 
     // notify listeners
     this.emit('updated', { head: this.graph.head })
@@ -173,8 +177,13 @@ export class Store<
    * @returns this `Store` instance
    */
   public merge(theirGraph: Graph<A, C>) {
-    this.graph = merge(this.graph, theirGraph)
-    this.updateState()
+    const mergedGraph = merge(this.graph, theirGraph)
+    const mergedState = this.deriveState(mergedGraph)
+
+    // Do not expose a received graph unless both graph and application validation succeeded.
+    this.graph = mergedGraph
+    this.state = mergedState
+    this.emit('updated', { head: this.graph.head })
   }
 
   /**
@@ -188,16 +197,20 @@ export class Store<
   // PRIVATE
 
   private updateState() {
+    this.state = this.deriveState(this.graph)
+
+    // notify listeners
+    this.emit('updated', { head: this.graph.head })
+  }
+
+  private deriveState(graph: Graph<A, C>) {
     const machine = makeMachine({
       initialState: this.initialState,
       reducer: this.reducer,
       resolver: this.resolver,
       validators: this.validators,
     })
-    this.state = machine(this.graph, this.logger)
-
-    // notify listeners
-    this.emit('updated', { head: this.graph.head })
+    return machine(graph, this.logger)
   }
 }
 

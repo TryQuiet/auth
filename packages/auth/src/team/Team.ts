@@ -14,6 +14,7 @@ import type {
 import {
   createKeyset,
   createStore,
+  getChildMap,
   getLatestGeneration,
   isKeyset,
   redactKeys,
@@ -34,6 +35,7 @@ import { type Host, type Server } from 'server/types.js'
 import { type LocalUserContext } from 'team/context.js'
 import { KeyType, Optional, VALID, scopesMatch } from 'util/index.js'
 import { ADMIN_SCOPE, ALL, TEAM_SCOPE, initialState } from './constants.js'
+import { decryptTeamGraph } from './decryptTeamGraph.js'
 import { membershipResolver as resolver } from './membershipResolver.js'
 import { redactUser } from './redactUser.js'
 import { reducer } from './reducer.js'
@@ -217,7 +219,13 @@ export class Team extends EventEmitter<TeamEvents> {
    * @returns This `Team` instance.
    */
   public merge = (theirGraph: TeamGraph) => {
-    this.store.merge(theirGraph)
+    const authenticatedGraph = decryptTeamGraph({
+      encryptedGraph: { ...theirGraph, childMap: getChildMap(theirGraph) },
+      teamKeys: this.teamKeyring(),
+      deviceKeys: this.context.device.keys,
+      extendableLogger: this.logger,
+    })
+    this.store.merge(authenticatedGraph)
     this.state = this.store.getState()
 
     this.emit('updated', { head: this.graph.head })

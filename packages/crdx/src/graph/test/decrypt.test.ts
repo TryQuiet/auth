@@ -19,6 +19,7 @@ describe('decrypt', () => {
       const decryptedLink = decryptLink(link, keys)
       expect(decryptedLink.body).toEqual(graph.links[hash].body)
       expect(decryptedLink.hash).toEqual(hash)
+      expect(decryptedLink.senderPublicKey).toEqual(link.senderPublicKey)
     }
   })
 
@@ -36,6 +37,9 @@ describe('decrypt', () => {
       const original = graph.links[hash]
       expect(decrypted.body).toEqual(original.body)
       expect(decrypted.hash).toEqual(original.hash)
+      expect(decrypted.senderPublicKey).toEqual(
+        graph.encryptedLinks[hash].senderPublicKey
+      )
     }
   })
 
@@ -68,5 +72,31 @@ describe('decrypt', () => {
       expect(decrypted.body).toEqual(original.body)
       expect(decrypted.hash).toEqual(original.hash)
     }
+  })
+
+  it('ignores supplied plaintext links and decrypts the authenticated ciphertext', () => {
+    const alice = createUser('alice')
+    let graph = createGraph<any>({ user: alice, name: 'test graph', keys })
+    graph = append({ graph, action: { type: 'FOO' }, user: alice, keys })
+    const encryptedGraph = redactGraph(graph)
+    const [head] = graph.head
+
+    const graphWithInjectedPlaintext = {
+      ...encryptedGraph,
+      links: {
+        ...graph.links,
+        [head]: {
+          ...graph.links[head],
+          body: { ...graph.links[head].body, userId: 'eve' },
+        },
+      },
+    }
+
+    const decryptedGraph = decryptGraph({
+      encryptedGraph: graphWithInjectedPlaintext,
+      keys,
+    })
+
+    expect(decryptedGraph.links[head].body.userId).toBe(alice.userId)
   })
 })
