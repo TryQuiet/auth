@@ -9,23 +9,30 @@ export const hasDevice = (
   deviceId: string,
   options = { includeRemoved: false }
 ) => {
-  return getDevice(state, deviceId, options) !== undefined
+  return getDevices(state, deviceId, options).length === 1
 }
 
 export const device = (state: TeamState, deviceId: string, options = { includeRemoved: false }) => {
-  const device = getDevice(state, deviceId, options)
-  assert(device, `Device ${deviceId} not found`)
-  return device
+  const matchingDevices = getDevices(state, deviceId, options)
+  assert(matchingDevices.length > 0, `Device ${deviceId} not found`)
+  assert(matchingDevices.length === 1, `Device ID '${deviceId}' is ambiguous`)
+  return matchingDevices[0]
 }
 
-const getDevice = (state: TeamState, deviceId: string, options = { includeRemoved: false }) => {
-  if (hasServer(state, deviceId)) {
-    return castServer.toDevice(server(state, deviceId))
-  }
+const getDevices = (state: TeamState, deviceId: string, options = { includeRemoved: false }) => {
+  const matchingServers = hasServer(state, deviceId, options)
+    ? [castServer.toDevice(server(state, deviceId, options))]
+    : []
   const members = state.members.concat(options.includeRemoved ? state.removedMembers : [])
-  const allDevices = members.flatMap(m => m.devices ?? [])
-  return (
-    allDevices.find(d => d.deviceId === deviceId) ??
-    (options.includeRemoved ? state.removedDevices.find(d => d.deviceId === deviceId) : undefined)
-  )
+  const memberDevices = members
+    .flatMap(member => member.devices ?? [])
+    .filter(device => device.deviceId === deviceId)
+  const removedDevices = options.includeRemoved
+    ? state.removedDevices.filter(device => device.deviceId === deviceId)
+    : []
+  const matchingDevices = [...matchingServers, ...memberDevices, ...removedDevices]
+  if (matchingDevices.length > 1) {
+    throw new Error(`Device ID '${deviceId}' is ambiguous`)
+  }
+  return matchingDevices
 }

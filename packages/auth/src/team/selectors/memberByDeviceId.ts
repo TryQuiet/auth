@@ -7,7 +7,9 @@ export const memberByDeviceId = (
   deviceId: string,
   options = { includeRemoved: false }
 ) => {
-  if (hasServer(state, deviceId)) return castServer.toMember(server(state, deviceId))
   const { userId } = device(state, deviceId, options)
+  if (hasServer(state, deviceId, options)) {
+    return castServer.toMember(server(state, deviceId, options))
+  }
   return member(state, userId, options)
 }

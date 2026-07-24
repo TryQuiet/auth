@@ -137,7 +137,7 @@ export class Team extends EventEmitter<TeamEvents> {
         rootPayload,
         keys: options.teamKeys,
         logger: this.logger,
-      })      
+      })
       const metadata: TeamMetadata = options.metadata ?? {
         selfAssignableRoles: []
       }
@@ -477,7 +477,7 @@ export class Team extends EventEmitter<TeamEvents> {
     if (!this.memberHasRole(memberId, roleName)) {
       return false
     }
-    return this._isRoleRemovable(roleName, false) 
+    return this._isRoleRemovable(roleName, false)
   }
 
   /** ************** DEVICES */
@@ -769,17 +769,28 @@ export class Team extends EventEmitter<TeamEvents> {
 
     const lockboxUserKeysForDevice = lockbox.create(user.keys, device.keys)
 
-    this.logger.debug('Adding device on join')
-    this.dispatch(
-      {
-        type: 'ADD_DEVICE',
-        payload: {
-          device: redactDevice(device),
-          lockboxes: [lockboxUserKeysForDevice],
+    if (this.hasDevice(device.deviceId)) {
+      this.logger.debug('Adding joined device lockbox')
+      this.dispatch(
+        {
+          type: 'ADD_LOCKBOXES',
+          payload: { lockboxes: [lockboxUserKeysForDevice] },
         },
-      },
-      teamKeys
-    )
+        teamKeys
+      )
+    } else {
+      this.logger.debug('Adding device on join')
+      this.dispatch(
+        {
+          type: 'ADD_DEVICE',
+          payload: {
+            device: redactDevice(device),
+            lockboxes: [lockboxUserKeysForDevice],
+          },
+        },
+        teamKeys
+      )
+    }
   }
 
   /** ************** SERVERS */
@@ -879,7 +890,7 @@ export class Team extends EventEmitter<TeamEvents> {
     const { secretKey } = this.keys(message.recipient)
     return symmetric.decryptBytes(message.contents, secretKey)
   }
-  
+
   /**
    * Symmetrically encrypt a byte stream for the given scope using keys available to the current user.
    *
@@ -890,7 +901,7 @@ export class Team extends EventEmitter<TeamEvents> {
   public encryptStream = (stream: AsyncIterable<Uint8Array>, roleName?: string): EncryptStreamTeamPayload => {
     const scope = roleName ? { type: KeyType.ROLE, name: roleName } : TEAM_SCOPE
     const { secretKey, generation } = this.keys(scope)
-    
+
     const { header, encryptStream } = symmetric.encryptBytesStream(stream, secretKey)
     return {
       header,
@@ -999,7 +1010,7 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /**
    * Create a new lockbox containing a role's current generation keys encrypted to an arbitrary keyset
-   * 
+   *
    * @param roleName Role whose keys we want to encapsulate in the lockbox (must be a role the user has!)
    * @param encryptionKeys Keys to encrypt the lockbox to
    * @returns Generated lockbox

@@ -6,11 +6,14 @@ export const server = (state: TeamState, host: Host, options = { includeRemoved:
     ...state.servers,
     ...(options.includeRemoved ? state.removedServers : []),
   ]
-  const server = serversToSearch.find(s => s.host === host)
+  const matchingServers = serversToSearch.filter(server => server.host === host)
 
-  if (server === undefined) {
+  if (matchingServers.length === 0) {
     throw new Error(`A server with host '${host}' was not found`)
   }
+  if (matchingServers.length > 1) {
+    throw new Error(`Server host '${host}' is ambiguous`)
+  }
 
-  return server
+  return matchingServers[0]
 }

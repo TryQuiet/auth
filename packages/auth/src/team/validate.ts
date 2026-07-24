@@ -1,7 +1,7 @@
-import { debug, Logger, truncateHashes } from '@localfirst/shared'
-import { ROOT } from '@localfirst/crdx'
+import { Logger, truncateHashes } from '@localfirst/shared'
+import { ROOT, type Keyset } from '@localfirst/crdx'
 import { invitationCanBeUsed } from 'invitation/index.js'
-import { VALID, ValidationError, actionFingerprint } from 'util/index.js'
+import { KeyType, VALID, ValidationError, actionFingerprint } from 'util/index.js'
 import { isAdminOnlyAction } from './isAdminOnlyAction.js'
 import * as select from './selectors/index.js'
 import {
@@ -12,7 +12,7 @@ import {
 } from './types.js'
 
 export const validate: TeamStateValidator = (previousState: TeamState, link: TeamLink, extendableLogger?: Logger) => {
-  const logger = extendableLogger != null ? extendableLogger.extend('validate') : new Logger({ moduleName: 'auth:validate' })
+  const logger = extendableLogger !== undefined ? extendableLogger.extend('validate') : new Logger({ moduleName: 'auth:validate' })
   logger.debug('Validating link')
   for (const key in validators) {
     const validator = validators[key]
@@ -96,6 +96,177 @@ const validators: TeamStateValidatorSet = {
     return VALID
   },
 
+  identityKeyMetadataIsValid(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('identityKeyMetadataIsValid')
+    const { type, payload } = link.body
+
+    const invalidInitialMember = (member: {
+      userId: string
+      keys: Keyset
+      devices?: Array<{ deviceId: string; userId: string; keys: Keyset }>
+    }) =>
+      !keysetMatches(member.keys, KeyType.USER, member.userId, 0) ||
+      (member.devices ?? []).some(
+        device =>
+          device.userId !== member.userId ||
+          !keysetMatches(device.keys, KeyType.DEVICE, device.deviceId, 0)
+      )
+
+    if (type === ROOT) {
+      const { rootMember, rootDevice } = payload
+      if (
+        invalidInitialMember(rootMember) ||
+        !keysetMatches(rootDevice.keys, KeyType.DEVICE, rootDevice.deviceId, 0)
+      ) {
+        return fail('Root member or device key metadata is invalid', previousState, link, logger)
+      }
+    }
+
+    if (type === 'ADD_MEMBER' && invalidInitialMember(payload.member)) {
+      return fail('New member key metadata is invalid', previousState, link, logger)
+    }
+
+    if (
+      type === 'ADMIT_MEMBER' &&
+      !keysetMatches(payload.memberKeys, KeyType.USER, payload.memberKeys.name, 0)
+    ) {
+      return fail('Admitted member key metadata is invalid', previousState, link, logger)
+    }
+
+    if (
+      (type === 'ADD_DEVICE' || type === 'ADMIT_DEVICE') &&
+      !keysetMatches(payload.device.keys, KeyType.DEVICE, payload.device.deviceId, 0)
+    ) {
+      return fail('New device key metadata is invalid', previousState, link, logger)
+    }
+
+    if (
+      type === 'ADD_SERVER' &&
+      !keysetMatches(payload.server.keys, KeyType.SERVER, payload.server.host, 0)
+    ) {
+      return fail('New server key metadata is invalid', previousState, link, logger)
+    }
+
+    if (type === 'CHANGE_MEMBER_KEYS') {
+      const members = previousState.members.filter(member => member.userId === payload.keys.name)
+      if (
+        members.length !== 1 ||
+        !keysetMatches(
+          payload.keys,
+          KeyType.USER,
+          members[0].userId,
+          members[0].keys.generation + 1
+        )
+      ) {
+        return fail('Changed member key metadata is invalid', previousState, link, logger)
+      }
+    }
+
+    if (type === 'CHANGE_SERVER_KEYS') {
+      const servers = previousState.servers.filter(server => server.host === payload.keys.name)
+      if (
+        servers.length !== 1 ||
+        !keysetMatches(
+          payload.keys,
+          KeyType.SERVER,
+          servers[0].host,
+          servers[0].keys.generation + 1
+        )
+      ) {
+        return fail('Changed server key metadata is invalid', previousState, link, logger)
+      }
+    }
+
+    return VALID
+  },
+
+  activeIdentityIdsAreUnique(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('activeIdentityIdsAreUnique')
+    const { type, payload } = link.body
+
+    const memberIds =
+      type === ROOT
+        ? [payload.rootMember.userId]
+        : type === 'ADD_MEMBER'
+          ? [payload.member.userId]
+          : type === 'ADMIT_MEMBER'
+            ? [payload.memberKeys.name]
+            : []
+    for (const userId of memberIds) {
+      if (
+        previousState.members.some(member => member.userId === userId) ||
+        previousState.servers.some(server => server.host === userId)
+      ) {
+        return fail(`Active member ID '${userId}' is already in use`, previousState, link, logger)
+      }
+    }
+
+    const devices =
+      type === ROOT
+        ? [payload.rootDevice, ...(payload.rootMember.devices ?? [])]
+        : type === 'ADD_MEMBER'
+          ? payload.member.devices ?? []
+          : type === 'ADD_DEVICE' || type === 'ADMIT_DEVICE'
+            ? [payload.device]
+            : []
+    const deviceIds = devices.map(device => device.deviceId)
+    if (new Set(deviceIds).size !== deviceIds.length) {
+      return fail('An action contains duplicate device IDs', previousState, link, logger)
+    }
+    for (const deviceId of deviceIds) {
+      const existingDevices = previousState.members.flatMap(member => member.devices ?? [])
+      if (
+        existingDevices.some(device => device.deviceId === deviceId) ||
+        previousState.servers.some(server => server.host === deviceId)
+      ) {
+        return fail(`Active device ID '${deviceId}' is already in use`, previousState, link, logger)
+      }
+    }
+
+    if (type === 'ADD_SERVER') {
+      const { host } = payload.server
+      const deviceCollision = previousState.members
+        .flatMap(member => member.devices ?? [])
+        .some(device => device.deviceId === host)
+      if (
+        previousState.servers.some(server => server.host === host) ||
+        previousState.members.some(member => member.userId === host) ||
+        deviceCollision
+      ) {
+        return fail(`Active server host '${host}' is already in use`, previousState, link, logger)
+      }
+    }
+
+    return VALID
+  },
+
+  deviceAdditionIsAuthorized(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('deviceAdditionIsAuthorized')
+    const { type, payload, userId: author } = link.body
+    if (type !== 'ADD_DEVICE' && type !== 'ADMIT_DEVICE') {
+      return VALID
+    }
+    if (type === 'ADMIT_DEVICE' && previousState.invitations[payload.id]?.kind !== 'device') {
+      // The invitation-kind validator below owns this failure.
+      return VALID
+    }
+
+    const owners = previousState.members.filter(member => member.userId === payload.device.userId)
+    if (owners.length !== 1) {
+      return fail('Device owner is missing or ambiguous', previousState, link, logger)
+    }
+
+    if (
+      type === 'ADD_DEVICE' &&
+      author !== payload.device.userId &&
+      !select.memberIsAdmin(previousState, author)
+    ) {
+      return fail("A non-admin cannot add another member's device", previousState, link, logger)
+    }
+
+    return VALID
+  },
+
   /** The user who made these changes was a member with appropriate rights at the time */
   mustBeAdmin(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
     const logger = extendableLogger.extend('mustBeAdmin')
@@ -159,8 +330,11 @@ const validators: TeamStateValidatorSet = {
   },
 
   /** Check for ADMIT with invitations that are revoked OR have been used more than maxUses OR are expired */
-  cantAdmitWithInvalidInvitation(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
-    const logger = extendableLogger.extend('cantAdmitWithInvalidInvitation')
+  cantAdmitWithInvalidInvitation(
+    previousState: TeamState,
+    link: TeamLink,
+    _extendableLogger: Logger
+  ) {
     if (link.body.type === 'ADMIT_MEMBER' || link.body.type === 'ADMIT_DEVICE') {
       const { id } = link.body.payload
       const invitation = select.getInvitation(previousState, id)
@@ -220,6 +394,13 @@ const validators: TeamStateValidatorSet = {
     return VALID
   },
 }
+
+const keysetMatches = (keys: Keyset, type: string, name: string, generation: number) =>
+  keys.type === type &&
+  keys.name === name &&
+  keys.generation === generation &&
+  typeof keys.encryption === 'string' &&
+  typeof keys.signature === 'string'
 
 const fail = (message: string, previousState: TeamState, link: TeamLink, extendableLogger: Logger) => {
   const logger = extendableLogger.extend('fail')
