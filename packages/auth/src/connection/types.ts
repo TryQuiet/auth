@@ -78,12 +78,12 @@ export type InviteeDeviceIdentityClaim = {
   proofOfInvitation: ProofOfInvitation
   userName: string
   device: FirstUseDevice
+  userKeys?: never
 }
 
-export type IdentityClaim =
-  | MemberIdentityClaim
-  | InviteeMemberIdentityClaim
-  | InviteeDeviceIdentityClaim
+export type InviteeIdentityClaim = InviteeMemberIdentityClaim | InviteeDeviceIdentityClaim
+
+export type IdentityClaim = MemberIdentityClaim | InviteeIdentityClaim
 
 // CONTEXT
 
@@ -188,6 +188,6 @@ export const isInviteeDeviceClaim = (claim: IdentityClaim): claim is InviteeDevi
   return isInviteeClaim(claim) && !('userKeys' in claim)
 }
 
-export const isInviteeClaim = (claim: IdentityClaim): claim is InviteeDeviceIdentityClaim => {
+export const isInviteeClaim = (claim: IdentityClaim): claim is InviteeIdentityClaim => {
   return 'proofOfInvitation' in claim && claim.proofOfInvitation !== undefined
 }

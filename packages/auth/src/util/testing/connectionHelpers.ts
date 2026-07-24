@@ -2,6 +2,7 @@
 import { eventPromise } from '@localfirst/shared'
 import { type Connection, type ConnectionEvents } from 'connection/index.js'
 import { type InviteeDeviceContext, type InviteeMemberContext } from 'connection/types.js'
+import { type DeviceWithSecrets, type FirstUseDeviceWithSecrets } from 'device/index.js'
 import { expect } from 'vitest'
 import { TestChannel } from './TestChannel.js'
 import { joinTestChannel } from './joinTestChannel.js'
@@ -20,7 +21,10 @@ export const tryToConnect = async (a: UserStuff, b: UserStuff) => {
 export const connect = async (a: UserStuff, b: UserStuff) => {
   void tryToConnect(a, b)
   return Promise.race([
-    connection(a, b).then(() => true), //
+    connection(a, b).then(
+      () => true,
+      () => false
+    ),
     anyDisconnected(a, b).then(() => false),
   ])
 }
@@ -46,20 +50,28 @@ export const connectWithInvitation = async (
 export const connectPhoneWithInvitation = async (user: UserStuff, seed: string) => {
   const phoneContext: InviteeDeviceContext = {
     userName: user.user.userName,
-    device: user.phone!,
+    device: asFirstUseDevice(user.phone!),
     invitationSeed: seed,
   }
 
   const join = joinTestChannel(new TestChannel())
 
-  const laptopConnection = join(user.connectionContext).start()
-  const phoneConnection = join(phoneContext).start()
+  const laptopConnection = join(user.connectionContext)
+  const phoneConnection = join(phoneContext)
+  const connected = all([laptopConnection, phoneConnection], 'connected')
+  laptopConnection.start()
+  phoneConnection.start()
 
-  await all([laptopConnection, phoneConnection], 'connected')
+  await connected
   user.team = laptopConnection.team!
   user.connection = { [user.phoneStuff!.deviceId]: phoneConnection }
   user.phoneStuff!.team = phoneConnection.team!
   user.phoneStuff!.connection = { [user.deviceId]: laptopConnection }
+}
+
+export const asFirstUseDevice = (device: DeviceWithSecrets): FirstUseDeviceWithSecrets => {
+  const { userId: _userId, ...firstUseDevice } = device
+  return firstUseDevice
 }
 
 /** Passes if each of the given members is on the team, and knows every other member on the team */
@@ -123,7 +135,7 @@ export const all = async (connections: Connection[], event: keyof ConnectionEven
   Promise.all(
     connections.map(async connection => {
       if (event === 'disconnected' && connection.state === 'disconnected') return connection
-      if (event === 'connected' && connection.state === 'connected') return connection
+      if (event === 'connected') return connectedOrThrow(connection)
       return eventPromise(connection, event)
     })
   )
@@ -136,3 +148,18 @@ export const any = async (connections: Connection[], event: keyof ConnectionEven
       return eventPromise(connection, event)
     })
   )
+
+const connectedOrThrow = async (connection: Connection) => {
+  if (connection._started && connection.state === 'connected') return connection
+
+  const fail = (event: 'localError' | 'remoteError' | 'disconnected') => (payload: unknown) => {
+    throw new Error(`Connection emitted ${event} before connected: ${JSON.stringify(payload)}`)
+  }
+
+  return Promise.race([
+    eventPromise(connection, 'connected'),
+    eventPromise(connection, 'localError').then(fail('localError')),
+    eventPromise(connection, 'remoteError').then(fail('remoteError')),
+    eventPromise(connection, 'disconnected').then(fail('disconnected')),
+  ])
+}

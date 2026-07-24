@@ -5,6 +5,7 @@ import * as teams from 'team/index.js'
 import {
   TestChannel,
   all,
+  asFirstUseDevice,
   anyDisconnected,
   anyUpdated,
   connect,
@@ -212,6 +213,8 @@ describe('connection', () => {
 
       it('lets a member use an invitation to add a device', async () => {
         const { alice, bob } = setup('alice', 'bob')
+        alice.team.addRole('member')
+        bob.team.addRole('member')
 
         await connect(alice, bob)
 
@@ -223,7 +226,7 @@ describe('connection', () => {
         // 💻<->📱📧 Bob's phone and laptop connect and the phone joins
         const phoneContext: InviteeDeviceContext = {
           userName: bob.userName,
-          device: bob.phone!,
+          device: asFirstUseDevice(bob.phone!),
           invitationSeed: seed,
         }
         const join = joinTestChannel(new TestChannel())
@@ -244,11 +247,13 @@ describe('connection', () => {
 
       it('lets a member invite a device, remove it, and then add it back', async () => {
         const { alice, bob } = setup('alice', 'bob')
+        alice.team.addRole('member')
+        bob.team.addRole('member')
         await connect(alice, bob)
 
         // Bob invites and admits his phone
 
-        const phone = bob.phone!
+        const phone = asFirstUseDevice(bob.phone!)
 
         {
           const { seed } = bob.team.inviteDevice()
@@ -299,6 +304,8 @@ describe('connection', () => {
 
       it('lets a different member admit an invited device', async () => {
         const { alice, bob } = setup('alice', 'bob')
+        alice.team.addRole('member')
+        bob.team.addRole('member')
 
         await connect(alice, bob)
 
@@ -310,7 +317,7 @@ describe('connection', () => {
         // 💻<->📱📧 Bob's phone and Alice's laptop connect and the phone joins
         const phoneContext: InviteeDeviceContext = {
           userName: bob.userName,
-          device: bob.phone!,
+          device: asFirstUseDevice(bob.phone!),
           invitationSeed: seed,
         }
         const join = joinTestChannel(new TestChannel())

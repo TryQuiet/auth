@@ -42,16 +42,11 @@ import { syncMessageSummary } from 'util/testing/messageSummary.js'
 import { and, assertEvent, assign, createActor, setup } from 'xstate'
 import { MessageQueue, type NumberedMessage } from './MessageQueue.js'
 import { extendServerContext, getUserName, messageSummary, stateSummary } from './helpers.js'
-import type {
-  ConnectionContext,
-  ConnectionEvents,
-  Context,
-  IdentityClaim,
-  InviteeMemberIdentityClaim,
-} from './types.js'
+import type { ConnectionContext, ConnectionEvents, Context, IdentityClaim } from './types.js'
 import {
   isInviteeClaim,
   isInviteeContext,
+  isInviteeDeviceClaim,
   isInviteeDeviceContext,
   isInviteeMemberClaim,
   isInviteeMemberContext,
@@ -555,21 +550,26 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           return !result
         },
 
-        admitMemberLinkExistsOnJoin: ({ context, event }) => {
+        admissionLinkExistsOnJoin: ({ context, event }) => {
           assertEvent(event, 'ACCEPT_INVITATION')
-          this.logger.debug('checking for ADMIT_MEMBER link on chain')
+          this.logger.debug('checking for invitation admission link on chain')
           const { serializedGraph, teamKeyring } = event.payload
+          const claim = context.ourIdentityClaim
 
-          // Make sure we have been added as a member on the chain before joining and adding our device
+          if (claim === undefined || !isInviteeClaim(claim)) {
+            this.logger.error('GUARD: expected our identity claim to be an invitation')
+            return false
+          }
+
+          // Do not trust the returned graph until it contains the admission action corresponding
+          // to our exact identity claim.
           const state = getTeamState(serializedGraph, teamKeyring, this.logger)
-          const result =
-            state.members.filter(member => {
-              return (
-                member.userId ===
-                (context.ourIdentityClaim as InviteeMemberIdentityClaim)?.userKeys.name
-              )
-            }).length === 1
-          this.logger.debug('GUARD: does ADMIT_MEMBER link exist on chain for our user?', result)
+          const result = isInviteeDeviceClaim(claim)
+            ? select.hasDevice(state, claim.device.deviceId)
+            : isInviteeMemberClaim(claim)
+              ? select.hasMember(state, claim.userKeys.name)
+              : false
+          this.logger.debug('GUARD: does the expected admission link exist on chain?', result)
           return result
         },
 
@@ -681,7 +681,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
                   // Make sure the team I'm joining is actually the one that invited me
                   { guard: 'joinedTheWrongTeam', ...fail(JOINED_WRONG_TEAM) },
                   {
-                    guard: 'admitMemberLinkExistsOnJoin',
+                    guard: 'admissionLinkExistsOnJoin',
                     actions: 'joinTeam',
                     target: '#checkingIdentity',
                   },

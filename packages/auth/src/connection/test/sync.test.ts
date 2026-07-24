@@ -1,4 +1,5 @@
 import { ADMIN } from 'role/index.js'
+import * as teams from 'team/index.js'
 import {
   TestChannel,
   any,
@@ -501,6 +502,10 @@ describe('connection', () => {
 
       it('when a member is demoted and concurrently adds a device, the new device is kept', async () => {
         const { alice, bob } = setup('alice', 'bob')
+        alice.team.addRole('member')
+        alice.team.addMemberRole(bob.userId, 'member')
+        bob.team = teams.load(alice.team.save(), bob.localContext, alice.team.teamKeyring())
+        bob.connectionContext = { user: bob.user, device: bob.device, team: bob.team }
 
         // 👩🏾 Alice removes 👨🏻‍🦲 Bob from admin role
         alice.team.removeMemberRole(bob.userId, ADMIN)
@@ -759,6 +764,9 @@ describe('connection', () => {
     describe('post-compromise recovery', () => {
       it("Eve steals Bob's phone; Bob heals the team", async () => {
         const { alice, bob, charlie } = setup('alice', 'bob', 'charlie')
+        alice.team.addRole('member')
+        bob.team.addRole('member')
+        charlie.team.addRole('member')
         await connect(alice, bob)
         await connect(bob, charlie)
 

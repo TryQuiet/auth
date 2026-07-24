@@ -121,6 +121,7 @@ describe('auth provider for automerge-repo', () => {
 
     // Alice creates team A on her laptop
     const team = Auth.createTeam('team A', laptopContext)
+    team.addRole('member')
     await laptopAuth.addTeam(team)
 
     // She creates an invitation code for her phone
