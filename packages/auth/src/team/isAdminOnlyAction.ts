@@ -1,6 +1,11 @@
+import { ADMIN } from 'role/index.js'
 import { type TeamAction, type TeamLinkBody } from './types.js'
 
 export const isAdminOnlyAction = (action: TeamLinkBody) => {
+  if (action.type === 'ADD_MEMBER_ROLE' && action.payload.roleName === ADMIN) {
+    return true
+  }
+
   return isAdminOnlyActionType(action.type)
 }
 
