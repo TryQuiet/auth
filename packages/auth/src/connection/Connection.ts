@@ -286,6 +286,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
               )
               const userId = userKeys.name
               if (
+                team.hasRole('member') &&
                 context.server == null &&
                 !team.hasServer(userId) &&
                 !team.hasServer(context.user?.userId!)
@@ -431,7 +432,12 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           assert(roles)
           assert(userId)
 
-          if (!roles!.includes('member') && context.server == null && !team!.hasServer(userId!)) {
+          if (
+            team.hasRole('member') &&
+            !roles!.includes('member') &&
+            context.server == null &&
+            !team!.hasServer(userId!)
+          ) {
             team!.addMemberRole(userId!, 'member')
           }
           this.#queueMessage('ACCEPT_IDENTITY')
