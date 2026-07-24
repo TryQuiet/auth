@@ -49,6 +49,11 @@ import { syncMessageSummary } from 'util/testing/messageSummary.js'
 import { and, assertEvent, assign, createActor, setup } from 'xstate'
 import { MessageQueue, type NumberedMessage } from './MessageQueue.js'
 import { extendServerContext, getUserName, messageSummary, stateSummary } from './helpers.js'
+import {
+  createInvitationAcceptance,
+  invitationAcceptanceSenderIsActive,
+  openInvitationAcceptance,
+} from './invitationAcceptance.js'
 import type { ConnectionContext, ConnectionEvents, Context, IdentityClaim } from './types.js'
 import {
   isInviteeClaim,
@@ -234,7 +239,9 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           assert(theirIdentityClaim)
           assert(isInviteeClaim(theirIdentityClaim))
 
-          const { proofOfInvitation } = theirIdentityClaim
+          const { proofOfInvitation, ...invitationClaim } = theirIdentityClaim
+          const invitation = team.getInvitation(proofOfInvitation.id)
+          assert(invitation.version === 2, 'Legacy invitations cannot admit identities')
 
           const admit = () => {
             if (isInviteeMemberClaim(theirIdentityClaim)) {
@@ -276,18 +283,42 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           const peer = admit()
 
           // Welcome them by sending the team's graph, so they can reconstruct team membership state
-          this.#queueMessage('ACCEPT_INVITATION', {
-            serializedGraph: team.save(),
-            teamKeyring: team.teamKeyring(),
-          })
+          this.#queueMessage(
+            'ACCEPT_INVITATION',
+            createInvitationAcceptance({
+              invitation,
+              proof: proofOfInvitation,
+              claim: invitationClaim,
+              senderDevice: context.device,
+              serializedGraph: team.save(),
+              teamKeyring: team.teamKeyring(),
+            })
+          )
 
           return { peer }
         }),
 
-        joinTeam: assign(({ context, event }) => {
+        receiveInvitationAcceptance: assign(({ context, event }) => {
           assertEvent(event, 'ACCEPT_INVITATION')
-          this.logger.debug('joining team post invitation acceptance', event)
-          const { serializedGraph, teamKeyring } = event.payload
+          assert(context.invitationSeed)
+          assert(isInviteeClaim(context.ourIdentityClaim!))
+          const { proofOfInvitation, ...claim } = context.ourIdentityClaim
+          const invitationAcceptance = openInvitationAcceptance({
+            payload: event.payload,
+            invitationSeed: context.invitationSeed,
+            proof: proofOfInvitation,
+            claim,
+          })
+          return {
+            invitationAcceptance,
+            invitationAcceptanceMessage: event.payload,
+          }
+        }),
+
+        joinTeam: assign(({ context }) => {
+          this.logger.debug('joining team post invitation acceptance')
+          assert(context.invitationAcceptance)
+          const { serializedGraph, teamKeyring } = context.invitationAcceptance
           const { device, invitationSeed } = context
           assert(invitationSeed)
 
@@ -581,23 +612,40 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           assert(isInviteeClaim(theirIdentityClaim!))
           const expectedKind = isInviteeMemberClaim(theirIdentityClaim) ? 'member' : 'device'
           const { proofOfInvitation, ...claim } = theirIdentityClaim
-          const result = team!
-            .validateInvitation(
-              proofOfInvitation,
-              expectedKind,
-              claim,
-              context.acceptorNonce
-            )
-            .isValid
+          const result = team!.validateInvitation(
+            proofOfInvitation,
+            expectedKind,
+            claim,
+            context.acceptorNonce
+          ).isValid
           this.logger.debug('GUARD: is invitation valid?', result)
           return result
         },
 
-        joinedTheWrongTeam: ({ context, event }) => {
+        invitationAcceptanceIsValid: ({ context, event }) => {
           assertEvent(event, 'ACCEPT_INVITATION')
+          assert(context.invitationSeed)
+          assert(isInviteeClaim(context.ourIdentityClaim!))
+          const { proofOfInvitation, ...claim } = context.ourIdentityClaim
+          try {
+            openInvitationAcceptance({
+              payload: event.payload,
+              invitationSeed: context.invitationSeed,
+              proof: proofOfInvitation,
+              claim,
+            })
+            return true
+          } catch (error) {
+            this.logger.error('Invalid invitation acceptance', error)
+            return false
+          }
+        },
+
+        joinedTheWrongTeam: ({ context }) => {
           this.logger.debug('GUARD: validating invitation against team')
           const invitationSeed = context.invitationSeed!
-          const { serializedGraph, teamKeyring } = event.payload
+          assert(context.invitationAcceptance)
+          const { serializedGraph, teamKeyring } = context.invitationAcceptance
 
           // Make sure my invitation exists on the graph of the team I'm about to join. This check
           // prevents an attack in which a fake team pretends to accept my invitation.
@@ -608,10 +656,24 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           return !result
         },
 
-        admissionLinkExistsOnJoin: ({ context, event }) => {
-          assertEvent(event, 'ACCEPT_INVITATION')
+        invitationAcceptanceSenderIsUnknown: ({ context }) => {
+          assert(context.invitationAcceptance)
+          assert(context.invitationAcceptanceMessage)
+          const { serializedGraph, teamKeyring } = context.invitationAcceptance
+          const state = getTeamState(serializedGraph, teamKeyring, this.logger)
+          const result = !invitationAcceptanceSenderIsActive(
+            state,
+            context.invitationAcceptanceMessage,
+            context.invitationAcceptance
+          )
+          this.logger.debug('GUARD: is invitation acceptance sender unknown?', result)
+          return result
+        },
+
+        admissionLinkExistsOnJoin: ({ context }) => {
           this.logger.debug('checking for invitation admission link on chain')
-          const { serializedGraph, teamKeyring } = event.payload
+          assert(context.invitationAcceptance)
+          const { serializedGraph, teamKeyring } = context.invitationAcceptance
           const claim = context.ourIdentityClaim
 
           if (claim === undefined || !isInviteeClaim(claim)) {
@@ -736,17 +798,32 @@ export class Connection extends EventEmitter<ConnectionEvents> {
               // Wait for them to validate the invitation we included in our identity claim
               on: {
                 ACCEPT_INVITATION: [
-                  // Make sure the team I'm joining is actually the one that invited me
-                  { guard: 'joinedTheWrongTeam', ...fail(JOINED_WRONG_TEAM) },
                   {
-                    guard: 'admissionLinkExistsOnJoin',
-                    actions: 'joinTeam',
-                    target: '#checkingIdentity',
+                    guard: 'invitationAcceptanceIsValid',
+                    actions: 'receiveInvitationAcceptance',
+                    target: 'checkingInvitationAcceptance',
                   },
-                  fail(ADMIT_MEMBER_LINK_MISSING),
+                  fail(INVITATION_PROOF_INVALID),
                 ],
               },
               ...timeout,
+            },
+
+            checkingInvitationAcceptance: {
+              always: [
+                // Make sure the team I'm joining is actually the one that invited me
+                { guard: 'joinedTheWrongTeam', ...fail(JOINED_WRONG_TEAM) },
+                {
+                  guard: 'invitationAcceptanceSenderIsUnknown',
+                  ...fail(INVITATION_PROOF_INVALID),
+                },
+                {
+                  guard: 'admissionLinkExistsOnJoin',
+                  actions: 'joinTeam',
+                  target: '#checkingIdentity',
+                },
+                fail(ADMIT_MEMBER_LINK_MISSING),
+              ],
             },
 
             validatingInvitation: {
