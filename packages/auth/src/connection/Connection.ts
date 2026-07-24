@@ -34,31 +34,28 @@ import {
   UNHANDLED,
   ADMIT_MEMBER_LINK_MISSING,
 } from 'connection/errors.js'
-import { getDeviceUserFromGraph } from 'connection/getDeviceUserFromGraph.js'
+import { getDeviceUserFromState } from 'connection/getDeviceUserFromGraph.js'
 import * as identity from 'connection/identity.js'
 import type { ConnectionMessage, DisconnectMessage } from 'connection/message.js'
 import { redactDevice } from 'device/index.js'
 import * as invitations from 'invitation/index.js'
 import { pack, unpack } from 'msgpackr'
-import { getTeamState } from 'team/getTeamState.js'
 import { Team, decryptTeamGraph, type TeamAction, type TeamContext } from 'team/index.js'
-import * as select from 'team/selectors/index.js'
 import { arraysAreEqual } from 'util/arraysAreEqual.js'
 import { KeyType } from 'util/index.js'
 import { syncMessageSummary } from 'util/testing/messageSummary.js'
 import { and, assertEvent, assign, createActor, setup } from 'xstate'
 import { MessageQueue, type NumberedMessage } from './MessageQueue.js'
 import { extendServerContext, getUserName, messageSummary, stateSummary } from './helpers.js'
-import {
-  createInvitationAcceptance,
-  invitationAcceptanceSenderIsActive,
-  openInvitationAcceptance,
-} from './invitationAcceptance.js'
+import { createInvitationAcceptance, openInvitationAcceptance } from './invitationAcceptance.js'
 import type { ConnectionContext, ConnectionEvents, Context, IdentityClaim } from './types.js'
+import {
+  validateInvitationAcceptance,
+  type InvitationAcceptanceValidationResult,
+} from './validateInvitationAcceptance.js'
 import {
   isInviteeClaim,
   isInviteeContext,
-  isInviteeDeviceClaim,
   isInviteeDeviceContext,
   isInviteeMemberClaim,
   isInviteeMemberContext,
@@ -135,6 +132,38 @@ export class Connection extends EventEmitter<ConnectionEvents> {
       ...baseContext,
       acceptorNonce: randomKey(),
       inviteeNonce: randomKey(),
+    }
+    let cachedInvitationAcceptance:
+      | {
+          acceptance: ConnectionContext['invitationAcceptance']
+          result: InvitationAcceptanceValidationResult
+        }
+      | undefined
+
+    const validatePendingInvitationAcceptance = (
+      connectionContext: ConnectionContext
+    ): InvitationAcceptanceValidationResult => {
+      assert(connectionContext.invitationAcceptance)
+      assert(connectionContext.invitationAcceptanceMessage)
+      assert(isInviteeClaim(connectionContext.ourIdentityClaim!))
+
+      if (cachedInvitationAcceptance?.acceptance === connectionContext.invitationAcceptance) {
+        return cachedInvitationAcceptance.result
+      }
+
+      const { proofOfInvitation, ...claim } = connectionContext.ourIdentityClaim
+      const result = validateInvitationAcceptance({
+        acceptance: connectionContext.invitationAcceptance,
+        payload: connectionContext.invitationAcceptanceMessage,
+        proof: proofOfInvitation,
+        claim,
+        logger: this.logger,
+      })
+      cachedInvitationAcceptance = {
+        acceptance: connectionContext.invitationAcceptance,
+        result,
+      }
+      return result
     }
 
     const machine = setup({
@@ -318,7 +347,9 @@ export class Connection extends EventEmitter<ConnectionEvents> {
         joinTeam: assign(({ context }) => {
           this.logger.debug('joining team post invitation acceptance')
           assert(context.invitationAcceptance)
-          const { serializedGraph, teamKeyring } = context.invitationAcceptance
+          const validation = validatePendingInvitationAcceptance(context)
+          assert(validation.isValid)
+          const { teamKeyring } = context.invitationAcceptance
           const { device, invitationSeed } = context
           assert(invitationSeed)
 
@@ -328,18 +359,16 @@ export class Connection extends EventEmitter<ConnectionEvents> {
             // yet, so we need to get those from the graph. We use the invitation seed to generate
             // the starter keys for the new device. We can use these to unlock a lockbox on the team
             // graph that contains our user keys.
-            getDeviceUserFromGraph({
-              serializedGraph,
-              teamKeyring,
+            getDeviceUserFromState({
+              state: validation.value.state,
               invitationSeed,
-              logger: this.logger.extend('getDeviceUser'),
             })
 
           // When admitting us, our peer added our user to the team graph. We've been given the
           // serialized and encrypted graph, and the team keyring. We can now decrypt the graph and
           // reconstruct the team in order to join it.
           const team = new Team({
-            source: serializedGraph,
+            source: validation.value.graph,
             context: { user, device },
             teamKeyring,
             sharedLogger: this.logger.sharedLogger,
@@ -348,7 +377,11 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           // We join the team, which adds our device to the team graph.
           team.join(teamKeyring)
           this.emit('joined', { team, user, teamKeyring })
-          return { user, team }
+          return {
+            user,
+            team,
+            invitationAcceptanceValidation: validation.value,
+          }
         }),
 
         // AUTHENTICATION
@@ -643,53 +676,23 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
         joinedTheWrongTeam: ({ context }) => {
           this.logger.debug('GUARD: validating invitation against team')
-          const invitationSeed = context.invitationSeed!
-          assert(context.invitationAcceptance)
-          const { serializedGraph, teamKeyring } = context.invitationAcceptance
-
-          // Make sure my invitation exists on the graph of the team I'm about to join. This check
-          // prevents an attack in which a fake team pretends to accept my invitation.
-          const state = getTeamState(serializedGraph, teamKeyring, this.logger)
-          const id = invitations.deriveId(invitationSeed)
-          const result = select.hasInvitation(state, id)
-          this.logger.debug('GUARD: does invitation match team?', result)
-          return !result
+          const validation = validatePendingInvitationAcceptance(context)
+          const result = !validation.isValid && validation.reason === 'WRONG_TEAM'
+          this.logger.debug('GUARD: did invitation match the team?', !result)
+          return result
         },
 
         invitationAcceptanceSenderIsUnknown: ({ context }) => {
-          assert(context.invitationAcceptance)
-          assert(context.invitationAcceptanceMessage)
-          const { serializedGraph, teamKeyring } = context.invitationAcceptance
-          const state = getTeamState(serializedGraph, teamKeyring, this.logger)
-          const result = !invitationAcceptanceSenderIsActive(
-            state,
-            context.invitationAcceptanceMessage,
-            context.invitationAcceptance
-          )
+          const validation = validatePendingInvitationAcceptance(context)
+          const result = !validation.isValid && validation.reason === 'SENDER_UNKNOWN'
           this.logger.debug('GUARD: is invitation acceptance sender unknown?', result)
           return result
         },
 
         admissionLinkExistsOnJoin: ({ context }) => {
-          this.logger.debug('checking for invitation admission link on chain')
-          assert(context.invitationAcceptance)
-          const { serializedGraph, teamKeyring } = context.invitationAcceptance
-          const claim = context.ourIdentityClaim
-
-          if (claim === undefined || !isInviteeClaim(claim)) {
-            this.logger.error('GUARD: expected our identity claim to be an invitation')
-            return false
-          }
-
-          // Do not trust the returned graph until it contains the admission action corresponding
-          // to our exact identity claim.
-          const state = getTeamState(serializedGraph, teamKeyring, this.logger)
-          const result = isInviteeDeviceClaim(claim)
-            ? select.hasDevice(state, claim.device.deviceId)
-            : isInviteeMemberClaim(claim)
-              ? select.hasMember(state, claim.userKeys.name)
-              : false
-          this.logger.debug('GUARD: does the expected admission link exist on chain?', result)
+          this.logger.debug('checking for exact invitation admission link on chain')
+          const result = validatePendingInvitationAcceptance(context).isValid
+          this.logger.debug('GUARD: is the exact admission effective on chain?', result)
           return result
         },
 
