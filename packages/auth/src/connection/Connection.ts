@@ -539,16 +539,6 @@ export class Connection extends EventEmitter<ConnectionEvents> {
               recipientSecretKey,
             })
             const sessionKey = deriveSharedKey(seed, theirSeed)
-            this.emit('connectionSecured')
-            if (context.invitationAcceptanceResult?.isValid) {
-              assert(context.team)
-              assert(context.user)
-              this.emit('joined', {
-                team: context.team,
-                user: context.user,
-                teamKeyring: context.invitationAcceptanceResult.value.acceptance.teamKeyring,
-              })
-            }
             return { sessionKey }
           } catch (error) {
             this.logger.error(`failed to decrypt seed using public key ${senderPublicKey}`, error)
@@ -995,6 +985,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
     // Instantiate the state machine
     this.#machine = createActor(machine)
+    let sessionEventsEmitted = false
 
     // emit and log all transitions
     this.#machine.subscribe({
@@ -1002,6 +993,22 @@ export class Connection extends EventEmitter<ConnectionEvents> {
         const summary = stateSummary(state.value as string)
         this.emit('change', summary)
         this.logger.debug(`⏩ ${JSON.stringify(state.value, null, 2)} `)
+
+        // XState commits assigned context before notifying subscribers. Emitting here guarantees
+        // listeners can immediately use the public encrypted-channel API.
+        if (!sessionEventsEmitted && state.context.sessionKey !== undefined) {
+          sessionEventsEmitted = true
+          this.emit('connectionSecured')
+          if (state.context.invitationAcceptanceResult?.isValid) {
+            assert(state.context.team)
+            assert(state.context.user)
+            this.emit('joined', {
+              team: state.context.team,
+              user: state.context.user,
+              teamKeyring: state.context.invitationAcceptanceResult.value.acceptance.teamKeyring,
+            })
+          }
+        }
       },
       error: error => {
         this.logger.error('Connection encountered an unhandled error', error)

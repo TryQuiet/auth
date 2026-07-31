@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { connect, setup } from 'util/testing/index.js'
+import { connect, joinTestChannel, setup, TestChannel } from 'util/testing/index.js'
 import { eventPromise } from '@localfirst/shared'
 import { randomKeyBytes } from '@localfirst/crypto'
 
@@ -20,6 +20,34 @@ describe('connection', () => {
       // 👨🏻‍🦲 Bob receives it
       const d = await messagePromise
       expect(d).toEqual('hello')
+    })
+
+    it('commits the session key before emitting connectionSecured', async () => {
+      const { alice, bob } = setup('alice', 'bob')
+      const join = joinTestChannel(new TestChannel())
+      const aliceConnection = join(alice.connectionContext)
+      const bobConnection = join(bob.connectionContext)
+      let sessionKeyAtEvent: Uint8Array | undefined
+      let sendError: unknown
+      aliceConnection.on('connectionSecured', () => {
+        sessionKeyAtEvent = aliceConnection._sessionKey
+        try {
+          aliceConnection.send('sent immediately')
+        } catch (error) {
+          sendError = error
+        }
+      })
+
+      const connected = Promise.all([
+        eventPromise(aliceConnection, 'connected'),
+        eventPromise(bobConnection, 'connected'),
+      ])
+      aliceConnection.start()
+      bobConnection.start()
+      await connected
+
+      expect(sessionKeyAtEvent).toBeInstanceOf(Uint8Array)
+      expect(sendError).toBeUndefined()
     })
   })
 

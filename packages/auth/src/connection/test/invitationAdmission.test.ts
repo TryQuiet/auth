@@ -30,9 +30,9 @@ describe('connection invitation admission', () => {
       invitationSeed: seed,
     } as InviteeMemberContext
 
-    expect(
-      () => new Connection({ context: unboundContext, sendMessage: vi.fn() })
-    ).toThrow(/expected team ID/)
+    expect(() => new Connection({ context: unboundContext, sendMessage: vi.fn() })).toThrow(
+      /expected team ID/
+    )
   })
 
   it('accepts the exact invited member when another member has the same username', async () => {
@@ -127,12 +127,17 @@ describe('connection invitation admission', () => {
     }
     const connections = createConnectionPair(memberContext(alice), inviteeContext)
     const events: string[] = []
+    let sessionKeyAtJoined: Uint8Array | undefined
     connections.invitee.on('connectionSecured', () => events.push('connectionSecured'))
-    connections.invitee.on('joined', () => events.push('joined'))
+    connections.invitee.on('joined', () => {
+      sessionKeyAtJoined = connections.invitee._sessionKey
+      events.push('joined')
+    })
 
     await connect(connections)
 
     expect(events).toEqual(['connectionSecured', 'joined'])
+    expect(sessionKeyAtJoined).toBeInstanceOf(Uint8Array)
   })
 
   it('does not emit joined when session negotiation fails after admission', async () => {
