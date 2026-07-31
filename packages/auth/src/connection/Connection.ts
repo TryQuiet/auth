@@ -460,12 +460,17 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           const deviceKeys = device.keys
 
           // handle errors here
-          const decrypt = ({ encryptedGraph, keys }: DecryptFnParams<TeamAction, TeamContext>) =>
+          const decrypt = ({
+            encryptedGraph,
+            keys,
+            maxTraversalSteps,
+          }: DecryptFnParams<TeamAction, TeamContext>) =>
             decryptTrustedTeamGraph({
               encryptedGraph,
               teamKeys: keys,
               deviceKeys,
               trustedGraph: team.graph,
+              maxTraversalSteps,
             })
 
           const [newChain, syncState] = receiveMessage(

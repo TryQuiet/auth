@@ -87,6 +87,40 @@ describe('decryptTeamGraph trusted plaintext reuse', () => {
       decrypt.mockRestore()
     }
   })
+
+  it('rejects cyclic child maps without recursive traversal', () => {
+    const { alice } = setup('alice')
+    const { graph } = alice.team
+    const childMap = getChildMap(graph)
+
+    expect(() =>
+      decryptTrustedTeamGraph({
+        encryptedGraph: {
+          ...graph,
+          childMap: { ...childMap, [graph.root]: [...(childMap[graph.root] ?? []), graph.root] },
+        },
+        teamKeys: alice.team.teamKeyring(),
+        deviceKeys: alice.device.keys,
+        trustedGraph: graph,
+      })
+    ).toThrow(/cycle/)
+  })
+
+  it('bounds trusted team graph traversal', () => {
+    const { alice } = setup('alice')
+    alice.team.setTeamName('Updated team')
+    const { graph } = alice.team
+
+    expect(() =>
+      decryptTrustedTeamGraph({
+        encryptedGraph: { ...graph, childMap: getChildMap(graph) },
+        teamKeys: alice.team.teamKeyring(),
+        deviceKeys: alice.device.keys,
+        trustedGraph: graph,
+        maxTraversalSteps: 1,
+      })
+    ).toThrow(/traversal limit/)
+  })
 })
 
 type DecryptCall = Parameters<typeof asymmetric.decryptBytes>

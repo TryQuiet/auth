@@ -57,3 +57,19 @@ export type SyncMessage = {
   /** Any errors caused by their last sync message. */
   error?: ValidationError
 }
+
+export type SyncLimits = {
+  maxPendingLinks: number
+  maxPendingCiphertextBytes: number
+  maxParentEntries: number
+  maxParentEdges: number
+  maxTraversalSteps: number
+}
+
+export const DEFAULT_SYNC_LIMITS: SyncLimits = Object.freeze({
+  maxPendingLinks: 10_000,
+  maxPendingCiphertextBytes: 64 * 1024 * 1024,
+  maxParentEntries: 20_000,
+  maxParentEdges: 50_000,
+  maxTraversalSteps: 100_000,
+})

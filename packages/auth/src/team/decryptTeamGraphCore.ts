@@ -18,6 +18,7 @@ export type DecryptTeamGraphCoreOptions = {
   deviceKeys: KeysetWithSecrets
   trustedGraph?: TeamGraph
   extendableLogger?: Logger
+  maxTraversalSteps?: number
 }
 
 export const decryptTeamGraphCore = ({
@@ -26,6 +27,7 @@ export const decryptTeamGraphCore = ({
   deviceKeys,
   trustedGraph,
   extendableLogger,
+  maxTraversalSteps = 50_000,
 }: DecryptTeamGraphCoreOptions): TeamGraph => {
   const logger =
     extendableLogger !== undefined
@@ -36,13 +38,39 @@ export const decryptTeamGraphCore = ({
   const { encryptedLinks, childMap, root } = encryptedGraph
   const decryptedByHash: Record<Hash, TeamLink> = {}
 
-  /** Recursively decrypts a link and its children. */
-  const decrypt = (
-    hash: Hash,
-    previousKeys: KeysetWithSecrets,
-    previousState: TeamState = initialState
-  ): void => {
+  type TraversalFrame =
+    | { phase: 'enter'; hash: Hash; previousKeys: KeysetWithSecrets; previousState: TeamState }
+    | { phase: 'exit'; hash: Hash }
+
+  const rootPublicKey = encryptedLinks[root].recipientPublicKey
+  const rootKeys = keyring[rootPublicKey]
+  const activePath = new Set<Hash>()
+  const stack: TraversalFrame[] = [
+    { phase: 'enter', hash: root, previousKeys: rootKeys, previousState: initialState },
+  ]
+  let traversalSteps = 0
+
+  while (stack.length > 0) {
+    const frame = stack.pop()!
+    if (frame.phase === 'exit') {
+      activePath.delete(frame.hash)
+      continue
+    }
+    if (++traversalSteps > maxTraversalSteps) {
+      throw new Error('Team graph decryption exceeded its traversal limit')
+    }
+
+    const { hash, previousKeys, previousState } = frame
+    if (activePath.has(hash)) {
+      throw new Error(`Team graph decryption encountered a cycle at '${hash}'`)
+    }
+    activePath.add(hash)
+    stack.push({ phase: 'exit', hash })
+
     const encryptedLink = encryptedLinks[hash]
+    if (encryptedLink === undefined) {
+      throw new Error(`Team graph decryption is missing link '${hash}'`)
+    }
     const decryptionKeys = keyring[encryptedLink.recipientPublicKey] ?? previousKeys
     const trustedLink =
       trustedGraph?.encryptedLinks[hash] === encryptedLink ? trustedGraph.links[hash] : undefined
@@ -64,16 +92,17 @@ export const decryptTeamGraphCore = ({
 
     const children = childMap![hash]
     if (children) {
-      for (const childHash of children) {
+      for (const childHash of [...children].reverse()) {
         if (encryptedLinks[childHash] === undefined) continue
-        decrypt(childHash, newKeys, newState)
+        stack.push({
+          phase: 'enter',
+          hash: childHash,
+          previousKeys: newKeys,
+          previousState: newState,
+        })
       }
     }
   }
-
-  const rootPublicKey = encryptedLinks[root].recipientPublicKey
-  const rootKeys = keyring[rootPublicKey]
-  decrypt(root, rootKeys)
 
   return {
     ...encryptedGraph,
