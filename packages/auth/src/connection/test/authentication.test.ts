@@ -227,7 +227,7 @@ describe('connection', () => {
         const phoneContext: InviteeDeviceContext = {
           userName: bob.userName,
           device: asFirstUseDevice(bob.phone!),
-          invitationSeed: seed,
+          invitationSeed: `${seed.slice(0, 4)}+${seed.slice(4, 8)}-${seed.slice(8, 12)}_${seed.slice(12)}`,
         }
         const join = joinTestChannel(new TestChannel())
 

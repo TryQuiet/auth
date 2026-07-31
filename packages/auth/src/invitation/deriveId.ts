@@ -1,7 +1,10 @@
 import { type Hash, hash, stretch } from '@localfirst/crypto'
 import { HashPurpose } from 'util/index.js'
+import { normalize } from './normalize.js'
 
 export function deriveId(seed: string) {
+  seed = normalize(seed)
+
   // ## Step 1b
   // The iKey is stretched using `scrypt` to discourage brute-force attacks (docs refer to this as
   // the `siKey`)

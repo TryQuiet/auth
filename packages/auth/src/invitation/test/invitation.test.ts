@@ -3,6 +3,7 @@ import { randomKey } from '@localfirst/crypto'
 import { createDevice, redactDevice } from 'device/index.js'
 import {
   create,
+  deriveId,
   generateProof,
   randomSeed,
   validate,
@@ -12,6 +13,13 @@ import {
 import { describe, expect, test } from 'vitest'
 
 describe('invitations', () => {
+  test('derives the same ID from grouped and URL-formatted seeds', () => {
+    const seed = 'abcd2345efgh6789'
+
+    expect(deriveId('abcd 2345 efgh 6789')).toBe(deriveId(seed))
+    expect(deriveId('abcd+2345-efgh_6789')).toBe(deriveId(seed))
+  })
+
   test('creates a v2 invitation with both starter public keys', () => {
     const invitation = create({ seed: randomSeed() })
 
