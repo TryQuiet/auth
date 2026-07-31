@@ -560,8 +560,12 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           this.logger.debug('checking for ADMIT_MEMBER link on chain')
           const { serializedGraph, teamKeyring } = event.payload
 
-          // Make sure we have been added as a member on the chain before joining and adding our device
           const state = getTeamState(serializedGraph, teamKeyring, this.logger)
+          if (isInviteeDeviceContext(context)) {
+            return select.hasDevice(state, context.device.deviceId)
+          }
+
+          // Make sure we have been added as a member on the chain before joining and adding our device
           const result =
             state.members.filter(member => {
               return (

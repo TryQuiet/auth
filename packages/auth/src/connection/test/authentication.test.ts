@@ -242,6 +242,28 @@ describe('connection', () => {
         expect(alice.team.members(bob.userId).devices).toHaveLength(2)
       })
 
+      it('admits a first-use device before continuing authentication', async () => {
+        const { bob } = setup('bob')
+        bob.team.addRole('member')
+        const { userId: _userId, ...phone } = bob.phone!
+        const { seed } = bob.team.inviteDevice()
+        const phoneContext: InviteeDeviceContext = {
+          userName: bob.userName,
+          device: phone,
+          invitationSeed: seed,
+        }
+        const join = joinTestChannel(new TestChannel())
+        const laptopConnection = join(bob.connectionContext)
+        const phoneConnection = join(phoneContext)
+        const joined = eventPromise(phoneConnection, 'joined')
+
+        laptopConnection.start()
+        phoneConnection.start()
+
+        await expect(joined).resolves.toMatchObject({ user: { userId: bob.userId } })
+        expect(phoneConnection.team!.hasDevice(phone.deviceId)).toBe(true)
+      })
+
       it('lets a member invite a device, remove it, and then add it back', async () => {
         const { alice, bob } = setup('alice', 'bob')
         await connect(alice, bob)
