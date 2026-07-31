@@ -1,6 +1,8 @@
 import { Logger, truncateHashes } from '@localfirst/shared'
 import { ROOT, type Keyset } from '@localfirst/crdx'
 import { invitationCanBeUsed } from 'invitation/index.js'
+import * as invitations from 'invitation/index.js'
+import { isEqual } from 'lodash-es'
 import { KeyType, VALID, ValidationError, actionFingerprint } from 'util/index.js'
 import { isAdminOnlyAction } from './isAdminOnlyAction.js'
 import * as select from './selectors/index.js'
@@ -382,6 +384,49 @@ const validators: TeamStateValidatorSet = {
     return VALID
   },
 
+  /** Every replica must independently verify that an admission proves possession of its invite. */
+  admissionProvesInvitationPossession(
+    previousState: TeamState,
+    link: TeamLink,
+    extendableLogger: Logger
+  ) {
+    const logger = extendableLogger.extend('admissionProvesInvitationPossession')
+    if (link.body.type !== 'ADMIT_MEMBER' && link.body.type !== 'ADMIT_DEVICE') {
+      return VALID
+    }
+
+    const { id, proof, claim } = link.body.payload
+    if (!isRecord(proof) || !isRecord(claim)) {
+      return fail('Admission is missing its invitation proof or claim', previousState, link, logger)
+    }
+    const invitation = select.getInvitation(previousState, id)
+    const proofValidation = invitations.validate(proof, invitation, claim)
+    if (!proofValidation.isValid) {
+      return fail(
+        `Admission does not contain a valid invitation proof: ${proofValidation.error.message}`,
+        previousState,
+        link,
+        logger
+      )
+    }
+
+    const admissionMatchesClaim =
+      link.body.type === 'ADMIT_MEMBER'
+        ? claim.invitationKind === 'member' &&
+          link.body.payload.userName === claim.userName &&
+          isEqual(link.body.payload.memberKeys, claim.userKeys)
+        : claim.invitationKind === 'device' &&
+          invitation.userId !== undefined &&
+          isEqual(link.body.payload.device, {
+            ...claim.device,
+            userId: invitation.userId,
+          })
+
+    return admissionMatchesClaim
+      ? VALID
+      : fail('Admission identity does not match its signed invitation claim', previousState, link, logger)
+  },
+
   /** Check for self-assigned roles that aren't in the allowed list set by the admin */
   nonAdminsCanOnlyModifyCertainRoles(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
     const logger = extendableLogger.extend('nonAdminsCanOnlyModifyCertainRoles')
@@ -401,6 +446,9 @@ const keysetMatches = (keys: Keyset, type: string, name: string, generation: num
   keys.generation === generation &&
   typeof keys.encryption === 'string' &&
   typeof keys.signature === 'string'
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
 
 const fail = (message: string, previousState: TeamState, link: TeamLink, extendableLogger: Logger) => {
   const logger = extendableLogger.extend('fail')

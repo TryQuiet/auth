@@ -187,6 +187,8 @@ const memberAdmissionMatches = (
 ): boolean =>
   link.body.type === 'ADMIT_MEMBER' &&
   link.body.payload.id === proof.id &&
+  isEqual(link.body.payload.proof, proof) &&
+  isEqual(link.body.payload.claim, claim) &&
   link.body.payload.userName === claim.userName &&
   isEqual(link.body.payload.memberKeys, claim.userKeys)
 
@@ -203,6 +205,8 @@ const deviceAdmissionMatches = (
   return (
     link.body.type === 'ADMIT_DEVICE' &&
     link.body.payload.id === proof.id &&
+    isEqual(link.body.payload.proof, proof) &&
+    isEqual(link.body.payload.claim, claim) &&
     isEqual(link.body.payload.device, {
       ...claim.device,
       userId: invitationUserId,

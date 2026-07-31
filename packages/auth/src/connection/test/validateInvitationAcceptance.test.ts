@@ -145,6 +145,15 @@ describe('exact effective invitation admission validation', () => {
     ).toBe(false)
   })
 
+  it('rejects an admission made with a different handshake proof', () => {
+    const fixture = admittedMemberFixture()
+    const differentHandshakeProof = proofFor(fixture.seed, fixture.claim)
+
+    expect(
+      validateFixture({ ...fixture, proof: differentHandshakeProof }).isValid
+    ).toBe(false)
+  })
+
   it('rejects a matching invitation ID with different public keys', () => {
     const fixture = admittedMemberFixture()
     const changedClaim: InvitationClaim = {

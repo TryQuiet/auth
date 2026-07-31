@@ -38,7 +38,14 @@ describe('invitation kind', () => {
 
   it('rejects a forged ADMIT_MEMBER that references an INVITE_DEVICE action', () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
-    const { id } = alice.team.inviteDevice()
+    const { id, seed } = alice.team.inviteDevice()
+    const proof = memberInvitationProof(seed, bob.user, bob.device)
+    const claim = {
+      invitationKind: 'member' as const,
+      userName: bob.userName,
+      userKeys: redactKeys(bob.user.keys),
+      device: redactDevice(bob.device),
+    }
 
     expect(() =>
       alice.team.dispatch({
@@ -47,6 +54,8 @@ describe('invitation kind', () => {
           id,
           userName: bob.userName,
           memberKeys: redactKeys(bob.user.keys),
+          proof,
+          claim,
         },
       })
     ).toThrow(/device invitation cannot be used by ADMIT_MEMBER/)
@@ -55,12 +64,19 @@ describe('invitation kind', () => {
 
   it('rejects a forged ADMIT_DEVICE that references an INVITE_MEMBER action', () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
-    const { id } = alice.team.inviteMember()
+    const { id, seed } = alice.team.inviteMember()
+    const proof = deviceInvitationProof(seed, bob.userName, bob.device)
+    const { userId: _userId, ...firstUseDevice } = redactDevice(bob.device)
+    const claim = {
+      invitationKind: 'device' as const,
+      userName: bob.userName,
+      device: firstUseDevice,
+    }
 
     expect(() =>
       alice.team.dispatch({
         type: 'ADMIT_DEVICE',
-        payload: { id, device: redactDevice(bob.device) },
+        payload: { id, device: redactDevice(bob.device), proof, claim },
       })
     ).toThrow(/member invitation cannot be used by ADMIT_DEVICE/)
   })

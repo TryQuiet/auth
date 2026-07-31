@@ -14,7 +14,13 @@ import type {
 } from '@localfirst/crdx'
 import type { Client, LocalContext } from 'team/context.js'
 import type { Device } from 'device/index.js'
-import type { Invitation, InvitationState } from 'invitation/types.js'
+import type {
+  DeviceInvitationClaim,
+  Invitation,
+  InvitationState,
+  MemberInvitationClaim,
+  ProofOfInvitationV2,
+} from 'invitation/types.js'
 import type { Lockbox } from 'lockbox/index.js'
 import type { PermissionsMap, Role } from 'role/index.js'
 import type { Host, Server } from 'server/index.js'
@@ -185,6 +191,8 @@ export type AdmitMemberAction = {
     id: Base58 // Invitation ID
     userName: string
     memberKeys: Keyset // Member keys provided by the new member
+    proof: ProofOfInvitationV2
+    claim: MemberInvitationClaim
   }
 }
 
@@ -193,6 +201,8 @@ export type AdmitDeviceAction = {
   payload: BasePayload & {
     id: Base58 // Invitation ID
     device: Device
+    proof: ProofOfInvitationV2
+    claim: DeviceInvitationClaim
   }
 }
 

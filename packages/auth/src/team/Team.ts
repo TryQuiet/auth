@@ -30,6 +30,7 @@ import {
   type InvitationClaim,
   type InvitationKind,
   type ProofOfInvitation,
+  type ProofOfInvitationV2,
 } from 'invitation/index.js'
 import { normalize } from 'invitation/normalize.js'
 import * as lockbox from 'lockbox/index.js'
@@ -719,8 +720,9 @@ export class Team extends EventEmitter<TeamEvents> {
       expectedAcceptorNonce
     )
     if (!validation.isValid) throw validation.error
+    assert(proof.version === 2, 'Invitation proof must use protocol version 2')
 
-    const { id } = proof
+    const { id } = proof as ProofOfInvitationV2
 
     // we know the team keys, so we can put them in a lockbox for the new member now (even if we're not an admin)
     const lockboxTeamKeysForMember = lockbox.create(this.teamKeys(), memberKeys)
@@ -732,6 +734,8 @@ export class Team extends EventEmitter<TeamEvents> {
         id,
         userName,
         memberKeys: publicMemberKeys,
+        proof,
+        claim,
         lockboxes: [lockboxTeamKeysForMember],
       },
     })
@@ -756,8 +760,9 @@ export class Team extends EventEmitter<TeamEvents> {
       expectedAcceptorNonce
     )
     if (!validation.isValid) throw validation.error
+    assert(proof.version === 2, 'Invitation proof must use protocol version 2')
 
-    const { id } = proof
+    const { id } = proof as ProofOfInvitationV2
     const invitation = this.getInvitation(id)
     const userId = invitation.userId
     assert(userId, 'A device invitation must identify its owner.')
@@ -771,6 +776,8 @@ export class Team extends EventEmitter<TeamEvents> {
       payload: {
         id,
         device,
+        proof,
+        claim,
       },
     })
   }
