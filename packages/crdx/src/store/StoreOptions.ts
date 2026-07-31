@@ -4,6 +4,7 @@ import { type Action, type Graph, type Resolver } from 'graph/index.js'
 import { type Keyring, type KeysetWithSecrets } from 'keyset/index.js'
 import { type UserWithSecrets } from 'user/index.js'
 import { type ValidatorSet } from 'validator/index.js'
+import { type MachineResult } from './makeMachine.js'
 
 export type StoreOptions<S, A extends Action, C> = {
   /** The user local user, along with their secret keys for signing, encrypting, etc.  */
@@ -30,6 +31,13 @@ export type StoreOptions<S, A extends Action, C> = {
 
   /** For pre-existing stores: A graph to preload, e.g. from saved state. */
   graph?: Uint8Array | Graph<A, C>
+
+  /**
+   * A one-shot opaque derivation produced by `makeMachine(...).derive`. Reusable state must be
+   * structured-cloneable; the store accepts it only when its graph, state, and machine definition
+   * are unchanged.
+   */
+  machineResult?: MachineResult<S, A, C>
 
   /** For new stores: Additional information to include in the root node  */
   rootPayload?: unknown

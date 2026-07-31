@@ -1,24 +1,29 @@
-import { getSequence } from '@localfirst/crdx'
+import type { MachineResult } from '@localfirst/crdx'
 import type { Logger } from '@localfirst/shared'
 import type { InvitationClaim, ProofOfInvitationV2 } from 'invitation/index.js'
 import { isEqual } from 'lodash-es'
-import { membershipResolver } from 'team/membershipResolver.js'
 import { deserializeTeamGraph } from 'team/serialize.js'
 import { teamMachine } from 'team/teamMachine.js'
-import type { TeamGraph, TeamLink, TeamState } from 'team/types.js'
+import type { TeamAction, TeamContext, TeamGraph, TeamLink, TeamState } from 'team/types.js'
 import { ValidationError } from 'util/index.js'
-import { invitationAcceptanceSenderIsActive } from './invitationAcceptance.js'
+import {
+  invitationAcceptanceSenderIsActive,
+  openInvitationAcceptance,
+} from './invitationAcceptance.js'
 import type { AcceptInvitationPayload, InvitationAcceptance } from './message.js'
 
 export type InvitationAcceptanceFailureReason =
+  | 'ACCEPTANCE_INVALID'
   | 'WRONG_TEAM'
   | 'SENDER_UNKNOWN'
   | 'ADMISSION_INVALID'
 
 export type InvitationAcceptanceValidation = {
+  acceptance: InvitationAcceptance
   graph: TeamGraph
   state: TeamState
   admissionLink: TeamLink
+  machineResult: MachineResult<TeamState, TeamAction, TeamContext>
 }
 
 export type InvitationAcceptanceValidationResult =
@@ -40,6 +45,38 @@ type ValidateInvitationAcceptanceOptions = {
   logger?: Logger
 }
 
+type ProcessInvitationAcceptanceOptions = Omit<
+  ValidateInvitationAcceptanceOptions,
+  'acceptance'
+> & {
+  invitationSeed: string
+}
+
+export const processInvitationAcceptance = ({
+  payload,
+  invitationSeed,
+  proof,
+  claim,
+  logger,
+}: ProcessInvitationAcceptanceOptions): InvitationAcceptanceValidationResult => {
+  let acceptance: InvitationAcceptance
+  try {
+    acceptance = openInvitationAcceptance({
+      payload,
+      invitationSeed,
+      proof,
+      claim,
+    })
+  } catch (error) {
+    logger?.error('Invalid invitation acceptance', error)
+    return invalid('ACCEPTANCE_INVALID', 'Invitation acceptance could not be authenticated', {
+      error,
+    })
+  }
+
+  return validateInvitationAcceptance({ acceptance, payload, proof, claim, logger })
+}
+
 export const validateInvitationAcceptance = ({
   acceptance,
   payload,
@@ -52,13 +89,51 @@ export const validateInvitationAcceptance = ({
 
   try {
     graph = deserializeTeamGraph(acceptance.serializedGraph, acceptance.teamKeyring)
-    state = teamMachine(graph, logger)
+    const machineResult = teamMachine.derive(graph, logger)
+    state = machineResult.state
+
+    const effectiveLinks = machineResult.sequence.filter(link => !link.isInvalid)
+    const admissionLinks =
+      claim.invitationKind === 'member'
+        ? effectiveLinks.filter(link => memberAdmissionMatches(link, proof, claim))
+        : effectiveLinks.filter(link =>
+            deviceAdmissionMatches(link, proof, claim, state.invitations[proof.id]?.userId)
+          )
+
+    return validateDerivedAcceptance({
+      acceptance,
+      payload,
+      proof,
+      claim,
+      graph,
+      state,
+      machineResult,
+      admissionLinks,
+    })
   } catch (error) {
     return invalid('ADMISSION_INVALID', 'Invitation acceptance contains an invalid team graph', {
       error,
     })
   }
+}
 
+type ValidateDerivedAcceptanceOptions = ValidateInvitationAcceptanceOptions & {
+  graph: TeamGraph
+  state: TeamState
+  machineResult: MachineResult<TeamState, TeamAction, TeamContext>
+  admissionLinks: TeamLink[]
+}
+
+const validateDerivedAcceptance = ({
+  acceptance,
+  payload,
+  proof,
+  claim,
+  graph,
+  state,
+  machineResult,
+  admissionLinks,
+}: ValidateDerivedAcceptanceOptions): InvitationAcceptanceValidationResult => {
   const invitation = state.invitations[proof.id]
   if (invitation === undefined || invitation.kind !== claim.invitationKind) {
     return invalid(
@@ -73,13 +148,6 @@ export const validateInvitationAcceptance = ({
       'Invitation acceptance sender is not an active identity in the team graph'
     )
   }
-
-  const sequence = getSequence(graph, membershipResolver)
-  const effectiveLinks = sequence.filter(link => !link.isInvalid)
-  const admissionLinks =
-    claim.invitationKind === 'member'
-      ? effectiveLinks.filter(link => memberAdmissionMatches(link, proof, claim))
-      : effectiveLinks.filter(link => deviceAdmissionMatches(link, proof, claim, invitation.userId))
 
   if (admissionLinks.length !== 1) {
     return invalid(
@@ -103,9 +171,11 @@ export const validateInvitationAcceptance = ({
   return {
     isValid: true,
     value: {
+      acceptance,
       graph,
       state,
       admissionLink: admissionLinks[0],
+      machineResult,
     },
   }
 }

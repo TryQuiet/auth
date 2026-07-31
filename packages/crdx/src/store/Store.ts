@@ -18,7 +18,7 @@ import { type UserWithSecrets } from 'user/index.js'
 import { type Hash, type Optional } from 'util/index.js'
 import { validate, type ValidatorSet } from 'validator/index.js'
 import { type StoreOptions } from './StoreOptions.js'
-import { makeMachine } from './makeMachine.js'
+import { consumeMachineResult, makeMachine } from './makeMachine.js'
 import { type Reducer } from './types.js'
 
 /**
@@ -58,6 +58,7 @@ export class Store<
     resolver = baseResolver,
     keys,
     logger,
+    machineResult,
   }: StoreOptions<S, A, C>) {
     super()
 
@@ -85,8 +86,22 @@ export class Store<
     // if a single keyset was provided, wrap it in a keyring
     this.keyring = createKeyring(keys)
 
-    // set the initial state
-    this.updateState()
+    if (machineResult === undefined) {
+      // Derive and validate the initial state when no reusable machine result was provided.
+      this.updateState()
+    } else {
+      const definition = {
+        initialState: this.initialState,
+        reducer: this.reducer,
+        resolver: this.resolver,
+        validators: this.validators,
+      }
+      assert(
+        consumeMachineResult(machineResult, this.graph, definition),
+        'Machine result does not match this store graph and definition.'
+      )
+      this.state = machineResult.state
+    }
   }
 
   /** Returns the store's most recent state. */

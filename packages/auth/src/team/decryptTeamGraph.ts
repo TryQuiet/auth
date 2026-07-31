@@ -1,22 +1,7 @@
-import {
-  type Hash,
-  createKeyring,
-  decryptLink,
-  type Keyring,
-  type KeysetWithSecrets,
-  type MaybePartlyDecryptedGraph,
-} from '@localfirst/crdx'
-import { initialState, TEAM_SCOPE } from './constants.js'
-import { reducer } from './reducer.js'
-import { keys } from './selectors/index.js'
-import {
-  type TeamAction,
-  type TeamContext,
-  type TeamGraph,
-  type TeamLink,
-  type TeamState,
-} from './types.js'
-import { Logger } from '@localfirst/shared'
+import type { Keyring, KeysetWithSecrets, MaybePartlyDecryptedGraph } from '@localfirst/crdx'
+import type { Logger } from '@localfirst/shared'
+import { decryptTeamGraphCore } from './decryptTeamGraphCore.js'
+import type { TeamAction, TeamContext, TeamGraph } from './types.js'
 
 /**
  * Decrypts a graph.
@@ -36,72 +21,11 @@ export const decryptTeamGraph = ({
 }: {
   encryptedGraph: MaybePartlyDecryptedGraph<TeamAction, TeamContext>
 
-  /**
-   * We need the first-generation team keys to get started. If the team keys have been rotated, we
-   * will find them in lockboxes that we can get to with our device keys.
-   */
+  /** First-generation or retained team keys used to begin decryption. */
   teamKeys: KeysetWithSecrets | KeysetWithSecrets[] | Keyring
 
-  /**
-   * We need our device keys so that we can get the latest team keys from the graph if they've been
-   * rotated.
-   */
+  /** Device keys used to open rotated team keys found in graph lockboxes. */
   deviceKeys: KeysetWithSecrets
 
   extendableLogger?: Logger
-}): TeamGraph => {
-  const logger = extendableLogger != null ? extendableLogger.extend('decryptTeamGraph') : new Logger({ moduleName: 'auth:decryptTeamGraph' })
-  const keyring = createKeyring(teamKeys)
-
-  const { encryptedLinks, childMap, root } = encryptedGraph
-
-  /** Recursively decrypts a link and its children. */
-  const decrypt = (
-    hash: Hash,
-    previousKeys: KeysetWithSecrets,
-    previousDecryptedLinks: Record<Hash, TeamLink> = {},
-    previousState: TeamState = initialState
-  ): Record<Hash, TeamLink> => {
-    // Decrypt this link
-    const encryptedLink = encryptedLinks[hash]
-    const decryptionKeys = keyring[encryptedLink.recipientPublicKey] ?? previousKeys
-    const decryptedLink = decryptLink<TeamAction, TeamContext>(encryptedLink, decryptionKeys)
-    let decryptedLinks = {
-      [hash]: decryptedLink,
-    }
-
-    // Reduce & see if there are new team keys
-    const newState = reducer(previousState, decryptedLink, logger)
-    let newKeys: KeysetWithSecrets | undefined
-    try {
-      newKeys = keys(newState, deviceKeys, TEAM_SCOPE)
-      keyring[newKeys.encryption.publicKey] = newKeys
-    } catch {
-      newKeys = previousKeys
-    }
-
-    // Decrypt its children
-    const children = childMap![hash]
-
-    if (children) {
-      for (const hash of children) {
-        if (encryptedLinks[hash] === undefined) continue
-        decryptedLinks = {
-          ...decryptedLinks,
-          ...decrypt(hash, newKeys, decryptedLinks, newState),
-        }
-      }
-    }
-
-    return { ...previousDecryptedLinks, ...decryptedLinks }
-  }
-
-  const rootPublicKey = encryptedLinks[root].recipientPublicKey
-  const rootKeys = keyring[rootPublicKey]
-  const decryptedLinks = decrypt(root, rootKeys)
-
-  return {
-    ...encryptedGraph,
-    links: decryptedLinks,
-  }
-}
+}): TeamGraph => decryptTeamGraphCore({ encryptedGraph, teamKeys, deviceKeys, extendableLogger })

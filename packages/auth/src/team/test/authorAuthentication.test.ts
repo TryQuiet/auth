@@ -1,6 +1,6 @@
 import { append, createKeyring, createUser } from '@localfirst/crdx'
 import * as teams from 'team/index.js'
-import type { TeamAction, TeamContext } from 'team/types.js'
+import type { TeamAction, TeamContext, TeamGraph } from 'team/types.js'
 import { setup } from 'util/testing/index.js'
 import { describe, expect, it } from 'vitest'
 
@@ -63,5 +63,26 @@ describe('team action author authentication', () => {
         alice.team.teamKeyring()
       )
     ).toThrow(/unknown or ambiguous/)
+  })
+
+  it('ignores caller-supplied plaintext when merging through the public API', () => {
+    const { alice, bob } = setup('alice', 'bob')
+    bob.team.setTeamName('Authenticated name')
+    const remoteGraph = bob.team.graph
+    const head = remoteGraph.head[0]
+    const forgedGraph = {
+      ...remoteGraph,
+      links: {
+        ...remoteGraph.links,
+        [head]: {
+          ...remoteGraph.links[head],
+          body: { ...remoteGraph.links[head].body, payload: { teamName: 'Forged name' } },
+        },
+      },
+    } as TeamGraph
+
+    alice.team.merge(forgedGraph)
+
+    expect(alice.team.teamName).toBe('Authenticated name')
   })
 })

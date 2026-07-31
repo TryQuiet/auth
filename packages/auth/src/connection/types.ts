@@ -23,8 +23,8 @@ import type {
 import type { ServerWithSecrets } from 'server/index.js'
 import type { Member, Team } from 'team/index.js'
 import type { ConnectionErrorPayload } from './errors.js'
-import type { AcceptInvitationPayload, ConnectionMessage, InvitationAcceptance } from './message.js'
-import type { InvitationAcceptanceValidation } from './validateInvitationAcceptance.js'
+import type { ConnectionMessage } from './message.js'
+import type { InvitationAcceptanceValidationResult } from './validateInvitationAcceptance.js'
 
 export type ConnectionEvents = {
   /** state change in the connection */
@@ -128,9 +128,7 @@ export type ConnectionContext = {
 
   ourIdentityClaim?: IdentityClaim
   theirIdentityClaim?: IdentityClaim
-  invitationAcceptance?: InvitationAcceptance
-  invitationAcceptanceMessage?: AcceptInvitationPayload
-  invitationAcceptanceValidation?: InvitationAcceptanceValidation
+  invitationAcceptanceResult?: InvitationAcceptanceValidationResult
 
   challenge?: Challenge
 

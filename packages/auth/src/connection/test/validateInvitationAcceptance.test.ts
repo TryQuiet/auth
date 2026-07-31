@@ -1,5 +1,5 @@
 import { getSequence, merge, redactKeys, type UserWithSecrets } from '@localfirst/crdx'
-import { randomKey } from '@localfirst/crypto'
+import { asymmetric, randomKey } from '@localfirst/crypto'
 import { redactDevice, type DeviceWithSecrets } from 'device/index.js'
 import {
   generateProof,
@@ -13,9 +13,9 @@ import { serializeTeamGraph } from 'team/serialize.js'
 import type { Team } from 'team/Team.js'
 import type { TeamGraph } from 'team/types.js'
 import { redactFirstUseDevice, setup } from 'util/testing/index.js'
-import { describe, expect, it } from 'vitest'
-import { createInvitationAcceptance, openInvitationAcceptance } from '../invitationAcceptance.js'
-import { validateInvitationAcceptance } from '../validateInvitationAcceptance.js'
+import { describe, expect, it, vi } from 'vitest'
+import { createInvitationAcceptance } from '../invitationAcceptance.js'
+import { processInvitationAcceptance } from '../validateInvitationAcceptance.js'
 
 describe('exact effective invitation admission validation', () => {
   it('accepts exact member and device admissions', () => {
@@ -43,6 +43,58 @@ describe('exact effective invitation admission validation', () => {
         claim,
       }).isValid
     ).toBe(true)
+  })
+
+  it('opens and validates an acceptance payload exactly once', () => {
+    const fixture = admittedMemberFixture()
+    const payload = createInvitationAcceptance({
+      invitation: fixture.invitation,
+      proof: fixture.proof,
+      claim: fixture.claim,
+      senderDevice: fixture.senderDevice,
+      serializedGraph: fixture.team.save(),
+      teamKeyring: fixture.team.teamKeyring(),
+    })
+    const decrypt = vi.spyOn(asymmetric, 'decryptBytes')
+
+    try {
+      const result = processInvitationAcceptance({
+        payload,
+        invitationSeed: fixture.seed,
+        proof: fixture.proof,
+        claim: fixture.claim,
+      })
+      expect(result.isValid).toBe(true)
+      const acceptanceDecryptions = decrypt.mock.calls.filter(
+        ([options]) => options.cipher === payload.encryptedAcceptance
+      )
+      expect(acceptanceDecryptions).toHaveLength(1)
+    } finally {
+      decrypt.mockRestore()
+    }
+  })
+
+  it('classifies an unauthenticated acceptance before graph validation', () => {
+    const fixture = admittedMemberFixture()
+    const payload = createInvitationAcceptance({
+      invitation: fixture.invitation,
+      proof: fixture.proof,
+      claim: fixture.claim,
+      senderDevice: fixture.senderDevice,
+      serializedGraph: fixture.team.save(),
+      teamKeyring: fixture.team.teamKeyring(),
+    })
+    const encryptedAcceptance = payload.encryptedAcceptance.slice()
+    encryptedAcceptance[0] = encryptedAcceptance[0] === 0 ? 1 : 0
+
+    const result = processInvitationAcceptance({
+      payload: { ...payload, encryptedAcceptance },
+      invitationSeed: fixture.seed,
+      proof: fixture.proof,
+      claim: fixture.claim,
+    })
+
+    expect(result).toMatchObject({ isValid: false, reason: 'ACCEPTANCE_INVALID' })
   })
 
   it('rejects an identity that exists without an ADMIT action', () => {
@@ -263,15 +315,9 @@ const validateFixture = ({
     serializedGraph,
     teamKeyring,
   })
-  const acceptance = openInvitationAcceptance({
+  return processInvitationAcceptance({
     payload,
     invitationSeed: seed,
-    proof,
-    claim,
-  })
-  return validateInvitationAcceptance({
-    acceptance,
-    payload,
     proof,
     claim,
   })

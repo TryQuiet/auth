@@ -38,8 +38,10 @@ import { castServer } from 'server/castServer.js'
 import { type Host, type Server } from 'server/types.js'
 import { type LocalUserContext } from 'team/context.js'
 import { KeyType, Optional, VALID, scopesMatch } from 'util/index.js'
+import { consumeAuthenticatedTeamGraph } from './authenticatedTeamGraph.js'
 import { ADMIN_SCOPE, ALL, TEAM_SCOPE, initialState } from './constants.js'
 import { decryptTeamGraph } from './decryptTeamGraph.js'
+import { getEvaluatedTeamGraph } from './evaluatedTeamGraph.js'
 import { membershipResolver as resolver } from './membershipResolver.js'
 import { redactUser } from './redactUser.js'
 import { reducer } from './reducer.js'
@@ -144,6 +146,17 @@ export class Team extends EventEmitter<TeamEvents> {
       this.dispatch({ type: 'SET_METADATA', payload: { metadata }}, options.teamKeys)
     } else {
       this.logger.debug('loading existing team')
+      const machineResult = getEvaluatedTeamGraph(options)
+      const graph =
+        machineResult === undefined
+          ? maybeDeserialize(options.source, options.teamKeyring)
+          : machineResult.graph
+      if (machineResult !== undefined) {
+        assert(
+          options.source === machineResult.graph,
+          'Machine result must belong to the supplied team graph.'
+        )
+      }
       // Rehydrate a team from an existing graph
       // Create CRDX store
       this.store = createStore({
@@ -151,9 +164,10 @@ export class Team extends EventEmitter<TeamEvents> {
         reducer,
         resolver,
         initialState,
-        graph: maybeDeserialize(options.source, options.teamKeyring),
+        graph,
         keys: options.teamKeyring,
         logger: this.logger,
+        machineResult,
       })
     }
 
@@ -223,12 +237,14 @@ export class Team extends EventEmitter<TeamEvents> {
    * @returns This `Team` instance.
    */
   public merge = (theirGraph: TeamGraph) => {
-    const authenticatedGraph = decryptTeamGraph({
-      encryptedGraph: { ...theirGraph, childMap: getChildMap(theirGraph) },
-      teamKeys: this.teamKeyring(),
-      deviceKeys: this.context.device.keys,
-      extendableLogger: this.logger,
-    })
+    const authenticatedGraph = consumeAuthenticatedTeamGraph(theirGraph)
+      ? theirGraph
+      : decryptTeamGraph({
+          encryptedGraph: { ...theirGraph, childMap: getChildMap(theirGraph) },
+          teamKeys: this.teamKeyring(),
+          deviceKeys: this.context.device.keys,
+          extendableLogger: this.logger,
+        })
     this.store.merge(authenticatedGraph)
     this.state = this.store.getState()
 
