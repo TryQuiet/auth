@@ -55,6 +55,20 @@ describe('createStore', () => {
     expect(bobState.value).toEqual(2)
   })
 
+  test('supplies the validated graph to reducers during derivation and dispatch', () => {
+    const reducer = vi.fn(counterReducer)
+    const store = createStore<CounterState, CounterAction, Record<string, unknown>>({
+      user: alice,
+      reducer,
+      keys,
+    })
+
+    expect(reducer.mock.calls[0]?.[3]).toBe(store.getGraph())
+    reducer.mockClear()
+    store.dispatch({ type: 'INCREMENT' })
+    expect(reducer.mock.calls[0]?.[3]).toBe(store.getGraph())
+  })
+
   test('reuses an opaque machine result without reducing the graph again', () => {
     const graph = createGraph<CounterAction>({ user: alice, name: 'counter', keys })
     const initialState = {} as CounterState

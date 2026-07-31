@@ -179,7 +179,7 @@ export class Store<
     const [head] = getHead(nextGraph)
 
     // we don't need to pass the whole graph through the reducer, just the current state + the new head
-    const nextState = this.reducer(this.state, head, this.logger)
+    const nextState = this.reducer(this.state, head, this.logger, nextGraph)
 
     // Commit the graph and state together only after the action has passed application validation.
     this.graph = nextGraph

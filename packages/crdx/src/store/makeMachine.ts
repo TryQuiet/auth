@@ -55,7 +55,7 @@ export const makeMachine = <S, A extends Action, C>({
 
     // Use the filter & sequencer to turn the graph into an ordered sequence
     const sequence = getSequence(graph, resolver)
-    const wrappedReducer = (state: S, link: Link<A, C>) => reducer(state, link, logger)
+    const wrappedReducer = (state: S, link: Link<A, C>) => reducer(state, link, logger, graph)
 
     // Run the sequence through the reducer to calculate the current team state
     const state = sequence.reduce(wrappedReducer, initialState)

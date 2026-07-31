@@ -1,4 +1,4 @@
-import { ROOT, type Reducer } from '@localfirst/crdx'
+import { ROOT, type Hash, type Reducer } from '@localfirst/crdx'
 import { ADMIN } from 'role/index.js'
 import { clone, composeTransforms } from 'util/index.js'
 import { invalidLinkReducer } from './invalidLinkReducer.js'
@@ -48,7 +48,12 @@ import { Logger } from '@localfirst/shared'
  * @param state The team state as of the previous link in the signature chain.
  * @param link The current link being processed.
  */
-export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (state, link, extendableLogger) => {
+export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (
+  state,
+  link,
+  extendableLogger,
+  graph
+) => {
   const logger = extendableLogger != null ? extendableLogger.extend('reducer') : new Logger({ moduleName: 'auth:reducer' })
   // Invalid links are marked to be discarded by the MembershipResolver due to conflicting
   // concurrent actions. In most cases we just ignore these links and they don't affect state at
@@ -62,7 +67,7 @@ export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (state, link
   state = clone(state)
 
   // Make sure this link can be applied to the previous state & doesn't put us in an invalid state
-  const validation = validate(state, link, logger)
+  const validation = validate(state, link, logger, graph)
   if (!validation.isValid) {
     throw validation.error
   }
@@ -74,7 +79,7 @@ export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (state, link
   const applyTransforms = composeTransforms([
     setHead(link),
     collectLockboxes(action.payload.lockboxes), // Any payload can include lockboxes
-    ...getTransforms(action), // Get the specific transforms indicated by this action
+    ...getTransforms(action, link.hash), // Get the specific transforms indicated by this action
   ])
   const newState = applyTransforms(state)
 
@@ -86,7 +91,7 @@ export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (state, link
  * new state). This returns an array of transforms that are then applied in order.
  * @param action The team action (type + payload) being processed
  */
-const getTransforms = (action: TeamAction): Transform[] => {
+const getTransforms = (action: TeamAction, linkHash: Hash): Transform[] => {
   switch (action.type) {
     case ROOT: {
       const { name, rootMember, rootDevice } = action.payload
@@ -206,7 +211,7 @@ const getTransforms = (action: TeamAction): Transform[] => {
     case 'CHANGE_MEMBER_KEYS': {
       const { keys } = action.payload
       return [
-        changeMemberKeys(keys), // Replace this member's public keys with the ones provided
+        changeMemberKeys(keys, linkHash), // Replace this member's public keys with the ones provided
       ]
     }
 
@@ -234,7 +239,7 @@ const getTransforms = (action: TeamAction): Transform[] => {
     case 'CHANGE_SERVER_KEYS': {
       const { keys } = action.payload
       return [
-        changeServerKeys(keys), // Replace this server's public keys with the ones provided
+        changeServerKeys(keys, linkHash), // Replace this server's public keys with the ones provided
       ]
     }
 

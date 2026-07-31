@@ -1,5 +1,5 @@
 import { Logger, truncateHashes } from '@localfirst/shared'
-import { ROOT, type Keyset } from '@localfirst/crdx'
+import { ROOT, isPredecessorHash, type Keyset } from '@localfirst/crdx'
 import { invitationCanBeUsed } from 'invitation/index.js'
 import * as invitations from 'invitation/index.js'
 import { isEqual } from 'lodash-es'
@@ -8,17 +8,23 @@ import { isAdminOnlyAction } from './isAdminOnlyAction.js'
 import * as select from './selectors/index.js'
 import {
   type TeamLink,
+  type TeamGraph,
   type TeamState,
   type TeamStateValidator,
   type TeamStateValidatorSet,
 } from './types.js'
 
-export const validate: TeamStateValidator = (previousState: TeamState, link: TeamLink, extendableLogger?: Logger) => {
+export const validate: TeamStateValidator = (
+  previousState: TeamState,
+  link: TeamLink,
+  extendableLogger?: Logger,
+  graph?: TeamGraph
+) => {
   const logger = extendableLogger !== undefined ? extendableLogger.extend('validate') : new Logger({ moduleName: 'auth:validate' })
   logger.debug('Validating link')
   for (const key in validators) {
     const validator = validators[key]
-    const validation = validator(previousState, link, logger)
+    const validation = validator(previousState, link, logger, graph)
     if (!validation.isValid) {
       return validation
     }
@@ -43,11 +49,16 @@ const validators: TeamStateValidatorSet = {
   actionAuthorIsAuthenticated(
     previousState: TeamState,
     link: TeamLink,
-    extendableLogger: Logger
+    extendableLogger: Logger,
+    graph?: TeamGraph
   ) {
     const logger = extendableLogger.extend('actionAuthorIsAuthenticated')
     const { senderPublicKey } = link
     const { type, userId } = link.body
+
+    // Branch-by-branch decryption does not have a complete authenticated graph. The final machine
+    // reduction always supplies one and is the security boundary for authorship validation.
+    if (graph === undefined) return VALID
 
     if (type === ROOT) {
       const { rootMember } = link.body.payload
@@ -74,8 +85,16 @@ const validators: TeamStateValidatorSet = {
     }
 
     if (senderPublicKey !== matchingAuthors[0].keys.encryption) {
+      const matchingRetiredKey = previousState.retiredAuthorKeys.find(
+        retired =>
+          retired.identityId === userId &&
+          retired.encryptionPublicKey === senderPublicKey &&
+          !isPredecessorHash(graph, retired.retiredAt, link.hash)
+      )
+      if (matchingRetiredKey !== undefined) return VALID
+
       return fail(
-        `Action author '${userId}' did not authenticate with their current encryption key`,
+        `Action author '${userId}' did not authenticate with a key valid at its causal frontier`,
         previousState,
         link,
         logger

@@ -13,6 +13,9 @@ export const addServer =
 
       // Remove server's url from list of removed servers (e.g. if server was removed and is now being re-added)
       removedServers: state.removedServers.filter(m => m.host !== newServer.host),
+      retiredAuthorKeys: state.retiredAuthorKeys.filter(
+        key => key.identityId !== newServer.host
+      ),
     }
     return newState
   }

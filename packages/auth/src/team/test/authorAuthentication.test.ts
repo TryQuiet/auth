@@ -1,6 +1,15 @@
-import { append, createKeyring, createUser } from '@localfirst/crdx'
+import {
+  append,
+  createKeyring,
+  createKeyset,
+  createUser,
+  merge,
+  redactKeys,
+  type UserWithSecrets,
+} from '@localfirst/crdx'
 import * as teams from 'team/index.js'
 import type { TeamAction, TeamContext, TeamGraph } from 'team/types.js'
+import { KeyType } from 'util/index.js'
 import { setup } from 'util/testing/index.js'
 import { describe, expect, it } from 'vitest'
 
@@ -22,7 +31,7 @@ describe('team action author authentication', () => {
         alice.localContext,
         createKeyring(alice.team.teamKeys())
       )
-    ).toThrow(/current encryption key/)
+    ).toThrow(/causal frontier/)
   })
 
   it('rejects an action from an unknown author', () => {
@@ -85,4 +94,98 @@ describe('team action author authentication', () => {
 
     expect(alice.team.teamName).toBe('Authenticated name')
   })
+
+  it.each(['before', 'after'] as const)(
+    'accepts a concurrent pre-rotation action ordered %s the rotation',
+    order => {
+      const fixture = concurrentRotationFixture(order)
+
+      expect(() =>
+        teams.load(
+          fixture.graph,
+          fixture.localContext,
+          createKeyring(fixture.teamKeys)
+        )
+      ).not.toThrow()
+    }
+  )
+
+  it('rejects an old-key action when the rotation is in its causal past', () => {
+    const fixture = concurrentRotationFixture('after')
+    const staleGraph = append<TeamAction, TeamContext>({
+      graph: fixture.rotationGraph,
+      action: { type: 'SET_TEAM_NAME', payload: { teamName: 'stale' } },
+      user: fixture.oldAuthor,
+      context: { deviceId: fixture.localContext.device.deviceId },
+      keys: fixture.teamKeys,
+    })
+
+    expect(() =>
+      teams.load(staleGraph, fixture.localContext, createKeyring(fixture.teamKeys))
+    ).toThrow(/causal frontier/)
+  })
+
+  it('accepts the rotated key after concurrent branches merge', () => {
+    const fixture = concurrentRotationFixture('after')
+    const mergedGraph = append<TeamAction, TeamContext>({
+      graph: fixture.graph,
+      action: { type: 'SET_TEAM_NAME', payload: { teamName: 'post-merge' } },
+      user: { ...fixture.oldAuthor, keys: fixture.newKeys },
+      context: { deviceId: fixture.localContext.device.deviceId },
+      keys: fixture.teamKeys,
+    })
+
+    expect(() =>
+      teams.load(mergedGraph, fixture.localContext, createKeyring(fixture.teamKeys))
+    ).not.toThrow()
+  })
 })
+
+const concurrentRotationFixture = (oldActionOrder: 'before' | 'after') => {
+  const { alice } = setup('alice')
+  const baseGraph = alice.team.graph
+  const teamKeys = alice.team.teamKeys()
+  const oldAuthor = structuredClone(alice.user) as UserWithSecrets
+  const newKeys = createKeyset({ type: KeyType.USER, name: alice.userId })
+  newKeys.generation = oldAuthor.keys.generation + 1
+  const rotationGraph = append<TeamAction, TeamContext>({
+    graph: baseGraph,
+    action: {
+      type: 'CHANGE_MEMBER_KEYS',
+      payload: { keys: redactKeys(newKeys) },
+    },
+    user: oldAuthor,
+    context: { deviceId: alice.device.deviceId },
+    keys: teamKeys,
+  })
+  const rotationHash = rotationGraph.head[0]
+
+  let oldActionGraph: TeamGraph | undefined
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const candidate = append<TeamAction, TeamContext>({
+      graph: baseGraph,
+      action: {
+        type: 'SET_METADATA',
+        payload: { metadata: { selfAssignableRoles: [`candidate-${attempt}`] } },
+      },
+      user: oldAuthor,
+      context: { deviceId: alice.device.deviceId },
+      keys: teamKeys,
+    })
+    const candidateIsBefore = candidate.head[0] < rotationHash
+    if (candidateIsBefore === (oldActionOrder === 'before')) {
+      oldActionGraph = candidate
+      break
+    }
+  }
+  if (oldActionGraph === undefined) throw new Error('Could not generate the requested hash order')
+
+  return {
+    graph: merge(rotationGraph, oldActionGraph) as TeamGraph,
+    rotationGraph,
+    oldAuthor,
+    newKeys,
+    teamKeys,
+    localContext: alice.localContext,
+  }
+}

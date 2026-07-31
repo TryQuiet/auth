@@ -334,14 +334,26 @@ export type TeamState = {
   // If a member's admission is reversed, we need to flag them as compromised so an admin can
   // rotate any keys they had access to at the first opportunity
   pendingKeyRotations: string[]
+  retiredAuthorKeys: RetiredAuthorKey[]
   metadata: TeamMetadata
+}
+
+export type RetiredAuthorKey = {
+  identityId: string
+  encryptionPublicKey: Base58
+  retiredAt: Hash
 }
 
 export type InvitationMap = Record<string, InvitationState>
 
 // ********* VALIDATION
 
-export type TeamStateValidator = (previousState: TeamState, link: TeamLink, extendableLogger: Logger) => ValidationResult
+export type TeamStateValidator = (
+  previousState: TeamState,
+  link: TeamLink,
+  extendableLogger: Logger,
+  graph?: TeamGraph
+) => ValidationResult
 
 export type TeamStateValidatorSet = Record<string, TeamStateValidator>
 
