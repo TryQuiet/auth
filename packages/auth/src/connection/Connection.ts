@@ -27,6 +27,7 @@ import {
   JOINED_WRONG_TEAM,
   MEMBER_REMOVED,
   NEITHER_IS_MEMBER,
+  PROTOCOL_VERSION_UNSUPPORTED,
   SERVER_REMOVED,
   TIMEOUT,
   createErrorMessage,
@@ -36,7 +37,11 @@ import {
 } from 'connection/errors.js'
 import { getDeviceUserFromState } from 'connection/getDeviceUserFromGraph.js'
 import * as identity from 'connection/identity.js'
-import type { ConnectionMessage, DisconnectMessage } from 'connection/message.js'
+import {
+  isReadyMessage,
+  type ConnectionMessage,
+  type DisconnectMessage,
+} from 'connection/message.js'
 import { redactDevice } from 'device/index.js'
 import * as invitations from 'invitation/index.js'
 import { pack, unpack } from 'msgpackr'
@@ -739,6 +744,8 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           this.logger.debug('GUARD: are heads equal?', result)
           return result
         },
+
+        requestIdentityIsValid: ({ event }) => isReadyMessage(event),
       },
     }).createMachine({
       context: initialContext as ConnectionContext,
@@ -749,7 +756,14 @@ export class Connection extends EventEmitter<ConnectionEvents> {
       entry: 'requestIdentityClaim',
       initial: 'awaitingIdentityClaim',
       on: {
-        REQUEST_IDENTITY: { actions: 'sendIdentityClaim', target: '.awaitingIdentityClaim' },
+        REQUEST_IDENTITY: [
+          {
+            guard: 'requestIdentityIsValid',
+            actions: 'sendIdentityClaim',
+            target: '.awaitingIdentityClaim',
+          },
+          fail(PROTOCOL_VERSION_UNSUPPORTED),
+        ],
         // Remote error (sent by peer)
         ERROR: { actions: 'receiveError', target: '#disconnected' },
         // Local error (detected by us, sent to peer)
