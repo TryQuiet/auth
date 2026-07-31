@@ -12,21 +12,24 @@ import {
 import { createKeyring, type Keyring, type KeysetWithSecrets } from 'keyset/index.js'
 import { type Hash } from 'util/index.js'
 import { validate, ValidationError } from 'validator/index.js'
-import {
-  DEFAULT_SYNC_LIMITS,
-  type SyncLimits,
-  type SyncMessage,
-  type SyncState,
-} from './types.js'
+import { DEFAULT_SYNC_LIMITS, type SyncLimits, type SyncMessage, type SyncState } from './types.js'
 
 /**
  * Receives a sync message from a peer and updates our sync state accordingly so that
  * `generateMessage` can determine what information they need. Also possibly updates our graph with
  * information from them.
  *
+ * Wire shape, graph root, resource limits, and advertised topology are checked before decryption.
+ * After decryption, every received link's authenticated `prev` must match its advertised parents;
+ * only then is the graph validated and merged.
+ *
+ * Invalid input does not throw to the connection actor. It returns the original graph, increments
+ * `failedSyncCount`, records `reportedError`, restores the prior peer head/need, and clears pending
+ * links and topology. Limits apply both to each message and to accumulated pending data.
+ *
  * @returns A tuple `[graph, state]` containing our updated graph and our updated sync state with
  * this peer.
- * */
+ */
 export const receiveMessage = <A extends Action, C>(
   /** Our current graph */
   graph: Graph<A, C>,
@@ -37,13 +40,22 @@ export const receiveMessage = <A extends Action, C>(
   /** The sync message they've just sent */
   message: SyncMessage,
 
+  /** Keys used to decrypt received links. */
   keys: KeysetWithSecrets | Keyring,
 
+  /** Decryptor used for the reconstructed peer graph. */
   decrypt: DecryptFn = decryptGraph,
+
+  /** Optional logger to extend for sync diagnostics. */
   extendableLogger?: Logger,
+
+  /** Defensive message, topology, ciphertext, and traversal bounds. */
   limits: SyncLimits = DEFAULT_SYNC_LIMITS
 ): [Graph<A, C>, SyncState] => {
-  const logger = extendableLogger != null ? extendableLogger.extend('receiveMessage') : new Logger({ moduleName: 'auth:receiveMessage' })
+  const logger =
+    extendableLogger != null
+      ? extendableLogger.extend('receiveMessage')
+      : new Logger({ moduleName: 'auth:receiveMessage' })
   // if a keyset was provided, wrap it in a keyring
   const keyring = createKeyring(keys)
 
@@ -92,11 +104,7 @@ export const receiveMessage = <A extends Action, C>(
         keys: keyring,
         maxTraversalSteps: limits.maxTraversalSteps,
       })
-      validateAuthenticatedTopology(
-        theirGraph,
-        state.their.encryptedLinks,
-        state.their.parentMap
-      )
+      validateAuthenticatedTopology(theirGraph, state.their.encryptedLinks, state.their.parentMap)
 
       const mergedGraph = merge(graph, theirGraph)
       const validation = validate(mergedGraph, undefined, logger)
@@ -265,9 +273,7 @@ function assertHashArray(value: unknown, label: string): asserts value is Hash[]
 }
 
 const sameHashSet = (left: readonly Hash[], right: readonly Hash[] | undefined) =>
-  right !== undefined &&
-  left.length === right.length &&
-  left.every(hash => right.includes(hash))
+  right !== undefined && left.length === right.length && left.every(hash => right.includes(hash))
 
 const recordSyncFailure = (state: SyncState, error: ValidationError): SyncState => ({
   ...state,

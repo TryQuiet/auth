@@ -4,6 +4,7 @@ import { server } from './server.js'
 import { hasServer } from './hasServer.js'
 import { castServer } from 'server/castServer.js'
 
+/** Returns whether exactly one matching device exists; throws when the ID is ambiguous. */
 export const hasDevice = (
   state: TeamState,
   deviceId: string,
@@ -12,6 +13,10 @@ export const hasDevice = (
   return getDevices(state, deviceId, options).length === 1
 }
 
+/**
+ * Returns the unique member device or server projection for `deviceId`. Removed identities are
+ * included only when requested; missing and ambiguous IDs throw.
+ */
 export const device = (state: TeamState, deviceId: string, options = { includeRemoved: false }) => {
   const matchingDevices = getDevices(state, deviceId, options)
   assert(matchingDevices.length > 0, `Device ${deviceId} not found`)

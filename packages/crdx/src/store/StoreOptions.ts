@@ -13,8 +13,10 @@ export type StoreOptions<S, A extends Action, C> = {
   /** Additional context information to be added to each link (e.g. device, client, etc.) */
   context?: C
 
-  /** A Redux-style reducer that calculates a new state given the previous state and an action. In
-   *  this case an "action" is a link in a hash graph. */
+  /**
+   * A Redux-style reducer that calculates new state from the previous state and a graph link. Store
+   * also supplies the complete candidate graph as the reducer's optional fourth argument.
+   */
   reducer: Reducer<S, A, C>
 
   /** A resolver defines how any two concurrent sequences will be merged. It is a pure function that is
@@ -34,8 +36,8 @@ export type StoreOptions<S, A extends Action, C> = {
 
   /**
    * A one-shot opaque derivation produced by `makeMachine(...).derive`. Reusable state must be
-   * structured-cloneable; the store accepts it only when its graph, state, and machine definition
-   * are unchanged.
+   * structured-cloneable. Store consumes it once and skips initial validation/reduction only when
+   * its graph, state, validators, and machine definition remain unchanged; rejection throws.
    */
   machineResult?: MachineResult<S, A, C>
 

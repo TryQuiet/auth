@@ -5,6 +5,13 @@ import { generateStarterKeys } from './generateStarterKeys.js'
 import { invitationProofPayload } from './invitationProofPayload.js'
 import { normalize } from './normalize.js'
 
+/**
+ * Generates a version-2 proof of invitation possession.
+ *
+ * The signature is domain-separated and binds the normalized invitation seed to the exact member
+ * or device claim plus both peers' handshake nonces. A proof therefore cannot be replayed for a
+ * different identity or connection transcript.
+ */
 export const generateProof = ({
   seed,
   claim,

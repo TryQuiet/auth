@@ -14,13 +14,23 @@ import {
   type TeamStateValidatorSet,
 } from './types.js'
 
+/**
+ * Runs every team-state validator for `link` against the preceding state.
+ *
+ * During speculative branch decryption `graph` may be omitted, which defers causal author-key
+ * checks. Final machine evaluation must supply the complete authenticated graph and reruns every
+ * validator before accepting the state.
+ */
 export const validate: TeamStateValidator = (
   previousState: TeamState,
   link: TeamLink,
   extendableLogger?: Logger,
   graph?: TeamGraph
 ) => {
-  const logger = extendableLogger !== undefined ? extendableLogger.extend('validate') : new Logger({ moduleName: 'auth:validate' })
+  const logger =
+    extendableLogger !== undefined
+      ? extendableLogger.extend('validate')
+      : new Logger({ moduleName: 'auth:validate' })
   logger.debug('Validating link')
   for (const key in validators) {
     const validator = validators[key]
@@ -33,16 +43,20 @@ export const validate: TeamStateValidator = (
   return VALID
 }
 
-export const canUserAddMemberToRole = (roleName: string, assigningUserId: string, previousState: TeamState): boolean => {
-    const metadata = select.getMetadata(previousState)
-    if (metadata.selfAssignableRoles.includes(roleName)) {
-      return true
-    }
-    if (select.memberIsAdmin(previousState, assigningUserId)) {
-      return true
-    }
-    return false
+export const canUserAddMemberToRole = (
+  roleName: string,
+  assigningUserId: string,
+  previousState: TeamState
+): boolean => {
+  const metadata = select.getMetadata(previousState)
+  if (metadata.selfAssignableRoles.includes(roleName)) {
+    return true
   }
+  if (select.memberIsAdmin(previousState, assigningUserId)) {
+    return true
+  }
+  return false
+}
 
 const validators: TeamStateValidatorSet = {
   /** The authenticated encryption key must belong to the user or server claimed by the action. */
@@ -62,11 +76,13 @@ const validators: TeamStateValidatorSet = {
 
     if (type === ROOT) {
       const { rootMember } = link.body.payload
-      if (
-        userId !== rootMember.userId ||
-        senderPublicKey !== rootMember.keys.encryption
-      ) {
-        return fail('Root action author does not match the founding member', previousState, link, logger)
+      if (userId !== rootMember.userId || senderPublicKey !== rootMember.keys.encryption) {
+        return fail(
+          'Root action author does not match the founding member',
+          previousState,
+          link,
+          logger
+        )
       }
       return VALID
     }
@@ -76,12 +92,7 @@ const validators: TeamStateValidatorSet = {
     const matchingAuthors = [...matchingMembers, ...matchingServers]
 
     if (matchingAuthors.length !== 1) {
-      return fail(
-        `Action author '${userId}' is unknown or ambiguous`,
-        previousState,
-        link,
-        logger
-      )
+      return fail(`Action author '${userId}' is unknown or ambiguous`, previousState, link, logger)
     }
 
     if (senderPublicKey !== matchingAuthors[0].keys.encryption) {
@@ -443,17 +454,31 @@ const validators: TeamStateValidatorSet = {
 
     return admissionMatchesClaim
       ? VALID
-      : fail('Admission identity does not match its signed invitation claim', previousState, link, logger)
+      : fail(
+          'Admission identity does not match its signed invitation claim',
+          previousState,
+          link,
+          logger
+        )
   },
 
   /** Check for self-assigned roles that aren't in the allowed list set by the admin */
-  nonAdminsCanOnlyModifyCertainRoles(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+  nonAdminsCanOnlyModifyCertainRoles(
+    previousState: TeamState,
+    link: TeamLink,
+    extendableLogger: Logger
+  ) {
     const logger = extendableLogger.extend('nonAdminsCanOnlyModifyCertainRoles')
     if (link.body.type === 'ADD_MEMBER_ROLE') {
       const { userId: assigningUserId } = link.body
       const { roleName } = link.body.payload
       if (canUserAddMemberToRole(roleName, assigningUserId, previousState)) return VALID
-      return fail(`User ${assigningUserId} attempted to assign role ${roleName} illegally`, previousState, link, logger)
+      return fail(
+        `User ${assigningUserId} attempted to assign role ${roleName} illegally`,
+        previousState,
+        link,
+        logger
+      )
     }
     return VALID
   },
@@ -469,7 +494,12 @@ const keysetMatches = (keys: Keyset, type: string, name: string, generation: num
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-const fail = (message: string, previousState: TeamState, link: TeamLink, extendableLogger: Logger) => {
+const fail = (
+  message: string,
+  previousState: TeamState,
+  link: TeamLink,
+  extendableLogger: Logger
+) => {
   const logger = extendableLogger.extend('fail')
   message = truncateHashes(`${actionFingerprint(link)} ${message}`)
   logger.error(message, link.hash)

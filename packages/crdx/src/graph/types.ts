@@ -56,9 +56,9 @@ export type Graph<
 } & Optional<EncryptedGraph, 'childMap'>
 
 /**
- * When we pass a graph to be decrypted, some of the links might already be encrypted (for
- * instance, when we receive new encrypted links). We want to be able to decrypt the new links
- * without re-decrypting links that we already have.
+ * When we pass a graph to a decryptor, some links might already have trusted plaintext. Specialized
+ * decryptors may reuse that plaintext when they can prove its ciphertext provenance; generic
+ * `decryptGraph` reconstructs every root-reachable link.
  */
 export type MaybePartlyDecryptedGraph<A extends Action, C> = Record<string, unknown> &
   Optional<Graph<A, C>, 'links'>
@@ -97,7 +97,8 @@ export type EncryptedLink = {
 
   /**
    * Public key of the author of the link, at the time of authoring. After decryption, it is up to
-   * the application to ensure that this is in fact the public key of the author (`link.body.user`).
+   * the application to ensure that this is in fact the public key of the author
+   * (`link.body.userId`).
    */
   senderPublicKey: Base58
 
@@ -114,7 +115,10 @@ export type Link<A extends Action, C> = {
   /** Hash of the body */
   hash: Hash
 
-  /** Authenticated public encryption key of the link author */
+  /**
+   * Public encryption key that authenticated the encrypted body. Applications must bind it to the
+   * identity claimed by `body.userId`.
+   */
   senderPublicKey: Base58
 
   /** The part of the link that is encrypted */

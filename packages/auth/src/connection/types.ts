@@ -46,7 +46,8 @@ export type ConnectionEvents = {
    * We've successfully joined a team using an invitation. This event provides the team graph and
    * the user's info (including keys). (When we're joining as a new device for an existing user,
    * this is how we get the user's keys.) This event gives the application a chance to persist the
-   * team graph and the user's info.
+   * team graph and the user's info. The session key has already been committed, so listeners may
+   * immediately call `Connection.send`. This event follows `connectionSecured`.
    */
   joined: ({ team, user }: { team: Team; user: UserWithSecrets; teamKeyring: Keyring }) => void
 
@@ -58,7 +59,10 @@ export type ConnectionEvents = {
 
   sync: ({ team, user }: { team: Team; user: UserWithSecrets }) => void
 
-  /** Identities have been validated on both ends of the connection and the connection is encrypted */
+  /**
+   * Identities have been validated and the session key is committed. Listeners may immediately use
+   * the encrypted-channel API.
+   */
   connectionSecured: () => void
 }
 
@@ -95,6 +99,8 @@ export type InviteeMemberContext = {
   user: UserWithSecrets
   device: DeviceWithSecrets
   invitationSeed: string
+
+  /** Full immutable team root obtained with the invitation; never a truncated discovery ID. */
   expectedTeamId: Base58
 }
 
@@ -102,6 +108,8 @@ export type InviteeDeviceContext = {
   userName: string
   device: FirstUseDeviceWithSecrets
   invitationSeed: string
+
+  /** Full immutable team root obtained with the invitation; never a truncated discovery ID. */
   expectedTeamId: Base58
 }
 

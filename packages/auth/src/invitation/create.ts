@@ -7,8 +7,9 @@ import { type InvitationV2 } from 'invitation/types.js'
 export const IKEY_LENGTH = 16
 
 /**
- * Returns an an invitation to publicly post on the team's signature chain. Inspired by Keybase's
- * Seitan Token v2 exchange protocol.
+ * Normalizes a secret seed and returns a version-2 invitation record to publish on the team graph.
+ * The record exposes separate ephemeral signature and encryption public keys derived from the seed.
+ * Inspired by Keybase's Seitan Token v2 exchange protocol.
  */
 export const create = ({
   seed,
@@ -47,6 +48,6 @@ type Params = {
   /** Number of times the invitation can be used. If 0, the invitation can be used any number of times. By default, an invitation can only be used once. */
   maxUses?: number
 
-  /** (Device invitations only) User name the device will be associated with. */
+  /** (Device invitations only) User ID the device will be associated with. */
   userId?: string
 }

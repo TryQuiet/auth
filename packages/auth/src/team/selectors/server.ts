@@ -1,6 +1,7 @@
 import { type Host } from 'server/index.js'
 import { type TeamState } from 'team/types.js'
 
+/** Returns the unique server for `host`; optionally includes removed servers and throws on ambiguity. */
 export const server = (state: TeamState, host: Host, options = { includeRemoved: false }) => {
   const serversToSearch = [
     ...state.servers,

@@ -25,6 +25,13 @@ type CreateInvitationAcceptanceOptions = {
   teamKeyring: Keyring
 }
 
+/**
+ * Creates the authenticated-encrypted acceptance sent after admitting an invitee.
+ *
+ * The encrypted body binds the exact proof and claim digest, both handshake nonces, accepting
+ * device, serialized graph, and retained team keyring. It is decryptable only with starter keys
+ * derived from the invitation seed.
+ */
 export const createInvitationAcceptance = ({
   invitation,
   proof,
@@ -67,6 +74,11 @@ type OpenInvitationAcceptanceOptions = {
   claim: InvitationClaim
 }
 
+/**
+ * Opens and strictly validates an invitation acceptance against the invitee's seed, exact proof,
+ * and identity claim. Rejects unknown versions, extra or missing fields, decryption failures, and
+ * any transcript or sender-metadata mismatch.
+ */
 export const openInvitationAcceptance = ({
   payload,
   invitationSeed,
@@ -108,6 +120,10 @@ export const openInvitationAcceptance = ({
   return decrypted
 }
 
+/**
+ * Returns whether the acceptance sender is a unique active device in the derived team state and
+ * authenticated with that device's current encryption key.
+ */
 export const invitationAcceptanceSenderIsActive = (
   state: TeamState,
   payload: AcceptInvitationPayload,

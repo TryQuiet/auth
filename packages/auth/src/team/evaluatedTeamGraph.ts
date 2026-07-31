@@ -16,5 +16,6 @@ export const withEvaluatedTeamGraph = <T extends ExistingTeamOptions>(
   return options
 }
 
+/** Returns the internal one-shot machine result attached to existing-team construction options. */
 export const getEvaluatedTeamGraph = (options: ExistingTeamOptions) =>
   (options as EvaluatedTeamOptions)[EVALUATED_TEAM_GRAPH]

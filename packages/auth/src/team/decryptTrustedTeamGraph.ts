@@ -3,7 +3,10 @@ import type { TeamGraph } from './types.js'
 
 type Options = Parameters<typeof decryptTeamGraphCore>[0]
 
-/** Internal sync-only path for reusing plaintext from the live, locally accepted Team graph. */
+/**
+ * Internal sync-only path for bounded graph decryption that may reuse plaintext from the live,
+ * locally accepted Team graph when the corresponding encrypted-link object is unchanged.
+ */
 export const decryptTrustedTeamGraph = (
   options: Omit<Options, 'trustedGraph'> & { trustedGraph: TeamGraph }
 ): TeamGraph => decryptTeamGraphCore(options)

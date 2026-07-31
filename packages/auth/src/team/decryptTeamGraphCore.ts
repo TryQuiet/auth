@@ -13,14 +13,30 @@ import { keys } from './selectors/index.js'
 import type { TeamAction, TeamContext, TeamGraph, TeamLink, TeamState } from './types.js'
 
 export type DecryptTeamGraphCoreOptions = {
+  /** Encrypted graph and child topology to traverse. */
   encryptedGraph: MaybePartlyDecryptedGraph<TeamAction, TeamContext>
+
+  /** First-generation or retained team keys used to begin decryption. */
   teamKeys: KeysetWithSecrets | KeysetWithSecrets[] | Keyring
+
+  /** Device keys used to open rotated team keys discovered in graph lockboxes. */
   deviceKeys: KeysetWithSecrets
+
+  /**
+   * Locally accepted graph whose plaintext may be reused only when the encrypted-link object is
+   * identical. Public callers must not supply this capability.
+   */
   trustedGraph?: TeamGraph
   extendableLogger?: Logger
+
+  /** Maximum number of enter steps before aborting. Defaults to 50,000. */
   maxTraversalSteps?: number
 }
 
+/**
+ * Decrypts a team graph with iterative, per-path state reduction so newly discovered rotation keys
+ * are available to descendants. Rejects cycles, missing links, and traversal-limit exhaustion.
+ */
 export const decryptTeamGraphCore = ({
   encryptedGraph,
   teamKeys,

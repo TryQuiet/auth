@@ -47,6 +47,10 @@ import { Logger } from '@localfirst/shared'
  *
  * @param state The team state as of the previous link in the signature chain.
  * @param link The current link being processed.
+ * @param extendableLogger Optional logger inherited from the machine evaluation.
+ * @param graph Complete authenticated graph used for causal-frontier author-key validation. It may
+ * be omitted during provisional branch-by-branch decryption; final machine reduction always
+ * supplies it.
  */
 export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (
   state,
@@ -54,7 +58,10 @@ export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (
   extendableLogger,
   graph
 ) => {
-  const logger = extendableLogger != null ? extendableLogger.extend('reducer') : new Logger({ moduleName: 'auth:reducer' })
+  const logger =
+    extendableLogger != null
+      ? extendableLogger.extend('reducer')
+      : new Logger({ moduleName: 'auth:reducer' })
   // Invalid links are marked to be discarded by the MembershipResolver due to conflicting
   // concurrent actions. In most cases we just ignore these links and they don't affect state at
   // all; but in some cases we need to clean up, for example when someone's admission is reversed
@@ -90,6 +97,11 @@ export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (
  * Each action type generates one or more transforms (functions that take the old state and return a
  * new state). This returns an array of transforms that are then applied in order.
  * @param action The team action (type + payload) being processed
+ */
+/**
+ * Maps an action to state transforms.
+ *
+ * `linkHash` is recorded as the causal retirement frontier for member/server key changes.
  */
 const getTransforms = (action: TeamAction, linkHash: Hash): Transform[] => {
   switch (action.type) {
@@ -259,14 +271,12 @@ const getTransforms = (action: TeamAction, linkHash: Hash): Transform[] => {
 
     case 'ADD_LOCKBOXES': {
       // Note: lockboxes are handled by default so we don't need to do anything special here
-      return [(state) => state]
+      return [state => state]
     }
 
     case 'SET_METADATA': {
       const { metadata } = action.payload
-      return [
-        setMetadata(metadata)
-      ]
+      return [setMetadata(metadata)]
     }
 
     default: {

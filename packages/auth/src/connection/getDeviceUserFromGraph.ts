@@ -11,8 +11,8 @@ const { USER } = KeyType
 
 /**
  * If we're joining as a new device for an existing member, we don't have a user object yet, so we
- * need to get those from the graph. We use the invitation seed to generate the starter keys for the
- * new device. We can use these to unlock a lockbox on the team graph that contains our user keys.
+ * derive validated team state from the serialized graph, then recover that user from the invitation
+ * lockbox.
  */
 export const getDeviceUserFromGraph = ({
   serializedGraph,
@@ -29,6 +29,10 @@ export const getDeviceUserFromGraph = ({
   return getDeviceUserFromState({ state, invitationSeed })
 }
 
+/**
+ * Recovers an invited device's existing user from already validated team state. The normalized
+ * invitation seed derives both the invitation ID and starter keys used to open the user-key lockbox.
+ */
 export const getDeviceUserFromState = ({
   state,
   invitationSeed,

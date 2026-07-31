@@ -53,6 +53,10 @@ type ProcessInvitationAcceptanceOptions = Omit<
   invitationSeed: string
 }
 
+/**
+ * Authenticates and opens an acceptance envelope, then validates its returned graph in one pass.
+ * The independently obtained full `expectedTeamId` is required as the graph-root trust anchor.
+ */
 export const processInvitationAcceptance = ({
   payload,
   invitationSeed,
@@ -86,6 +90,13 @@ export const processInvitationAcceptance = ({
   })
 }
 
+/**
+ * Validates an opened invitation acceptance without repeating envelope decryption.
+ *
+ * The graph root must equal `expectedTeamId`; the graph must validate and reduce successfully; the
+ * sender must be active; and exactly one effective admission must match the exact proof and claim
+ * while leaving one unambiguous active identity in final state.
+ */
 export const validateInvitationAcceptance = ({
   acceptance,
   payload,

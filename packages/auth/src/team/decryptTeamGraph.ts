@@ -10,8 +10,8 @@ import type { TeamAction, TeamContext, TeamGraph } from './types.js'
  * peer, we can't just use a single set of team keys to decrypt everything, because there might be
  * key rotations in links that we receive that we will need to decrypt subsequent links. When that
  * happens, each team member gets the new keys in a lockbox that's stored on the chain. So we need
- * to recurse through the chain, updating the keys if necessary before continuing to decrypt
- * further.
+ * to iteratively traverse each path, updating the keys if necessary before continuing. The core
+ * traversal rejects cycles and missing links and applies a bounded work limit.
  */
 export const decryptTeamGraph = ({
   encryptedGraph,

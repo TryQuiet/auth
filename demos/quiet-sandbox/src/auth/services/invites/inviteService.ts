@@ -2,8 +2,8 @@
  * Handles invite-related chain operations
  */
 
-import { BaseChainService } from "../baseService.js"
-import { ValidationResult } from "../../../../../../packages/crdx/dist/validator/types.js"
+import { BaseChainService } from '../baseService.js'
+import { ValidationResult } from '../../../../../../packages/crdx/dist/validator/types.js'
 import {
   Base58,
   Device,
@@ -12,10 +12,10 @@ import {
   InviteResult,
   Keyset,
   ProofOfInvitation,
-  UnixTimestamp
-} from "@localfirst/auth"
-import { SigChain } from "../../chain.js"
-import { RoleName } from "../roles/roles.js"
+  UnixTimestamp,
+} from '@localfirst/auth'
+import { SigChain } from '../../chain.js'
+import { RoleName } from '../roles/roles.js'
 
 export const DEFAULT_MAX_USES = 1
 export const DEFAULT_INVITATION_VALID_FOR_MS = 604_800_000 // 1 week
@@ -25,11 +25,14 @@ class InviteService extends BaseChainService {
     return new InviteService(sigChain)
   }
 
-  public create(validForMs: number = DEFAULT_INVITATION_VALID_FOR_MS, maxUses: number = DEFAULT_MAX_USES) {
+  public create(
+    validForMs: number = DEFAULT_INVITATION_VALID_FOR_MS,
+    maxUses: number = DEFAULT_MAX_USES
+  ) {
     const expiration = (Date.now() + validForMs) as UnixTimestamp
     const invitation: InviteResult = this.sigChain.team.inviteMember({
       expiration,
-      maxUses
+      maxUses,
     })
     // this.activeSigChain.persist()
     return invitation
@@ -44,6 +47,10 @@ class InviteService extends BaseChainService {
     return this.sigChain.team.getInvitation(id)
   }
 
+  /**
+   * Creates a version-2 proof binding the invitation seed to the exact identity claim and both
+   * handshake nonces.
+   */
   public static generateProof(
     seed: string,
     claim: InvitationClaim,
@@ -54,10 +61,14 @@ class InviteService extends BaseChainService {
       seed,
       claim,
       acceptorNonce,
-      inviteeNonce
+      inviteeNonce,
     })
   }
 
+  /**
+   * Validates the exact invitation claim and requires the proof's acceptor nonce to match the
+   * current handshake.
+   */
   public validateProof(
     proof: ProofOfInvitation,
     claim: InvitationClaim,
@@ -77,6 +88,10 @@ class InviteService extends BaseChainService {
     return true
   }
 
+  /**
+   * Admits a member only when its version-2 proof matches the supplied identity, device, and
+   * expected acceptor nonce. The accepted proof and claim are recorded in the team action.
+   */
   public acceptProof(
     proof: ProofOfInvitation,
     username: string,
@@ -84,16 +99,14 @@ class InviteService extends BaseChainService {
     device: Device,
     expectedAcceptorNonce: Base58
   ) {
-    this.sigChain.team.admitMember(
-      proof,
-      publicKeys,
-      username,
-      device,
-      expectedAcceptorNonce
-    )
+    this.sigChain.team.admitMember(proof, publicKeys, username, device, expectedAcceptorNonce)
     // this.activeSigChain.persist()
   }
 
+  /**
+   * Admits a proof-bound member, then assigns the admitted user to the standard member role.
+   * Returns the admitted username.
+   */
   public admitMemberFromInvite(
     proof: ProofOfInvitation,
     username: string,
@@ -102,13 +115,7 @@ class InviteService extends BaseChainService {
     device: Device,
     expectedAcceptorNonce: Base58
   ): string {
-    this.sigChain.team.admitMember(
-      proof,
-      publicKeys,
-      username,
-      device,
-      expectedAcceptorNonce
-    )
+    this.sigChain.team.admitMember(proof, publicKeys, username, device, expectedAcceptorNonce)
     this.sigChain.roles.addMember(userId, RoleName.MEMBER)
     // this.activeSigChain.persist()
     return username
@@ -124,6 +131,4 @@ class InviteService extends BaseChainService {
   }
 }
 
-export {
-  InviteService
-}
+export { InviteService }

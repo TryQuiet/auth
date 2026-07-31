@@ -298,8 +298,14 @@ export class AuthProvider extends EventEmitter<AuthProviderEvents> {
   }
 
   /**
-   * Creates a share for a team we've been invited to, either as a new member or as a new device for
-   * an existing member.
+   * Registers an invitation for joining a team as a new member or device, then attempts connections
+   * to peers advertising the truncated `shareId`.
+   *
+   * The invitation must also carry the full `expectedTeamId`; acceptance fails if the authenticated
+   * graph root differs from that independently obtained trust anchor.
+   *
+   * @param invitation Discovery metadata, full expected team root, secret seed, and optional device
+   * owner name.
    */
   public async addInvitation(invitation: Invitation) {
     const { shareId } = invitation

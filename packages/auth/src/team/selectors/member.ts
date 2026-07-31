@@ -1,5 +1,6 @@
 import { type TeamState } from 'team/types.js'
 
+/** Returns the unique member for `userId`; optionally includes removed members and throws on ambiguity. */
 export const member = (state: TeamState, userId: string, options = { includeRemoved: false }) => {
   const membersToSearch = [
     ...state.members,
@@ -17,6 +18,10 @@ export const member = (state: TeamState, userId: string, options = { includeRemo
   return matchingMembers[0]
 }
 
+/**
+ * Returns members matching the requested IDs. Removed members are opt-in; missing IDs throw unless
+ * `throwOnMissing` is false.
+ */
 export const members = (
   state: TeamState,
   userIds: string[],

@@ -42,7 +42,10 @@ export const decryptLink = <A extends Action, C>(
 }
 
 /**
- * Decrypts a graph using a one or more keys.
+ * Decrypts every link reachable from `root` through `childMap` using one or more keysets.
+ *
+ * Traversal is iterative and visits each hash at most once. `maxTraversalSteps` defaults to 50,000;
+ * exceeding it throws instead of performing unbounded peer-controlled work.
  */
 export const decryptGraph: DecryptFn = <A extends Action, C>({
   encryptedGraph,
@@ -88,8 +91,13 @@ export const decryptGraph: DecryptFn = <A extends Action, C>({
 }
 
 export type DecryptFnParams<A extends Action, C> = {
+  /** Graph ciphertext and child topology to traverse. */
   encryptedGraph: MaybePartlyDecryptedGraph<A, C>
+
+  /** Keyset(s) capable of decrypting graph links. */
   keys: KeysetWithSecrets | KeysetWithSecrets[] | Keyring
+
+  /** Maximum traversal pops before aborting. Defaults to 50,000. */
   maxTraversalSteps?: number
 }
 

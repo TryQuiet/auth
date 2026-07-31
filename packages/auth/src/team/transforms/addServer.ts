@@ -2,6 +2,7 @@ import type { Server } from 'server/index.js'
 import type { TeamState, Transform } from 'team/types.js'
 import { unique } from 'util/unique.js'
 
+/** Adds or re-adds a server, clearing matching removal and retired-author-key history. */
 export const addServer =
   (newServer: Server): Transform =>
   state => {
@@ -13,9 +14,7 @@ export const addServer =
 
       // Remove server's url from list of removed servers (e.g. if server was removed and is now being re-added)
       removedServers: state.removedServers.filter(m => m.host !== newServer.host),
-      retiredAuthorKeys: state.retiredAuthorKeys.filter(
-        key => key.identityId !== newServer.host
-      ),
+      retiredAuthorKeys: state.retiredAuthorKeys.filter(key => key.identityId !== newServer.host),
     }
     return newState
   }

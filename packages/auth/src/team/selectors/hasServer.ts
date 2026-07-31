@@ -1,6 +1,10 @@
 import { type Host } from 'server/index.js'
 import { type TeamState } from 'team/types.js'
 
+/**
+ * Returns whether exactly one server has `host`; optionally includes removed servers and throws when
+ * the host is ambiguous.
+ */
 export const hasServer = (state: TeamState, host: Host, options = { includeRemoved: false }) => {
   const matchingServers = [
     ...state.servers,

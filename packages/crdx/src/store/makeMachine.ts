@@ -25,6 +25,10 @@ type MachineResultKey = { readonly [MACHINE_RESULT]: true }
 
 const machineResults = new WeakMap<MachineResultKey, MachineResultMetadata>()
 
+/**
+ * Opaque, provenance-checked result of one graph validation, sequencing, and reduction pass.
+ * Do not construct, copy, mutate, or reuse this value; a Store may consume it exactly once.
+ */
 export type MachineResult<S, A extends Action, C> = {
   readonly graph: Graph<A, C>
   readonly state: S
@@ -32,6 +36,14 @@ export type MachineResult<S, A extends Action, C> = {
   readonly [MACHINE_RESULT]: true
 }
 
+/**
+ * Creates a deterministic graph-to-state machine.
+ *
+ * Calling the returned function validates the graph, resolves its sequence, and reduces it while
+ * passing the complete graph to every reducer invocation. Validation failures throw. Its `.derive`
+ * method additionally returns a one-shot `MachineResult` that a matching Store can consume to avoid
+ * repeating the same validation and reduction work.
+ */
 export const makeMachine = <S, A extends Action, C>({
   initialState,
   reducer,
@@ -87,6 +99,11 @@ export const makeMachine = <S, A extends Action, C>({
   )
 }
 
+/**
+ * Consumes an internal machine result and verifies graph identity/fingerprint, machine definition,
+ * state snapshots, and validators. Metadata is deleted on every attempt, so false results cannot be
+ * retried.
+ */
 export const consumeMachineResult = <S, A extends Action, C>(
   result: MachineResult<S, A, C>,
   graph: Graph<A, C>,

@@ -7,10 +7,10 @@ export type SyncState = {
     /** Their head as of the last time they sent a sync message. */
     head: Hash[]
 
-    /** Links they've sent that we haven't added yet (e.g. because we're missing dependencies). */
+    /** Received links accumulated for the current validation/merge attempt. */
     encryptedLinks: Record<Hash, EncryptedLink>
 
-    /** The map of hashes they've sent to those links' parents. */
+    /** Advertised parents accumulated for the current validation/merge attempt. */
     parentMap: LinkMap
 
     /** Hashes of links they asked for in the last message. */
@@ -34,18 +34,21 @@ export type SyncState = {
   /** The head we had in common with this peer the last time we synced. If empty, we haven't synced before. */
   lastCommonHead: Hash[]
 
-  /** We increment this each time a sync fails because we would have ended up with an invalid graph */
+  /**
+   * Count of rejected syncs, including malformed messages, root mismatches, resource-limit or
+   * topology failures, decryption failures, and invalid merged graphs.
+   */
   failedSyncCount: number
 }
 
 export type SyncMessage = {
-  /** Our root. We just send this as a sanity check - if our roots don't match we can't sync. */
+  /** Our graph root. A peer with a different root is rejected. */
   root: Hash
 
   /** Our head at the time of sending. */
   head: Hash[]
 
-  /** Any links we know we need. */
+  /** Encrypted links supplied to the peer. */
   links?: Record<Hash, EncryptedLink>
 
   /** Our most recent hashes and their dependencies. */
@@ -58,14 +61,25 @@ export type SyncMessage = {
   error?: ValidationError
 }
 
+/** Defensive per-peer bounds applied before and during sync graph reconstruction. */
 export type SyncLimits = {
+  /** Maximum number of received links accumulated for one merge attempt. */
   maxPendingLinks: number
+
+  /** Maximum aggregate encrypted-body bytes across pending links. */
   maxPendingCiphertextBytes: number
+
+  /** Maximum parent-map entries; also caps `head` and `need` hash arrays. */
   maxParentEntries: number
+
+  /** Maximum aggregate parent edges. */
   maxParentEdges: number
+
+  /** Maximum work steps forwarded to graph decryption. */
   maxTraversalSteps: number
 }
 
+/** Frozen default defensive bounds for sync messages and graph traversal. */
 export const DEFAULT_SYNC_LIMITS: SyncLimits = Object.freeze({
   maxPendingLinks: 10_000,
   maxPendingCiphertextBytes: 64 * 1024 * 1024,

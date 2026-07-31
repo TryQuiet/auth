@@ -9,6 +9,11 @@ import type {
 import { KeyType, VALID, type ValidationResult } from 'util/index.js'
 import { invitationProofPayload } from './invitationProofPayload.js'
 
+/**
+ * Checks whether an invitation is active and has remaining uses at `timeOfUse`.
+ *
+ * A zero expiration or maximum-use count means that limit is disabled.
+ */
 export const invitationCanBeUsed = (invitation: InvitationState, timeOfUse: number) => {
   const { revoked, maxUses, uses, expiration } = invitation
   if (revoked) return fail('The invitation has been revoked')
@@ -17,6 +22,13 @@ export const invitationCanBeUsed = (invitation: InvitationState, timeOfUse: numb
   return VALID
 }
 
+/**
+ * Validates a version-2 invitation proof against its authenticated invitation record and exact
+ * identity claim.
+ *
+ * When `expectedAcceptorNonce` is supplied, the proof must have been created for that connection
+ * handshake. Legacy proofs and invitation records fail closed and must be reissued.
+ */
 export const validate = (
   proof: ProofOfInvitation,
   invitation: Invitation,
@@ -54,8 +66,7 @@ export const validate = (
   return VALID
 }
 
-const isV2Proof = (proof: ProofOfInvitation): proof is ProofOfInvitationV2 =>
-  proof.version === 2
+const isV2Proof = (proof: ProofOfInvitation): proof is ProofOfInvitationV2 => proof.version === 2
 
 const validateClaim = (claim: InvitationClaim): ValidationResult => {
   const memberClaim = claim.invitationKind === 'member'
@@ -102,7 +113,10 @@ const validateClaim = (claim: InvitationClaim): ValidationResult => {
 
 const hasExactKeys = (value: object, expected: string[]) => {
   const actual = Object.keys(value).sort()
-  return actual.length === expected.length && actual.every((key, index) => key === [...expected].sort()[index])
+  return (
+    actual.length === expected.length &&
+    actual.every((key, index) => key === [...expected].sort()[index])
+  )
 }
 
 export const fail = (message: string, details?: any) =>

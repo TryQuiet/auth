@@ -334,13 +334,19 @@ export type TeamState = {
   // If a member's admission is reversed, we need to flag them as compromised so an admin can
   // rotate any keys they had access to at the first opportunity
   pendingKeyRotations: string[]
+  /** Former author keys and the causal point after which each key is no longer valid. */
   retiredAuthorKeys: RetiredAuthorKey[]
   metadata: TeamMetadata
 }
 
 export type RetiredAuthorKey = {
+  /** Member user ID or server host whose key was rotated. */
   identityId: string
+
+  /** Previous encryption public key that may authenticate concurrent actions. */
   encryptionPublicKey: Base58
+
+  /** Hash of the key-change link; old-key actions causally after this link are rejected. */
   retiredAt: Hash
 }
 
@@ -349,9 +355,13 @@ export type InvitationMap = Record<string, InvitationState>
 // ********* VALIDATION
 
 export type TeamStateValidator = (
+  /** Reduced state immediately before the candidate link in deterministic sequence order. */
   previousState: TeamState,
+  /** Candidate authenticated link. */
   link: TeamLink,
+  /** Logger for validation diagnostics. */
   extendableLogger: Logger,
+  /** Complete graph for causal checks; omitted only during provisional branch decryption. */
   graph?: TeamGraph
 ) => ValidationResult
 
@@ -389,6 +399,10 @@ export type LookupIdentityResult =
   | 'DEVICE_UNKNOWN'
   | 'DEVICE_REMOVED'
 
-export type EncryptStreamTeamPayload = { recipient: KeyMetadata, encryptStream: AsyncGenerator<Uint8Array>, header: Uint8Array }
+export type EncryptStreamTeamPayload = {
+  recipient: KeyMetadata
+  encryptStream: AsyncGenerator<Uint8Array>
+  header: Uint8Array
+}
 
 export type TeamMetadata = { selfAssignableRoles: string[] }

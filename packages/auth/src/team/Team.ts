@@ -103,7 +103,11 @@ export class Team extends EventEmitter<TeamEvents> {
     const { device, user } = this.context
 
     const moduleName = `auth:team:${this.userName}`
-    this.logger = new Logger({ moduleName, sharedLogger: options.sharedLogger, extendSharedLogger: true })
+    this.logger = new Logger({
+      moduleName,
+      sharedLogger: options.sharedLogger,
+      extendSharedLogger: true,
+    })
     this.logger.debug('loading team')
 
     // Initialize a CRDX store for the team
@@ -142,9 +146,9 @@ export class Team extends EventEmitter<TeamEvents> {
         logger: this.logger,
       })
       const metadata: TeamMetadata = options.metadata ?? {
-        selfAssignableRoles: []
+        selfAssignableRoles: [],
       }
-      this.dispatch({ type: 'SET_METADATA', payload: { metadata }}, options.teamKeys)
+      this.dispatch({ type: 'SET_METADATA', payload: { metadata } }, options.teamKeys)
     } else {
       this.logger.debug('loading existing team')
       const machineResult = getEvaluatedTeamGraph(options)
@@ -234,7 +238,10 @@ export class Team extends EventEmitter<TeamEvents> {
   public save = () => serializeTeamGraph(this.graph)
 
   /**
-   * Merges another graph (e.g. from a peer) with ours.
+   * Merges another graph after reconstructing its plaintext from authenticated ciphertext unless it
+   * carries the internal one-shot sync capability. Graph validation, team reduction, and state
+   * derivation must all succeed before the graph and state are committed together.
+   *
    * @returns This `Team` instance.
    */
   public merge = (theirGraph: TeamGraph) => {
@@ -253,7 +260,10 @@ export class Team extends EventEmitter<TeamEvents> {
     return this
   }
 
-  /** Add a link to the graph, then recompute team state from the new graph */
+  /**
+   * Adds a locally authored link and commits graph and team state together only after application
+   * validation succeeds.
+   */
   public dispatch(action: TeamAction, teamKeys: KeysetWithSecrets = this.teamKeys()) {
     this.store.dispatch(action, teamKeys)
     this.state = this.store.getState()
@@ -271,11 +281,14 @@ export class Team extends EventEmitter<TeamEvents> {
   public members(userId: string, options?: LookupOptions): Member // Overload: one member
   public members(userIds: string[], options?: LookupOptions): Member[] // Overload: one member
   //
-  public members(userIdOrIds: string | string[] = ALL, options = { includeRemoved: true, throwOnMissing: true }): Member | Member[] {
+  public members(
+    userIdOrIds: string | string[] = ALL,
+    options = { includeRemoved: true, throwOnMissing: true }
+  ): Member | Member[] {
     if (typeof userIdOrIds === 'string') {
       return userIdOrIds === ALL //
-      ? this.state.members // All members
-      : select.member(this.state, userIdOrIds, options) // One member
+        ? this.state.members // All members
+        : select.member(this.state, userIdOrIds, options) // One member
     }
 
     return select.members(this.state, userIdOrIds, options) // Many members
@@ -390,7 +403,9 @@ export class Team extends EventEmitter<TeamEvents> {
 
     // if we choose to add ourselves to the role we need to create our own lockbox and then dispatch
     // the event to add the role to our member record
-    this._dispatchAddMemberRole(this.userId, role.roleName, [lockbox.create(roleKeys, this.context.user.keys)])
+    this._dispatchAddMemberRole(this.userId, role.roleName, [
+      lockbox.create(roleKeys, this.context.user.keys),
+    ])
   }
 
   /** Remove a role from the team */
@@ -425,7 +440,9 @@ export class Team extends EventEmitter<TeamEvents> {
     // Make a lockbox for the role
     const member = this.members(userId)
     const allGenKeys = this.roleKeysAllGenerations(roleName, decryptionKeys)
-    const lockboxRoleKeysForMember = allGenKeys.map(roleKeys => lockbox.create(roleKeys, member.keys))
+    const lockboxRoleKeysForMember = allGenKeys.map(roleKeys =>
+      lockbox.create(roleKeys, member.keys)
+    )
 
     // Post the member role to the graph
     this._dispatchAddMemberRole(userId, roleName, lockboxRoleKeysForMember)
@@ -433,7 +450,10 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** Give yourself a role */
   public addMemberRoleToSelf = (roleName: string, decryptionKeys: KeysetWithSecrets) => {
-    assert(this.state.metadata.selfAssignableRoles.includes(roleName), `Cannot self-assign role ${roleName}`)
+    assert(
+      this.state.metadata.selfAssignableRoles.includes(roleName),
+      `Cannot self-assign role ${roleName}`
+    )
     this.addMemberRole(this.userId, roleName, decryptionKeys)
   }
 
@@ -455,7 +475,10 @@ export class Team extends EventEmitter<TeamEvents> {
   }
 
   /** Check if member is priveleged enough to perform a specific action */
-  private _memberHasPrivelegeToPerformAction(memberId: string, actionType: TeamAction['type']): boolean {
+  private _memberHasPrivelegeToPerformAction(
+    memberId: string,
+    actionType: TeamAction['type']
+  ): boolean {
     if (!isAdminOnlyActionType(actionType)) {
       return true
     }
@@ -550,21 +573,14 @@ export class Team extends EventEmitter<TeamEvents> {
   /** ************** INVITATIONS */
 
   /**
-   * To invite a new member:
+   * Creates and posts a version-2 member invitation, returning the normalized secret seed for the
+   * invitee and the full immutable team root that the invitee must trust independently.
    *
-   * Alice generates an invitation using a secret seed. The seed an be randomly generated, or
-   * selected by Alice. Alice sends the invitation to Bob using a trusted channel.
+   * The invitee later signs its exact user/device claim and both handshake nonces. An existing member
+   * verifies that proof, appends an `ADMIT_MEMBER` containing the same proof and claim so every
+   * replica can revalidate possession, and returns the admitted graph in an encrypted acceptance.
    *
-   * Meanwhile, Alice adds Bob to the graph as a new member, with appropriate roles (if
-   * any) and any corresponding lockboxes.
-   *
-   * Bob can't authenticate directly as that member, since it has random temporary keys created by
-   * Alice. Instead, Bob generates a proof of invitation, and when they try to connect to Alice or
-   * Charlie they present that proof instead of authenticating.
-   *
-   * Once Alice or Charlie verifies Bob's proof, they send him the team graph. Bob uses that to
-   * instantiate the team, then he updates the team with his real public keys and adds his current
-   * device information.
+   * @returns The invitation ID, normalized secret seed, and full team root.
    */
   public inviteMember({
     seed = invitations.randomSeed(),
@@ -593,22 +609,20 @@ export class Team extends EventEmitter<TeamEvents> {
       payload: { invitation },
     })
 
-    // Return the secret invitation seed (to pass on to invitee) and the invitation id (which could be used to revoke later)
+    // Return the normalized secret, revocation ID, and immutable team-root trust anchor.
     return { id, seed, teamId: this.id }
   }
 
   /**
-   *  To invite an existing member's device:
+   * Creates and posts a single-use version-2 device invitation for the current member, including a
+   * lockbox that lets the first-use device recover that member's keys.
    *
-   *  On his laptop, Bob generates an invitation using a secret seed. He gets that seed to his phone
-   *  using a QR code or by typing it in.
+   * The invited device signs its exact first-use device claim and both handshake nonces. An existing
+   * member verifies the proof, appends an `ADMIT_DEVICE` containing that proof and claim, and returns
+   * an encrypted acceptance. The invitee verifies the admission and full expected team root before
+   * joining.
    *
-   *  On his phone, Bob connects to his laptop (or to Alice or Charlie). Bob's phone presents its
-   *  proof of invitation.
-   *
-   *  Once an existing device (Bob's laptop or Alice or Charlie) verifies Bob's phone's proof, they
-   *  send it the team graph. Using the graph, the phone instantiates the team, then adds itself as
-   *  a device.
+   * @returns The invitation ID, normalized secret seed, and full team root.
    */
   public inviteDevice({
     seed = invitations.randomSeed(),
@@ -645,7 +659,7 @@ export class Team extends EventEmitter<TeamEvents> {
       },
     })
 
-    // Return the secret invitation seed (to pass on to invitee) and the invitation id (which could be used to revoke later)
+    // Return the normalized secret, revocation ID, and immutable team-root trust anchor.
     return { id, seed, teamId: this.id }
   }
 
@@ -666,7 +680,11 @@ export class Team extends EventEmitter<TeamEvents> {
   /** Gets the invitation corresponding to the given id. If it does not exist, throws an error. */
   public getInvitation = (id: Base58) => select.getInvitation(this.state, id)
 
-  /** Check whether (1) the invitation is still valid, and (2) the proof of invitation checks out. */
+  /**
+   * Validates invitation usability, kind, and a version-2 signature over the exact identity claim.
+   * When supplied, `expectedAcceptorNonce` also binds the proof to the current handshake. Legacy
+   * proofs fail closed.
+   */
   public validateInvitation = (
     proof: ProofOfInvitation,
     expectedKind: InvitationKind,
@@ -678,9 +696,7 @@ export class Team extends EventEmitter<TeamEvents> {
 
     const invitation = this.getInvitation(id)
     if (invitation.kind !== expectedKind) {
-      return invitations.fail(
-        `This ${invitation.kind} invitation cannot admit a ${expectedKind}.`
-      )
+      return invitations.fail(`This ${invitation.kind} invitation cannot admit a ${expectedKind}.`)
     }
     if (claim.invitationKind !== expectedKind) {
       return invitations.fail('Invitation claim kind does not match the requested admission.')
@@ -698,7 +714,11 @@ export class Team extends EventEmitter<TeamEvents> {
     return select.invitations(this.state)
   }
 
-  /** An existing team member calls this to admit a new member & their device to the team based on proof of invitation */
+  /**
+   * Admits a member only after reconstructing the exact signed claim and validating its version-2
+   * proof, kind, usability, and optional acceptor nonce. The dispatched `ADMIT_MEMBER` persists that
+   * proof and claim so every replica can independently revalidate invitation possession.
+   */
   public admitMember = (
     proof: ProofOfInvitation,
     memberKeys: Keyset | KeysetWithSecrets, // We accept KeysetWithSecrets here to simplify testing - in practice we'll only receive Keyset
@@ -713,12 +733,7 @@ export class Team extends EventEmitter<TeamEvents> {
       userKeys: publicMemberKeys,
       device,
     }
-    const validation = this.validateInvitation(
-      proof,
-      'member',
-      claim,
-      expectedAcceptorNonce
-    )
+    const validation = this.validateInvitation(proof, 'member', claim, expectedAcceptorNonce)
     if (!validation.isValid) throw validation.error
     assert(proof.version === 2, 'Invitation proof must use protocol version 2')
 
@@ -741,7 +756,12 @@ export class Team extends EventEmitter<TeamEvents> {
     })
   }
 
-  /** An existing team member calls this to admit a new device based on proof of invitation */
+  /**
+   * Admits a first-use device only after reconstructing the exact signed claim and validating its
+   * version-2 proof, kind, usability, and optional acceptor nonce. Device ownership comes from the
+   * authenticated invitation, and `ADMIT_DEVICE` persists the proof and claim for replicated
+   * validation.
+   */
   public admitDevice = (
     proof: ProofOfInvitation,
     firstUseDevice: devices.FirstUseDevice,
@@ -753,12 +773,7 @@ export class Team extends EventEmitter<TeamEvents> {
       userName,
       device: firstUseDevice,
     }
-    const validation = this.validateInvitation(
-      proof,
-      'device',
-      claim,
-      expectedAcceptorNonce
-    )
+    const validation = this.validateInvitation(proof, 'device', claim, expectedAcceptorNonce)
     if (!validation.isValid) throw validation.error
     assert(proof.version === 2, 'Invitation proof must use protocol version 2')
 
@@ -921,7 +936,10 @@ export class Team extends EventEmitter<TeamEvents> {
    * encrypt for scopes the current user has keys for (e.g. the whole team, or roles they belong
    * to). If we need to encrypt asymmetrically, we use the functions in the crypto module directly.
    */
-  public encryptStream = (stream: AsyncIterable<Uint8Array>, roleName?: string): EncryptStreamTeamPayload => {
+  public encryptStream = (
+    stream: AsyncIterable<Uint8Array>,
+    roleName?: string
+  ): EncryptStreamTeamPayload => {
     const scope = roleName ? { type: KeyType.ROLE, name: roleName } : TEAM_SCOPE
     const { secretKey, generation } = this.keys(scope)
 
@@ -929,12 +947,16 @@ export class Team extends EventEmitter<TeamEvents> {
     return {
       header,
       encryptStream,
-      recipient: { ...scope, generation }
+      recipient: { ...scope, generation },
     }
   }
 
   /** Decrypt a byte stream using keys available to the current user and a header generated during encryption. */
-  public decryptStream = (encryptedStream: AsyncIterable<Uint8Array>, header: Uint8Array, recipient: KeyMetadata): AsyncGenerator<any> => {
+  public decryptStream = (
+    encryptedStream: AsyncIterable<Uint8Array>,
+    header: Uint8Array,
+    recipient: KeyMetadata
+  ): AsyncGenerator<any> => {
     const { secretKey } = this.keys(recipient)
     return symmetric.decryptBytesStream(encryptedStream, header, secretKey)
   }
@@ -977,11 +999,15 @@ export class Team extends EventEmitter<TeamEvents> {
    * get other members' public keys, look up the member - the `keys` property contains their public
    * keys.
    */
-  public keys = (scope: KeyMetadata | KeyScope, decryptionKeys: KeysetWithSecrets = this.context.device.keys) =>
-    select.keys(this.state, decryptionKeys, scope)
+  public keys = (
+    scope: KeyMetadata | KeyScope,
+    decryptionKeys: KeysetWithSecrets = this.context.device.keys
+  ) => select.keys(this.state, decryptionKeys, scope)
 
-  public keysAllGenerations = (scope: KeyMetadata | KeyScope, decryptionKeys: KeysetWithSecrets = this.context.device.keys) =>
-    select.keysAllGen(this.state, decryptionKeys, scope)
+  public keysAllGenerations = (
+    scope: KeyMetadata | KeyScope,
+    decryptionKeys: KeysetWithSecrets = this.context.device.keys
+  ) => select.keysAllGen(this.state, decryptionKeys, scope)
 
   public allKeys = (decryptionKeys: KeysetWithSecrets = this.context.device.keys) =>
     select.allKeys(this.state, decryptionKeys)
@@ -1041,10 +1067,13 @@ export class Team extends EventEmitter<TeamEvents> {
    * @param encryptionKeys Keys to encrypt the lockbox to
    * @returns Generated lockbox
    */
-  public createLockbox = (roleName: string, encryptionKeys: KeysetWithSecrets): lockbox.Lockbox[] => {
+  public createLockbox = (
+    roleName: string,
+    encryptionKeys: KeysetWithSecrets
+  ): lockbox.Lockbox[] => {
     const roleKeys = this.roleKeysAllGenerations(roleName)
-    const lockboxes = roleKeys.map((keys) => lockbox.create(keys, encryptionKeys))
-    this.dispatch({ type: 'ADD_LOCKBOXES', payload: { lockboxes }})
+    const lockboxes = roleKeys.map(keys => lockbox.create(keys, encryptionKeys))
+    this.dispatch({ type: 'ADD_LOCKBOXES', payload: { lockboxes } })
     return lockboxes
   }
 

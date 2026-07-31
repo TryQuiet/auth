@@ -25,8 +25,8 @@ import { type Reducer } from './types.js'
  * A CRDX `Store` is intended to work very much like a Redux store.
  * https://github.com/reduxjs/redux/blob/master/src/createStore.ts
  *
- * The only way to change the data in the store is to `dispatch` an action to it. There should only
- * be a single store in an application.
+ * `dispatch` is the only way to originate a local action; `merge` incorporates peer graphs. There
+ * should only be a single store in an application.
  */
 export class Store<
   S,
@@ -131,9 +131,9 @@ export class Store<
    * Dispatches an action to be added to the hash graph. This is the only way to trigger a
    * state change.
    *
-   * The `reducer` function provided when creating the store will be called with the current state
-   * and the given `action`. Its return value will be considered the **next** state of the tree,
-   * and any change listeners will be notified.
+   * The configured reducer receives the current state, newly appended decrypted link, logger, and
+   * complete candidate graph. Graph and state are committed atomically, and listeners are notified,
+   * only if reduction and application validation succeed.
    *
    * @returns For convenience, the same action object that was dispatched.
    */
@@ -178,7 +178,7 @@ export class Store<
     // get the newly appended link (at this point we're guaranteed a single head, which is the one we appended)
     const [head] = getHead(nextGraph)
 
-    // we don't need to pass the whole graph through the reducer, just the current state + the new head
+    // Validate the new head against the complete candidate graph before committing either value.
     const nextState = this.reducer(this.state, head, this.logger, nextGraph)
 
     // Commit the graph and state together only after the action has passed application validation.
@@ -192,9 +192,11 @@ export class Store<
   }
 
   /**
-   * Merges another graph (e.g. from a peer) with ours.
-   * @param theirGraph
-   * @returns this `Store` instance
+   * Validates, resolves, and reduces a peer graph before atomically committing the merged graph and
+   * state. If derivation throws, both current values remain unchanged. A successful merge emits
+   * `updated`.
+   *
+   * @param theirGraph Graph received from a peer.
    */
   public merge(theirGraph: Graph<A, C>) {
     const mergedGraph = merge(this.graph, theirGraph)
