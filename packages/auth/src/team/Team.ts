@@ -594,7 +594,7 @@ export class Team extends EventEmitter<TeamEvents> {
     })
 
     // Return the secret invitation seed (to pass on to invitee) and the invitation id (which could be used to revoke later)
-    return { id, seed }
+    return { id, seed, teamId: this.id }
   }
 
   /**
@@ -646,7 +646,7 @@ export class Team extends EventEmitter<TeamEvents> {
     })
 
     // Return the secret invitation seed (to pass on to invitee) and the invitation id (which could be used to revoke later)
-    return { id, seed }
+    return { id, seed, teamId: this.id }
   }
 
   /** Revoke an invitation. */

@@ -1,4 +1,10 @@
-import { getSequence, merge, redactKeys, type UserWithSecrets } from '@localfirst/crdx'
+import {
+  getSequence,
+  merge,
+  redactKeys,
+  type Base58,
+  type UserWithSecrets,
+} from '@localfirst/crdx'
 import { asymmetric, randomKey } from '@localfirst/crypto'
 import { redactDevice, type DeviceWithSecrets } from 'device/index.js'
 import {
@@ -61,6 +67,7 @@ describe('exact effective invitation admission validation', () => {
       const result = processInvitationAcceptance({
         payload,
         invitationSeed: fixture.seed,
+        expectedTeamId: fixture.team.id,
         proof: fixture.proof,
         claim: fixture.claim,
       })
@@ -90,6 +97,7 @@ describe('exact effective invitation admission validation', () => {
     const result = processInvitationAcceptance({
       payload: { ...payload, encryptedAcceptance },
       invitationSeed: fixture.seed,
+      expectedTeamId: fixture.team.id,
       proof: fixture.proof,
       claim: fixture.claim,
     })
@@ -115,6 +123,39 @@ describe('exact effective invitation admission validation', () => {
         claim,
       }).isValid
     ).toBe(false)
+  })
+
+  it('rejects a self-consistent replacement team with the wrong root', () => {
+    const { alice, bob } = setup('alice', { user: 'bob', member: false })
+    const { mallory } = setup('mallory')
+    const { seed } = alice.team.inviteMember()
+    const claim = memberClaim(bob)
+    const proof = proofFor(seed, claim)
+    const invitation = v2Invitation(alice.team, proof)
+
+    mallory.team.dispatch({
+      type: 'INVITE_MEMBER',
+      payload: { invitation },
+    })
+    mallory.team.admitMember(
+      proof,
+      claim.userKeys,
+      claim.userName,
+      claim.device,
+      proof.acceptorNonce
+    )
+
+    expect(
+      validateFixture({
+        team: mallory.team,
+        senderDevice: mallory.device,
+        seed,
+        invitation,
+        proof,
+        claim,
+        expectedTeamId: alice.team.id,
+      })
+    ).toMatchObject({ isValid: false, reason: 'WRONG_TEAM' })
   })
 
   it('rejects an identity admitted by another invitation ID', () => {
@@ -302,6 +343,7 @@ type Fixture = {
   invitation: InvitationV2
   proof: ProofOfInvitationV2
   claim: InvitationClaim
+  expectedTeamId?: Base58
   serializedGraph?: Uint8Array
   teamKeyring?: ReturnType<Team['teamKeyring']>
 }
@@ -313,6 +355,7 @@ const validateFixture = ({
   invitation,
   proof,
   claim,
+  expectedTeamId = team.id,
   serializedGraph = team.save(),
   teamKeyring = team.teamKeyring(),
 }: Fixture) => {
@@ -327,6 +370,7 @@ const validateFixture = ({
   return processInvitationAcceptance({
     payload,
     invitationSeed: seed,
+    expectedTeamId,
     proof,
     claim,
   })

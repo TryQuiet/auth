@@ -609,7 +609,8 @@ const main = async () => {
     storage2.setContext(prospectiveUser.context)
     storage2.setAuthContext({
         ...prospectiveUser.context,
-        invitationSeed: seed
+        invitationSeed: seed,
+        expectedTeamId: sigChain.team.id
     })
     const peer2 = new Libp2pService(peerId2, storage2);
     await peer2.init();

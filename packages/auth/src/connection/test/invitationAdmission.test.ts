@@ -5,7 +5,7 @@ import { pack, unpack } from 'msgpackr'
 import * as teams from 'team/index.js'
 import { all, asFirstUseDevice, joinTestChannel, setup, TestChannel } from 'util/testing/index.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Connection } from '../Connection.js'
+import { Connection } from '../Connection.js'
 import { ADMIT_MEMBER_LINK_MISSING, ENCRYPTION_FAILURE } from '../errors.js'
 import type { ConnectionMessage } from '../message.js'
 import type { NumberedMessage } from '../MessageQueue.js'
@@ -19,6 +19,20 @@ describe('connection invitation admission', () => {
       connection.stop(false)
     }
     vi.restoreAllMocks()
+  })
+
+  it('requires an independently supplied team ID for invitees', () => {
+    const { alice, bob } = setup('alice', { user: 'bob', member: false })
+    const { seed } = alice.team.inviteMember()
+    const unboundContext = {
+      user: bob.user,
+      device: bob.device,
+      invitationSeed: seed,
+    } as InviteeMemberContext
+
+    expect(
+      () => new Connection({ context: unboundContext, sendMessage: vi.fn() })
+    ).toThrow(/expected team ID/)
   })
 
   it('accepts the exact invited member when another member has the same username', async () => {
@@ -35,6 +49,7 @@ describe('connection invitation admission', () => {
       user: invitedUser,
       device: invitedDevice,
       invitationSeed: seed,
+      expectedTeamId: alice.team.id,
     }
     const connections = createConnectionPair(memberContext(alice), inviteeContext)
     const joined = eventPromise(connections.invitee, 'joined')
@@ -60,6 +75,7 @@ describe('connection invitation admission', () => {
       userName: bob.userName,
       device: phone,
       invitationSeed: seed,
+      expectedTeamId: bob.team.id,
     }
     const connections = createConnectionPair(memberContext(bob), inviteeContext)
     const joined = eventPromise(connections.invitee, 'joined')
@@ -86,6 +102,7 @@ describe('connection invitation admission', () => {
       userName: bob.userName,
       device: phone,
       invitationSeed: seed,
+      expectedTeamId: bob.team.id,
     }
     const connections = createConnectionPair(memberContext(alice), inviteeContext)
     const joined = eventPromise(connections.invitee, 'joined')
@@ -106,6 +123,7 @@ describe('connection invitation admission', () => {
       user: bob.user,
       device: bob.device,
       invitationSeed: seed,
+      expectedTeamId: alice.team.id,
     }
     const connections = createConnectionPair(memberContext(alice), inviteeContext)
     const events: string[] = []
@@ -125,6 +143,7 @@ describe('connection invitation admission', () => {
       user: bob.user,
       device: bob.device,
       invitationSeed: seed,
+      expectedTeamId: alice.team.id,
     }
     const channel = new TamperedSeedChannel(alice.device.deviceId)
     const connections = createConnectionPair(memberContext(alice), inviteeContext, channel)
@@ -150,6 +169,7 @@ describe('connection invitation admission', () => {
       userName: bob.userName,
       device: phone,
       invitationSeed: seed,
+      expectedTeamId: bob.team.id,
     }
     const connections = createConnectionPair(memberContext(bob), inviteeContext)
 
@@ -174,6 +194,7 @@ describe('connection invitation admission', () => {
       user: invitedUser,
       device: invitedDevice,
       invitationSeed: seed,
+      expectedTeamId: alice.team.id,
     }
     const connections = createConnectionPair(memberContext(alice), inviteeContext)
 

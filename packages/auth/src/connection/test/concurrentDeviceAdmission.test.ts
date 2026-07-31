@@ -49,6 +49,7 @@ describe('concurrent device admission', () => {
       userName: peer1.userName,
       device: peer3Device,
       invitationSeed: deviceInvitation.seed,
+      expectedTeamId: deviceInvitation.teamId,
     }
 
     // Peer 3 completes the same device admission independently against each disconnected branch.

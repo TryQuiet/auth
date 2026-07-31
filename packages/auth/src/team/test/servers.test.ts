@@ -234,6 +234,7 @@ describe('Team', () => {
         userName: bob.userName,
         device: bob.phone!,
         invitationSeed: seed,
+        expectedTeamId: bob.team.id,
       }
       const join = joinTestChannel(new TestChannel())
       const serverConnection = join(server.connectionContext).start()

@@ -39,6 +39,7 @@ export const connectWithInvitation = async (
     user: invitee.user,
     device: invitee.device,
     invitationSeed: seed,
+    expectedTeamId: member.team.id,
   } as InviteeMemberContext
 
   return connect(member, invitee).then(() => {
@@ -52,6 +53,7 @@ export const connectPhoneWithInvitation = async (user: UserStuff, seed: string) 
     userName: user.user.userName,
     device: asFirstUseDevice(user.phone!),
     invitationSeed: seed,
+    expectedTeamId: user.team.id,
   }
 
   const join = joinTestChannel(new TestChannel())

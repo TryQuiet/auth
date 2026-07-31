@@ -95,12 +95,14 @@ export type InviteeMemberContext = {
   user: UserWithSecrets
   device: DeviceWithSecrets
   invitationSeed: string
+  expectedTeamId: Base58
 }
 
 export type InviteeDeviceContext = {
   userName: string
   device: FirstUseDeviceWithSecrets
   invitationSeed: string
+  expectedTeamId: Base58
 }
 
 export type InviteeContext = InviteeMemberContext | InviteeDeviceContext

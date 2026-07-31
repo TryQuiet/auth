@@ -111,6 +111,10 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
   constructor({ sendMessage, context, createLogger }: ConnectionParams) {
     super()
+    assert(
+      !isInviteeContext(context) || context.expectedTeamId !== undefined,
+      'Invitee connections require an expected team ID'
+    )
 
     const username = getUserName(context)
     const loggerModuleName = `auth:connection:${username}`
@@ -298,11 +302,13 @@ export class Connection extends EventEmitter<ConnectionEvents> {
         receiveInvitationAcceptance: assign(({ context, event }) => {
           assertEvent(event, 'ACCEPT_INVITATION')
           assert(context.invitationSeed)
+          assert(context.expectedTeamId)
           assert(isInviteeClaim(context.ourIdentityClaim!))
           const { proofOfInvitation, ...claim } = context.ourIdentityClaim
           const invitationAcceptanceResult = processInvitationAcceptance({
             payload: event.payload,
             invitationSeed: context.invitationSeed,
+            expectedTeamId: context.expectedTeamId,
             proof: proofOfInvitation,
             claim,
             logger: this.logger,

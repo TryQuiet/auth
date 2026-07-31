@@ -1,4 +1,4 @@
-import type { MachineResult } from '@localfirst/crdx'
+import type { Base58, MachineResult } from '@localfirst/crdx'
 import type { Logger } from '@localfirst/shared'
 import type { InvitationClaim, ProofOfInvitationV2 } from 'invitation/index.js'
 import { isEqual } from 'lodash-es'
@@ -42,6 +42,7 @@ type ValidateInvitationAcceptanceOptions = {
   payload: AcceptInvitationPayload
   proof: ProofOfInvitationV2
   claim: InvitationClaim
+  expectedTeamId: Base58
   logger?: Logger
 }
 
@@ -57,6 +58,7 @@ export const processInvitationAcceptance = ({
   invitationSeed,
   proof,
   claim,
+  expectedTeamId,
   logger,
 }: ProcessInvitationAcceptanceOptions): InvitationAcceptanceValidationResult => {
   let acceptance: InvitationAcceptance
@@ -74,7 +76,14 @@ export const processInvitationAcceptance = ({
     })
   }
 
-  return validateInvitationAcceptance({ acceptance, payload, proof, claim, logger })
+  return validateInvitationAcceptance({
+    acceptance,
+    payload,
+    proof,
+    claim,
+    expectedTeamId,
+    logger,
+  })
 }
 
 export const validateInvitationAcceptance = ({
@@ -82,6 +91,7 @@ export const validateInvitationAcceptance = ({
   payload,
   proof,
   claim,
+  expectedTeamId,
   logger,
 }: ValidateInvitationAcceptanceOptions): InvitationAcceptanceValidationResult => {
   let graph: TeamGraph
@@ -89,6 +99,9 @@ export const validateInvitationAcceptance = ({
 
   try {
     graph = deserializeTeamGraph(acceptance.serializedGraph, acceptance.teamKeyring)
+    if (graph.root !== expectedTeamId) {
+      return invalid('WRONG_TEAM', 'Invitation acceptance graph has an unexpected team root')
+    }
     const machineResult = teamMachine.derive(graph, logger)
     state = machineResult.state
 
@@ -105,6 +118,7 @@ export const validateInvitationAcceptance = ({
       payload,
       proof,
       claim,
+      expectedTeamId,
       graph,
       state,
       machineResult,

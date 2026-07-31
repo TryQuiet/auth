@@ -44,6 +44,7 @@ describe('concurrent ADMIT_MEMBER', () => {
       user: peer3.user,
       device: peer3.device,
       invitationSeed: memberInvitation.seed,
+      expectedTeamId: memberInvitation.teamId,
     }
 
     // Peer 3 presents the same identity and invitation independently to each disconnected branch.

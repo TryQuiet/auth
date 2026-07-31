@@ -199,6 +199,7 @@ describe('connection', () => {
         charlie.connectionContext = {
           ...charlie.connectionContext,
           invitationSeed: charlieSeed,
+          expectedTeamId: alice.team.id,
         }
 
         // 👩🏾 Alice invites 👴 Dwight
@@ -206,6 +207,7 @@ describe('connection', () => {
         dwight.connectionContext = {
           ...dwight.connectionContext,
           invitationSeed: dwightSeed,
+          expectedTeamId: alice.team.id,
         }
 
         expect(await connect(charlie, dwight)).toEqual(false)
@@ -228,6 +230,7 @@ describe('connection', () => {
           userName: bob.userName,
           device: asFirstUseDevice(bob.phone!),
           invitationSeed: `${seed.slice(0, 4)}+${seed.slice(4, 8)}-${seed.slice(8, 12)}_${seed.slice(12)}`,
+          expectedTeamId: bob.team.id,
         }
         const join = joinTestChannel(new TestChannel())
 
@@ -261,6 +264,7 @@ describe('connection', () => {
             userName: bob.userName,
             device: phone,
             invitationSeed: seed,
+            expectedTeamId: bob.team.id,
           }
           const join = joinTestChannel(new TestChannel())
           const laptopConnection = join(bob.connectionContext).start()
@@ -289,6 +293,7 @@ describe('connection', () => {
             userName: bob.userName,
             device: phone,
             invitationSeed: seed,
+            expectedTeamId: bob.team.id,
           }
           const join = joinTestChannel(new TestChannel())
           const laptopConnection = join(bob.connectionContext).start()
@@ -319,6 +324,7 @@ describe('connection', () => {
           userName: bob.userName,
           device: asFirstUseDevice(bob.phone!),
           invitationSeed: seed,
+          expectedTeamId: bob.team.id,
         }
         const join = joinTestChannel(new TestChannel())
         const aliceConnection = join(alice.connectionContext).start()
@@ -346,6 +352,7 @@ describe('connection', () => {
         bob.connectionContext = {
           ...bob.connectionContext,
           invitationSeed: 'password',
+          expectedTeamId: alice.team.id,
         }
 
         void connect(bob, alice)
@@ -364,6 +371,7 @@ describe('connection', () => {
         bob.connectionContext = {
           ...bob.connectionContext,
           invitationSeed: 'password',
+          expectedTeamId: alice.team.id,
         }
 
         {
@@ -376,6 +384,7 @@ describe('connection', () => {
         bob.connectionContext = {
           ...bob.connectionContext,
           invitationSeed: 'passw0rd',
+          expectedTeamId: alice.team.id,
         }
 
         {
