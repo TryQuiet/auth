@@ -1,4 +1,5 @@
 import { assert } from '@localfirst/shared'
+import { asymmetric } from '@localfirst/crypto'
 import { append, createGraph, headsAreEqual, type Graph } from 'graph/index.js'
 import { generateMessage, initSyncState, receiveMessage } from 'sync/index.js'
 import { createUser, type UserWithSecrets } from 'user/index.js'
@@ -9,9 +10,7 @@ import {
   type Network,
 } from 'util/testing/Network.js'
 import { TEST_GRAPH_KEYS as keys } from 'util/testing/setup.js'
-import { describe, expect, it, vitest } from 'vitest'
-
-const { setSystemTime } = vitest.useFakeTimers()
+import { describe, expect, it } from 'vitest'
 
 const setup = setupWithNetwork(keys)
 
@@ -641,17 +640,23 @@ describe('sync', () => {
   })
 
   describe('failure handling', () => {
-    const appendLinkInThePast = (graph: Graph<any, any>, user: UserWithSecrets) => {
-      const IN_THE_PAST = new Date('2020-01-01').getTime()
-      const now = Date.now()
-      setSystemTime(IN_THE_PAST)
+    const appendInvalidLink = (graph: Graph<any, any>, user: UserWithSecrets) => {
       const updatedGraph = append({
         graph,
         action: { type: 'FOO', payload: 'pizza' },
         user,
         keys,
       })
-      setSystemTime(now)
+      const headHash = updatedGraph.head[0]
+      const headLink = updatedGraph.links[headHash]
+      updatedGraph.encryptedLinks[headHash] = {
+        ...updatedGraph.encryptedLinks[headHash],
+        encryptedBody: asymmetric.encryptBytes({
+          secret: { ...headLink.body, payload: 'tampered' },
+          recipientPublicKey: keys.encryption.publicKey,
+          senderSecretKey: user.keys.encryption.secretKey,
+        }),
+      }
       return updatedGraph
     }
 
@@ -665,14 +670,14 @@ describe('sync', () => {
       // no changes yet; 👩🏾 Alice and 🦹‍♀️ Eve are synced up
       expectToBeSynced(alice, eve)
 
-      // 🦹‍♀️ Eve sets her system clock back when appending a link
-      eve.peer.graph = appendLinkInThePast(eve.peer.graph, eve.user)
+      // 🦹‍♀️ Eve changes an encrypted link without updating its hash
+      eve.peer.graph = appendInvalidLink(eve.peer.graph, eve.user)
       const badHash = eve.peer.graph.head[0]
 
       eve.peer.sync()
 
       // Since Eve's graph is invalid, the sync fails
-      expect(() => network.deliverAll()).toThrow(`timestamp can't be earlier`)
+      expect(() => network.deliverAll()).toThrow(`Head hash does not match`)
 
       // They are not synced
       expectNotToBeSynced(alice, eve)
@@ -695,14 +700,14 @@ describe('sync', () => {
 
       const TRIES = 10
       for (let i = 0; i < TRIES; i++) {
-        // 🦹‍♀️ Eve sets her system clock back when appending a link
-        eve.peer.graph = appendLinkInThePast(originalGraph, eve.user)
+        // 🦹‍♀️ Eve changes an encrypted link without updating its hash
+        eve.peer.graph = appendInvalidLink(originalGraph, eve.user)
         const badHash = eve.peer.graph.head[0]
 
         eve.peer.sync()
 
         // Since Eve's graph is invalid, the sync fails
-        expect(() => network.deliverAll()).toThrow("timestamp can't be earlier")
+        expect(() => network.deliverAll()).toThrow(`Head hash does not match`)
 
         // They are not synced
         expectNotToBeSynced(alice, eve)

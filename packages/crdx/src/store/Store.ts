@@ -18,15 +18,15 @@ import { type UserWithSecrets } from 'user/index.js'
 import { type Hash, type Optional } from 'util/index.js'
 import { validate, type ValidatorSet } from 'validator/index.js'
 import { type StoreOptions } from './StoreOptions.js'
-import { makeMachine } from './makeMachine.js'
+import { consumeMachineResult, makeMachine } from './makeMachine.js'
 import { type Reducer } from './types.js'
 
 /**
  * A CRDX `Store` is intended to work very much like a Redux store.
  * https://github.com/reduxjs/redux/blob/master/src/createStore.ts
  *
- * The only way to change the data in the store is to `dispatch` an action to it. There should only
- * be a single store in an application.
+ * `dispatch` is the only way to originate a local action; `merge` incorporates peer graphs. There
+ * should only be a single store in an application.
  */
 export class Store<
   S,
@@ -58,6 +58,7 @@ export class Store<
     resolver = baseResolver,
     keys,
     logger,
+    machineResult,
   }: StoreOptions<S, A, C>) {
     super()
 
@@ -85,8 +86,22 @@ export class Store<
     // if a single keyset was provided, wrap it in a keyring
     this.keyring = createKeyring(keys)
 
-    // set the initial state
-    this.updateState()
+    if (machineResult === undefined) {
+      // Derive and validate the initial state when no reusable machine result was provided.
+      this.updateState()
+    } else {
+      const definition = {
+        initialState: this.initialState,
+        reducer: this.reducer,
+        resolver: this.resolver,
+        validators: this.validators,
+      }
+      assert(
+        consumeMachineResult(machineResult, this.graph, definition),
+        'Machine result does not match this store graph and definition.'
+      )
+      this.state = machineResult.state
+    }
   }
 
   /** Returns the store's most recent state. */
@@ -97,6 +112,11 @@ export class Store<
   /** Returns the current hash graph */
   public getGraph(): Graph<A, C> {
     return this.graph
+  }
+
+  /** Returns the encryption keys retained for this graph. */
+  public getKeyring(): Keyring {
+    return { ...this.keyring }
   }
 
   /**
@@ -111,9 +131,9 @@ export class Store<
    * Dispatches an action to be added to the hash graph. This is the only way to trigger a
    * state change.
    *
-   * The `reducer` function provided when creating the store will be called with the current state
-   * and the given `action`. Its return value will be considered the **next** state of the tree,
-   * and any change listeners will be notified.
+   * The configured reducer receives the current state, newly appended decrypted link, logger, and
+   * complete candidate graph. Graph and state are committed atomically, and listeners are notified,
+   * only if reduction and application validation succeed.
    *
    * @returns For convenience, the same action object that was dispatched.
    */
@@ -147,7 +167,7 @@ export class Store<
     }
 
     // append this action as a new link to the graph
-    this.graph = append({
+    const nextGraph = append({
       graph: this.graph,
       action: actionWithPayload,
       user: this.user,
@@ -156,10 +176,14 @@ export class Store<
     })
 
     // get the newly appended link (at this point we're guaranteed a single head, which is the one we appended)
-    const [head] = getHead(this.graph)
+    const [head] = getHead(nextGraph)
 
-    // we don't need to pass the whole graph through the reducer, just the current state + the new head
-    this.state = this.reducer(this.state, head, this.logger)
+    // Validate the new head against the complete candidate graph before committing either value.
+    const nextState = this.reducer(this.state, head, this.logger, nextGraph)
+
+    // Commit the graph and state together only after the action has passed application validation.
+    this.graph = nextGraph
+    this.state = nextState
 
     // notify listeners
     this.emit('updated', { head: this.graph.head })
@@ -168,13 +192,20 @@ export class Store<
   }
 
   /**
-   * Merges another graph (e.g. from a peer) with ours.
-   * @param theirGraph
-   * @returns this `Store` instance
+   * Validates, resolves, and reduces a peer graph before atomically committing the merged graph and
+   * state. If derivation throws, both current values remain unchanged. A successful merge emits
+   * `updated`.
+   *
+   * @param theirGraph Graph received from a peer.
    */
   public merge(theirGraph: Graph<A, C>) {
-    this.graph = merge(this.graph, theirGraph)
-    this.updateState()
+    const mergedGraph = merge(this.graph, theirGraph)
+    const mergedState = this.deriveState(mergedGraph)
+
+    // Do not expose a received graph unless both graph and application validation succeeded.
+    this.graph = mergedGraph
+    this.state = mergedState
+    this.emit('updated', { head: this.graph.head })
   }
 
   /**
@@ -188,16 +219,20 @@ export class Store<
   // PRIVATE
 
   private updateState() {
+    this.state = this.deriveState(this.graph)
+
+    // notify listeners
+    this.emit('updated', { head: this.graph.head })
+  }
+
+  private deriveState(graph: Graph<A, C>) {
     const machine = makeMachine({
       initialState: this.initialState,
       reducer: this.reducer,
       resolver: this.resolver,
       validators: this.validators,
     })
-    this.state = machine(this.graph, this.logger)
-
-    // notify listeners
-    this.emit('updated', { head: this.graph.head })
+    return machine(graph, this.logger)
   }
 }
 

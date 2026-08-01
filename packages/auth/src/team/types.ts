@@ -14,7 +14,13 @@ import type {
 } from '@localfirst/crdx'
 import type { Client, LocalContext } from 'team/context.js'
 import type { Device } from 'device/index.js'
-import type { Invitation, InvitationState } from 'invitation/types.js'
+import type {
+  DeviceInvitationClaim,
+  Invitation,
+  InvitationState,
+  MemberInvitationClaim,
+  ProofOfInvitationV2,
+} from 'invitation/types.js'
 import type { Lockbox } from 'lockbox/index.js'
 import type { PermissionsMap, Role } from 'role/index.js'
 import type { Host, Server } from 'server/index.js'
@@ -185,6 +191,8 @@ export type AdmitMemberAction = {
     id: Base58 // Invitation ID
     userName: string
     memberKeys: Keyset // Member keys provided by the new member
+    proof: ProofOfInvitationV2
+    claim: MemberInvitationClaim
   }
 }
 
@@ -193,6 +201,8 @@ export type AdmitDeviceAction = {
   payload: BasePayload & {
     id: Base58 // Invitation ID
     device: Device
+    proof: ProofOfInvitationV2
+    claim: DeviceInvitationClaim
   }
 }
 
@@ -324,14 +334,36 @@ export type TeamState = {
   // If a member's admission is reversed, we need to flag them as compromised so an admin can
   // rotate any keys they had access to at the first opportunity
   pendingKeyRotations: string[]
+  /** Former author keys and the causal point after which each key is no longer valid. */
+  retiredAuthorKeys: RetiredAuthorKey[]
   metadata: TeamMetadata
+}
+
+export type RetiredAuthorKey = {
+  /** Member user ID or server host whose key was rotated. */
+  identityId: string
+
+  /** Previous encryption public key that may authenticate concurrent actions. */
+  encryptionPublicKey: Base58
+
+  /** Hash of the key-change link; old-key actions causally after this link are rejected. */
+  retiredAt: Hash
 }
 
 export type InvitationMap = Record<string, InvitationState>
 
 // ********* VALIDATION
 
-export type TeamStateValidator = (previousState: TeamState, link: TeamLink, extendableLogger: Logger) => ValidationResult
+export type TeamStateValidator = (
+  /** Reduced state immediately before the candidate link in deterministic sequence order. */
+  previousState: TeamState,
+  /** Candidate authenticated link. */
+  link: TeamLink,
+  /** Logger for validation diagnostics. */
+  extendableLogger: Logger,
+  /** Complete graph for causal checks; omitted only during provisional branch decryption. */
+  graph?: TeamGraph
+) => ValidationResult
 
 export type TeamStateValidatorSet = Record<string, TeamStateValidator>
 
@@ -357,6 +389,9 @@ export type InviteResult = {
 
   /** The secret invitation key. (Returned in case it was generated randomly.) */
   seed: string
+
+  /** Immutable root hash identifying the team this invitation belongs to. */
+  teamId: Base58
 }
 export type LookupIdentityResult =
   | 'VALID_DEVICE'
@@ -364,6 +399,10 @@ export type LookupIdentityResult =
   | 'DEVICE_UNKNOWN'
   | 'DEVICE_REMOVED'
 
-export type EncryptStreamTeamPayload = { recipient: KeyMetadata, encryptStream: AsyncGenerator<Uint8Array>, header: Uint8Array }
+export type EncryptStreamTeamPayload = {
+  recipient: KeyMetadata
+  encryptStream: AsyncGenerator<Uint8Array>
+  header: Uint8Array
+}
 
 export type TeamMetadata = { selfAssignableRoles: string[] }

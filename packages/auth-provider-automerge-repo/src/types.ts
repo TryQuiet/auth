@@ -60,15 +60,22 @@ export type SerializedPrivateShare = SerializedPublicShare & {
 /**
  * There are two ways for a device to join a team with an invitation:
  *
- * - If we're a new member joining a team for the first time, we just provide the share ID (which is
- *   the team ID) and the secret invitation code we were given.
- * - If we're a new device being added by an existing member, we also provide the user's name and
- *   ID.
+ * - A new member provides the truncated share ID used for peer discovery, the full immutable team
+ *   root used as the trust anchor, and the secret invitation seed.
+ * - A new device provides those values plus the existing user's name.
+ *
+ * `shareId` is not security-sensitive and must never be substituted for `expectedTeamId`.
  */
 export type Invitation = DeviceInvitation | MemberInvitation
 
 export type MemberInvitation = {
+  /** Full immutable team root; unlike shareId, this value is security-sensitive and untruncated. */
+  expectedTeamId: Auth.Base58
+
+  /** Truncated team-root prefix used only to discover peers that may serve the share. */
   shareId: ShareId
+
+  /** Secret seed used to prove possession of the invitation and decrypt its acceptance. */
   invitationSeed: string
 }
 

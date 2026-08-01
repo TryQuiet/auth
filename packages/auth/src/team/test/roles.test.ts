@@ -47,7 +47,7 @@ describe('Team', () => {
 
       // 👩🏾 Alice adds 👨🏻‍🦲 Bob to the managers role
       alice.team.addMemberRole(bob.userId, MANAGERS)
-      expect(alice.team.membersInRole(MANAGERS).map(m => m.userName)).toEqual(['bob'])
+      expect(alice.team.membersInRole(MANAGERS).map(m => m.userName)).toEqual(['alice', 'bob'])
     })
 
     it('admins have access to all role keys', () => {
@@ -56,8 +56,8 @@ describe('Team', () => {
       // 👩🏾 Alice adds the managers role
       alice.team.addRole(managers)
 
-      // 👩🏾 Alice is not a member of the managers role
-      expect(alice.team.memberHasRole(alice.userId, MANAGERS)).toBe(false)
+      // 👩🏾 Alice is a member of the managers role because role creators are assigned automatically
+      expect(alice.team.memberHasRole(alice.userId, MANAGERS)).toBe(true)
 
       // But she does have access to the managers' keys
       const managersKeys = alice.team.roleKeys(MANAGERS)
@@ -87,28 +87,16 @@ describe('Team', () => {
       expect(bobsAdminKeys).toLookLikeKeyset()
     })
 
-    it('non-admin adds self to a role when creating', () => {
+    it('does not let a non-admin create a role', () => {
       const { alice, bob } = setup('alice', { user: 'bob', admin: false })
 
       // 👨🏻‍🦲 Bob isn't an admin
       expect(alice.team.memberIsAdmin(bob.userId)).toBe(false)
 
-      // 👨🏻‍🦲 Bob adds a role and gives himself that role
-      bob.team.addRole(foobar)
-
-      // Now 👨🏻‍🦲 Bob is a foobar
-      expect(bob.team.hasRole(FOOBAR)).toBe(true)
-
-      // Bob persists the team
-      const savedTeam = bob.team.save()
-
-      // 👩🏾 Alice loads the team
-      alice.team = teams.load(savedTeam, alice.localContext, bob.team.teamKeys())
-
-      // 👩🏾 Alice sees 👨🏻‍🦲 Bob has the foobar role
-      expect(alice.team.memberHasRole(bob.userId, FOOBAR)).toBe(true)
-
-      // 👩🏾 Alice doesn't have the foobar role
+      // 👨🏻‍🦲 Bob cannot add a role or assign it to himself
+      expect(() => bob.team.addRole(foobar)).toThrow()
+      expect(bob.team.hasRole(FOOBAR)).toBe(false)
+      expect(bob.team.memberHasRole(bob.userId, FOOBAR)).toBe(false)
       expect(alice.team.memberHasRole(alice.userId, FOOBAR)).toBe(false)
     })
 

@@ -107,7 +107,7 @@ export const setup = (..._config: SetupConfig) => {
 
     const connectionContext: Context = member
       ? { user, device, team }
-      : { user, device, invitationSeed: '' }
+      : { user, device, invitationSeed: '', expectedTeamId: team.id }
 
     const phoneStuff: UserStuff = {
       userName,

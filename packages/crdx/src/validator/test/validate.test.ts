@@ -194,7 +194,7 @@ describe('graphs', () => {
         expect(validate(graph)).not.toBeValid()
       })
 
-      test(`timestamp out of order`, () => {
+      test(`allows timestamps out of order while clock validation is disabled`, () => {
         const IN_THE_PAST = new Date('2020-01-01').getTime()
         const graph = setupGraph()
 
@@ -209,10 +209,10 @@ describe('graphs', () => {
         })
         setSystemTime(now)
 
-        expect(validate(graph2)).not.toBeValid()
+        expect(validate(graph2)).toBeValid()
       })
 
-      test(`timestamp in the future`, () => {
+      test(`allows timestamps in the future while clock validation is disabled`, () => {
         const IN_THE_FUTURE = new Date(`10000-01-01`).getTime() // NOTE: test will begin to fail 7,978 years from now
         const graph = setupGraph()
 
@@ -227,7 +227,7 @@ describe('graphs', () => {
         })
         setSystemTime(now)
 
-        expect(validate(graph2)).not.toBeValid()
+        expect(validate(graph2)).toBeValid()
       })
 
       test(`timestamp in the future but within fuzz factor`, () => {

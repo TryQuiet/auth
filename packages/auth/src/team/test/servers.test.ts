@@ -6,6 +6,7 @@ import {
   TestChannel,
   all,
   joinTestChannel,
+  memberInvitationProof,
   setup as setupHumans,
   type SetupConfig,
   type UserStuff,
@@ -15,6 +16,7 @@ import {
   createTeam,
   invitation,
   loadTeam,
+  redactDevice,
   type Connection,
   type Context,
   type InviteeDeviceContext,
@@ -172,7 +174,12 @@ describe('Team', () => {
       await connectWithServer(alice, server)
 
       // Now if Bob connects to the server, the server can admit him
-      server.team.admitMember(invitation.generateProof(bobInvite), bob.user.keys, bob.userId)
+      server.team.admitMember(
+        memberInvitationProof(bobInvite, bob.user, bob.device),
+        bob.user.keys,
+        bob.userName,
+        redactDevice(bob.device)
+      )
       expect(server.team.members().length).toBe(2)
     })
 
@@ -227,6 +234,7 @@ describe('Team', () => {
         userName: bob.userName,
         device: bob.phone!,
         invitationSeed: seed,
+        expectedTeamId: bob.team.id,
       }
       const join = joinTestChannel(new TestChannel())
       const serverConnection = join(server.connectionContext).start()

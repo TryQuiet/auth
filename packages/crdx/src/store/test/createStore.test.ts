@@ -1,10 +1,11 @@
 import { asymmetric } from '@localfirst/crypto'
-import { createGraph, getRoot, serialize } from 'graph/index.js'
-import { createStore } from 'store/index.js'
+import { baseResolver, createGraph, getRoot, serialize } from 'graph/index.js'
+import { createStore, makeMachine } from 'store/index.js'
 import { createUser } from 'user/index.js'
 import 'util/testing/expect/toBeValid'
 import { TEST_GRAPH_KEYS as keys } from 'util/testing/setup.js'
-import { describe, expect, test } from 'vitest'
+import { fail, type ValidatorSet } from 'validator/index.js'
+import { describe, expect, test, vi } from 'vitest'
 import {
   counterReducer,
   type CounterAction,
@@ -54,6 +55,157 @@ describe('createStore', () => {
     expect(bobState.value).toEqual(2)
   })
 
+  test('supplies the validated graph to reducers during derivation and dispatch', () => {
+    const reducer = vi.fn(counterReducer)
+    const store = createStore<CounterState, CounterAction, Record<string, unknown>>({
+      user: alice,
+      reducer,
+      keys,
+    })
+
+    expect(reducer.mock.calls[0]?.[3]).toBe(store.getGraph())
+    reducer.mockClear()
+    store.dispatch({ type: 'INCREMENT' })
+    expect(reducer.mock.calls[0]?.[3]).toBe(store.getGraph())
+  })
+
+  test('reuses an opaque machine result without reducing the graph again', () => {
+    const graph = createGraph<CounterAction>({ user: alice, name: 'counter', keys })
+    const initialState = {} as CounterState
+    const reducer = vi.fn(counterReducer)
+    const machine = makeMachine<CounterState, CounterAction, Record<string, unknown>>({
+      initialState,
+      reducer,
+      resolver: baseResolver,
+    })
+    const machineResult = machine.derive(graph)
+    expect(reducer).toHaveBeenCalledTimes(1)
+    reducer.mockClear()
+
+    const store = createStore<CounterState, CounterAction, Record<string, unknown>>({
+      user: bob,
+      graph,
+      initialState,
+      reducer,
+      resolver: baseResolver,
+      keys,
+      machineResult,
+    })
+
+    expect(store.getState()).toBe(machineResult.state)
+    expect(reducer).not.toHaveBeenCalled()
+    expect(() =>
+      createStore<CounterState, CounterAction, Record<string, unknown>>({
+        user: bob,
+        graph,
+        initialState,
+        reducer,
+        resolver: baseResolver,
+        keys,
+        machineResult,
+      })
+    ).toThrow('Machine result does not match')
+  })
+
+  test('rejects a machine result derived from a different graph', () => {
+    const firstGraph = createGraph<CounterAction>({ user: alice, name: 'first', keys })
+    const secondGraph = createGraph<CounterAction>({ user: alice, name: 'second', keys })
+    const initialState = {} as CounterState
+    const machine = makeMachine<CounterState, CounterAction, Record<string, unknown>>({
+      initialState,
+      reducer: counterReducer,
+      resolver: baseResolver,
+    })
+    const machineResult = machine.derive(firstGraph)
+
+    expect(() =>
+      createStore<CounterState, CounterAction, Record<string, unknown>>({
+        user: bob,
+        graph: secondGraph,
+        initialState,
+        reducer: counterReducer,
+        resolver: baseResolver,
+        keys,
+        machineResult,
+      })
+    ).toThrow('Machine result does not match')
+  })
+
+  test('rejects a machine result when its graph changed after derivation', () => {
+    const graph = createGraph<CounterAction>({ user: alice, name: 'counter', keys })
+    const initialState = {} as CounterState
+    const machine = makeMachine<CounterState, CounterAction, Record<string, unknown>>({
+      initialState,
+      reducer: counterReducer,
+      resolver: baseResolver,
+    })
+    const machineResult = machine.derive(graph)
+    graph.links[graph.root].body.timestamp += 1
+
+    expect(() =>
+      createStore<CounterState, CounterAction, Record<string, unknown>>({
+        user: bob,
+        graph,
+        initialState,
+        reducer: counterReducer,
+        resolver: baseResolver,
+        keys,
+        machineResult,
+      })
+    ).toThrow('Machine result does not match')
+  })
+
+  test('rejects a machine result when its derived state changed before consumption', () => {
+    const graph = createGraph<CounterAction>({ user: alice, name: 'counter', keys })
+    const initialState = {} as CounterState
+    const machine = makeMachine<CounterState, CounterAction, Record<string, unknown>>({
+      initialState,
+      reducer: counterReducer,
+      resolver: baseResolver,
+    })
+    const machineResult = machine.derive(graph)
+    machineResult.state.value = 99
+
+    expect(() =>
+      createStore<CounterState, CounterAction, Record<string, unknown>>({
+        user: bob,
+        graph,
+        initialState,
+        reducer: counterReducer,
+        resolver: baseResolver,
+        keys,
+        machineResult,
+      })
+    ).toThrow('Machine result does not match')
+  })
+
+  test('rejects a machine result when validators changed after derivation', () => {
+    const graph = createGraph<CounterAction>({ user: alice, name: 'counter', keys })
+    const initialState = {} as CounterState
+    const validators: ValidatorSet = {}
+    const machine = makeMachine<CounterState, CounterAction, Record<string, unknown>>({
+      initialState,
+      reducer: counterReducer,
+      resolver: baseResolver,
+      validators,
+    })
+    const machineResult = machine.derive(graph)
+    validators.rejectLateChange = () => fail('late validator')
+
+    expect(() =>
+      createStore<CounterState, CounterAction, Record<string, unknown>>({
+        user: bob,
+        graph,
+        initialState,
+        reducer: counterReducer,
+        resolver: baseResolver,
+        validators,
+        keys,
+        machineResult,
+      })
+    ).toThrow('Machine result does not match')
+  })
+
   test('Eve tampers with the serialized graph', () => {
     // 👩🏾 Alice makes a new store and saves it
     const graph = createGraph<CounterAction>({
@@ -85,18 +237,14 @@ describe('createStore', () => {
     const tamperedSerializedGraph = serialize(tamperedGraph)
 
     // 👩🏾 Alice tries to load the modified graph
-    const aliceStoreTheNextDay = createStore<
-      CounterState,
-      IncrementAction,
-      Record<string, unknown>
-    >({
-      user: alice,
-      graph: tamperedSerializedGraph,
-      reducer: counterReducer,
-      keys,
-    })
-
-    // 👩🏾 Alice is not fooled because the graph is no longer valid
-    expect(aliceStoreTheNextDay.validate()).not.toBeValid()
+    // 👩🏾 Alice is not fooled because invalid graphs fail closed during initial load
+    expect(() =>
+      createStore<CounterState, IncrementAction, Record<string, unknown>>({
+        user: alice,
+        graph: tamperedSerializedGraph,
+        reducer: counterReducer,
+        keys,
+      })
+    ).toThrow()
   })
 })

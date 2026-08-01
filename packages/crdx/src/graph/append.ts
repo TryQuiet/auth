@@ -41,6 +41,7 @@ export const append = <A extends Action, C>({
   // create the encrypted and unencrypted links
   const link: Link<A, C> = {
     hash,
+    senderPublicKey,
     body,
   }
   const encryptedLink: EncryptedLink = {

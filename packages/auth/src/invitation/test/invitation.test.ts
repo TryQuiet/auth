@@ -1,47 +1,127 @@
+import { createUser, redactKeys } from '@localfirst/crdx'
+import { randomKey } from '@localfirst/crypto'
+import { createDevice, redactDevice } from 'device/index.js'
+import {
+  create,
+  deriveId,
+  generateProof,
+  randomSeed,
+  validate,
+  type MemberInvitationClaim,
+  type ProofOfInvitationV2,
+} from 'invitation/index.js'
 import { describe, expect, test } from 'vitest'
-import { create, generateProof, randomSeed, validate } from 'invitation/index.js'
 
 describe('invitations', () => {
-  test('create invitation', () => {
-    const seed = randomSeed()
-    const invitation = create({ seed })
-    // Looks like an invitation
-    expect(invitation).toHaveProperty('id')
+  test('derives the same ID from grouped and URL-formatted seeds', () => {
+    const seed = 'abcd2345efgh6789'
+
+    expect(deriveId('abcd 2345 efgh 6789')).toBe(deriveId(seed))
+    expect(deriveId('abcd+2345-efgh_6789')).toBe(deriveId(seed))
+  })
+
+  test('creates a v2 invitation with both starter public keys', () => {
+    const invitation = create({ seed: randomSeed() })
+
+    expect(invitation).toMatchObject({ version: 2 })
     expect(invitation.id).toHaveLength(15)
-    expect(invitation).toHaveProperty('publicKey')
+    expect(invitation.signaturePublicKey).toBeDefined()
+    expect(invitation.encryptionPublicKey).toBeDefined()
   })
 
-  test('validate member invitation', () => {
-    // 👩🏾 Alice generates a secret key and sends it to 👨🏻‍🦲 Bob via a trusted side channel.
-    const seed = 'passw0rd'
+  test('validates a transcript-bound member proof', () => {
+    const { seed, invitation, claim, proof } = fixture()
 
-    // 👩🏾 Alice generates an invitation with this key. Normally the invitation would be stored on the
-    // team's signature chain; here we're just keeping it around in a variable.
-    const invitation = create({ seed })
-
-    // 👨🏻‍🦲 Bob accepts invitation and obtains a credential proving that he was invited.
-    const proofOfInvitation = generateProof(seed)
-
-    // 👨🏻‍🦲 Bob shows up to join the team & sees 👳🏽‍♂️ Charlie. Bob shows Charlie his proof of invitation, and
-    // 👳🏽‍♂️ Charlie checks it against the invitation that Alice posted on the signature chain.
-    const validationResult = validate(proofOfInvitation, invitation)
-
-    // ✅
-    expect(validationResult.isValid).toBe(true)
+    expect(validate(proof, invitation, claim, proof.acceptorNonce).isValid).toBe(true)
+    expect(
+      validate(
+        generateProof({ seed: `${seed}-wrong`, claim, ...nonces() }),
+        invitation,
+        claim
+      )
+    ).toMatchObject({ isValid: false })
   })
 
-  test('you have to have the secret key to accept an invitation', () => {
-    // 👩🏾 Alice uses a secret key to create an invitation; she sends it to Bob via a trusted side channel
-    const seed = 'passw0rd'
+  test.each([
+    'member encryption key',
+    'member signature key',
+    'device encryption key',
+    'device signature key',
+    'user name',
+    'invitation kind',
+    'acceptor nonce',
+    'invitee nonce',
+  ])('rejects a changed %s', field => {
+    const { invitation, claim, proof } = fixture()
+    const changedClaim = structuredClone(claim) as MemberInvitationClaim
+    const changedProof = { ...proof }
 
-    // And uses it to create an invitation for him
-    const invitation = create({ seed })
+    switch (field) {
+      case 'member encryption key':
+        changedClaim.userKeys.encryption = randomKey()
+        break
+      case 'member signature key':
+        changedClaim.userKeys.signature = randomKey()
+        break
+      case 'device encryption key':
+        changedClaim.device.keys.encryption = randomKey()
+        break
+      case 'device signature key':
+        changedClaim.device.keys.signature = randomKey()
+        break
+      case 'user name':
+        changedClaim.userName = 'mallory'
+        break
+      case 'invitation kind':
+        ;(changedClaim as { invitationKind: string }).invitationKind = 'device'
+        break
+      case 'acceptor nonce':
+        changedProof.acceptorNonce = randomKey()
+        break
+      case 'invitee nonce':
+        changedProof.inviteeNonce = randomKey()
+        break
+    }
 
-    // 🦹‍♀️ Eve tries to accept the invitation in Bob's place, but she doesn't have the correct invitation key
-    const proofOfInvitation = generateProof('horsebatterycorrectstaple')
-
-    // ❌ Nice try, Eve!!!
-    const validationResult = validate(proofOfInvitation, invitation)
-    expect(validationResult.isValid).toBe(false)
+    expect(validate(changedProof, invitation, changedClaim).isValid).toBe(false)
   })
+
+  test('rejects replay against a second request nonce', () => {
+    const { invitation, claim, proof } = fixture()
+
+    expect(validate(proof, invitation, claim, randomKey()).isValid).toBe(false)
+  })
+
+  test('rejects unknown versions and extra or missing proof fields', () => {
+    const { invitation, claim, proof } = fixture()
+    const unknownVersion = { ...proof, version: 3 } as unknown as ProofOfInvitationV2
+    const extraField = { ...proof, extra: true }
+    const { signature: _signature, ...missingField } = proof
+
+    expect(validate(unknownVersion, invitation, claim).isValid).toBe(false)
+    expect(validate(extraField, invitation, claim).isValid).toBe(false)
+    expect(
+      validate(missingField as unknown as ProofOfInvitationV2, invitation, claim)
+    ).toMatchObject({ isValid: false })
+  })
+})
+
+const fixture = () => {
+  const seed = 'passw0rd'
+  const invitation = create({ seed })
+  const user = createUser('bob')
+  const device = createDevice({ userId: user.userId, deviceName: 'laptop' })
+  const claim: MemberInvitationClaim = {
+    invitationKind: 'member',
+    userName: user.userName,
+    userKeys: redactKeys(user.keys),
+    device: redactDevice(device),
+  }
+  const proof = generateProof({ seed, claim, ...nonces() })
+  return { seed, invitation, claim, proof }
+}
+
+const nonces = () => ({
+  acceptorNonce: randomKey(),
+  inviteeNonce: randomKey(),
 })

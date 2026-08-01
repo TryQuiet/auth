@@ -1,4 +1,4 @@
-import { ROOT, type Reducer } from '@localfirst/crdx'
+import { ROOT, type Hash, type Reducer } from '@localfirst/crdx'
 import { ADMIN } from 'role/index.js'
 import { clone, composeTransforms } from 'util/index.js'
 import { invalidLinkReducer } from './invalidLinkReducer.js'
@@ -47,9 +47,21 @@ import { Logger } from '@localfirst/shared'
  *
  * @param state The team state as of the previous link in the signature chain.
  * @param link The current link being processed.
+ * @param extendableLogger Optional logger inherited from the machine evaluation.
+ * @param graph Complete authenticated graph used for causal-frontier author-key validation. It may
+ * be omitted during provisional branch-by-branch decryption; final machine reduction always
+ * supplies it.
  */
-export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (state, link, extendableLogger) => {
-  const logger = extendableLogger != null ? extendableLogger.extend('reducer') : new Logger({ moduleName: 'auth:reducer' })
+export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (
+  state,
+  link,
+  extendableLogger,
+  graph
+) => {
+  const logger =
+    extendableLogger != null
+      ? extendableLogger.extend('reducer')
+      : new Logger({ moduleName: 'auth:reducer' })
   // Invalid links are marked to be discarded by the MembershipResolver due to conflicting
   // concurrent actions. In most cases we just ignore these links and they don't affect state at
   // all; but in some cases we need to clean up, for example when someone's admission is reversed
@@ -62,7 +74,7 @@ export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (state, link
   state = clone(state)
 
   // Make sure this link can be applied to the previous state & doesn't put us in an invalid state
-  const validation = validate(state, link, logger)
+  const validation = validate(state, link, logger, graph)
   if (!validation.isValid) {
     throw validation.error
   }
@@ -74,7 +86,7 @@ export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (state, link
   const applyTransforms = composeTransforms([
     setHead(link),
     collectLockboxes(action.payload.lockboxes), // Any payload can include lockboxes
-    ...getTransforms(action), // Get the specific transforms indicated by this action
+    ...getTransforms(action, link.hash), // Get the specific transforms indicated by this action
   ])
   const newState = applyTransforms(state)
 
@@ -86,7 +98,12 @@ export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (state, link
  * new state). This returns an array of transforms that are then applied in order.
  * @param action The team action (type + payload) being processed
  */
-const getTransforms = (action: TeamAction): Transform[] => {
+/**
+ * Maps an action to state transforms.
+ *
+ * `linkHash` is recorded as the causal retirement frontier for member/server key changes.
+ */
+const getTransforms = (action: TeamAction, linkHash: Hash): Transform[] => {
   switch (action.type) {
     case ROOT: {
       const { name, rootMember, rootDevice } = action.payload
@@ -159,14 +176,14 @@ const getTransforms = (action: TeamAction): Transform[] => {
     case 'INVITE_MEMBER': {
       const { invitation } = action.payload
       return [
-        postInvitation(invitation), // Add the invitation to the list of open invitations.
+        postInvitation(invitation, 'member'), // Derive kind from the authenticated graph action.
       ]
     }
 
     case 'INVITE_DEVICE': {
       const { invitation } = action.payload
       return [
-        postInvitation(invitation), // Add the invitation to the list of open invitations.
+        postInvitation(invitation, 'device'), // Derive kind from the authenticated graph action.
       ]
     }
 
@@ -206,7 +223,7 @@ const getTransforms = (action: TeamAction): Transform[] => {
     case 'CHANGE_MEMBER_KEYS': {
       const { keys } = action.payload
       return [
-        changeMemberKeys(keys), // Replace this member's public keys with the ones provided
+        changeMemberKeys(keys, linkHash), // Replace this member's public keys with the ones provided
       ]
     }
 
@@ -234,7 +251,7 @@ const getTransforms = (action: TeamAction): Transform[] => {
     case 'CHANGE_SERVER_KEYS': {
       const { keys } = action.payload
       return [
-        changeServerKeys(keys), // Replace this server's public keys with the ones provided
+        changeServerKeys(keys, linkHash), // Replace this server's public keys with the ones provided
       ]
     }
 
@@ -254,14 +271,12 @@ const getTransforms = (action: TeamAction): Transform[] => {
 
     case 'ADD_LOCKBOXES': {
       // Note: lockboxes are handled by default so we don't need to do anything special here
-      return [(state) => state]
+      return [state => state]
     }
 
     case 'SET_METADATA': {
       const { metadata } = action.payload
-      return [
-        setMetadata(metadata)
-      ]
+      return [setMetadata(metadata)]
     }
 
     default: {

@@ -66,7 +66,9 @@ sigChain.invites.admitMemberFromInvite(
   prospectiveMember.inviteProof, 
   prospectiveMember.context.user.userName, 
   prospectiveMember.context.user.userId,
-  prospectiveMember.publicKeys
+  prospectiveMember.publicKeys,
+  SigChain.lfa.redactDevice(prospectiveMember.context.device),
+  prospectiveMember.acceptorNonce
 )
 
 const {

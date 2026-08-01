@@ -36,27 +36,36 @@ export const decryptLink = <A extends Action, C>(
 
   return {
     hash: hashEncryptedLink(encryptedBody),
+    senderPublicKey,
     body: decryptedLinkBody,
   }
 }
 
 /**
- * Decrypts a graph using a one or more keys.
+ * Decrypts every link reachable from `root` through `childMap` using one or more keysets.
+ *
+ * Traversal is iterative and visits each hash at most once. `maxTraversalSteps` defaults to 50,000;
+ * exceeding it throws instead of performing unbounded peer-controlled work.
  */
 export const decryptGraph: DecryptFn = <A extends Action, C>({
   encryptedGraph,
   keys,
+  maxTraversalSteps = 50_000,
 }: {
   encryptedGraph: MaybePartlyDecryptedGraph<A, C>
   keys: KeysetWithSecrets | KeysetWithSecrets[] | Keyring
+  maxTraversalSteps?: number
 }): Graph<A, C> => {
   const { encryptedLinks, root, childMap = {} } = encryptedGraph
-  const links = encryptedGraph.links ?? {}
   const toVisit = [root]
   const visited: Set<Hash> = new Set()
   const decryptedLinks: Record<Hash, Link<A, C>> = {}
+  let traversalSteps = 0
 
   while (toVisit.length > 0) {
+    if (++traversalSteps > maxTraversalSteps) {
+      throw new Error('Graph decryption exceeded its traversal limit')
+    }
     const current = toVisit.pop() as Hash
 
     if (visited.has(current)) {
@@ -64,9 +73,7 @@ export const decryptGraph: DecryptFn = <A extends Action, C>({
     }
 
     const encryptedLink = encryptedLinks[current]
-    const decryptedLink =
-      links[current] ?? // if it's already decrypted, don't bother decrypting it again
-      decryptLink(encryptedLink, keys)
+    const decryptedLink = decryptLink<A, C>(encryptedLink, keys)
 
     decryptedLinks[current] = decryptedLink
 
@@ -84,8 +91,14 @@ export const decryptGraph: DecryptFn = <A extends Action, C>({
 }
 
 export type DecryptFnParams<A extends Action, C> = {
+  /** Graph ciphertext and child topology to traverse. */
   encryptedGraph: MaybePartlyDecryptedGraph<A, C>
+
+  /** Keyset(s) capable of decrypting graph links. */
   keys: KeysetWithSecrets | KeysetWithSecrets[] | Keyring
+
+  /** Maximum traversal pops before aborting. Defaults to 50,000. */
+  maxTraversalSteps?: number
 }
 
 export type DecryptFn = <A extends Action, C>({

@@ -1,20 +1,32 @@
 import { type TeamState } from 'team/types.js'
 
+/** Returns the unique member for `userId`; optionally includes removed members and throws on ambiguity. */
 export const member = (state: TeamState, userId: string, options = { includeRemoved: false }) => {
   const membersToSearch = [
     ...state.members,
     ...(options.includeRemoved ? state.removedMembers : []),
   ]
-  const member = membersToSearch.find(m => m.userId === userId)
+  const matchingMembers = membersToSearch.filter(m => m.userId === userId)
 
-  if (member === undefined) {
+  if (matchingMembers.length === 0) {
     throw new Error(`A member named '${userId}' was not found`)
   }
+  if (matchingMembers.length > 1) {
+    throw new Error(`Member ID '${userId}' is ambiguous`)
+  }
 
-  return member
+  return matchingMembers[0]
 }
 
-export const members = (state: TeamState, userIds: string[], options = { includeRemoved: false, throwOnMissing: true }) => {
+/**
+ * Returns members matching the requested IDs. Removed members are opt-in; missing IDs throw unless
+ * `throwOnMissing` is false.
+ */
+export const members = (
+  state: TeamState,
+  userIds: string[],
+  options = { includeRemoved: false, throwOnMissing: true }
+) => {
   const membersToSearch = [
     ...state.members,
     ...(options.includeRemoved ? state.removedMembers : []),

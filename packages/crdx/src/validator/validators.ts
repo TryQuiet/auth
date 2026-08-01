@@ -1,9 +1,6 @@
-﻿import { memoize } from '@localfirst/shared'
-import { hash } from '@localfirst/crypto'
-import { ROOT, TIMESTAMP_FUZZ_FACTOR_MS, VALID } from 'constants.js'
+﻿import { ROOT, VALID } from 'constants.js'
 import { getRoot } from 'graph/getRoot.js'
 import { hashEncryptedLink } from 'graph/hashLink.js'
-import type { Graph, Link } from 'index.js'
 import { ValidationError, type ValidatorSet } from './types.js'
 
 const _validators: ValidatorSet = {
@@ -51,7 +48,12 @@ const _validators: ValidatorSet = {
         hasNoPrevLink
         ? `Non-ROOT links must have predecessors` // not ROOT but has no prev link
         : 'The link referenced by the graph `root` property must be a ROOT link' // not ROOT but is the graph root
-    return fail(message, { hash: link.hash, isTheGraphRoot, hasRootType, predececessorHashes: link.body.prev })
+    return fail(message, {
+      hash: link.hash,
+      isTheGraphRoot,
+      hasRootType,
+      predececessorHashes: link.body.prev,
+    })
   },
 
   // NOTE FROM ISLA: Commenting this out for now to make sure we don't have any unintended consequences but this
@@ -72,7 +74,7 @@ const _validators: ValidatorSet = {
 
   //   // timestamp can't be earlier than any previous link's timestamp
   //   // NOTE FROM ISLA: we are allowing a small bit of wiggle room for link timestamps to be ahead of
-  //   // their prececessor(s) to account for slight mismatches in system clocks across systems 
+  //   // their prececessor(s) to account for slight mismatches in system clocks across systems
   //   // (particularly QSS vs clients)
   //   for (const hash of link.body.prev) {
   //     const prevLink = graph.links[hash]
@@ -96,14 +98,8 @@ export const fail = (msg: string, args?: any) => {
   }
 }
 
-const memoizeFunctionMap = (source: ValidatorSet) => {
-  const result = {} as ValidatorSet
-  const memoizeResolver = (link: Link<any, any>, graph: Graph<any, any>) => {
-    return `${link.hash}:${graph.root}`
-  }
-
-  for (const key in source) result[key] = memoize(source[key], memoizeResolver)
-  return result
-}
-
-export const validators = memoizeFunctionMap(_validators)
+/**
+ * Built-in validators run against every supplied graph and link. They are intentionally not
+ * memoized so changed graph contents or topology cannot reuse stale validation results.
+ */
+export const validators = _validators

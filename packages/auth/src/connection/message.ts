@@ -1,9 +1,23 @@
+import { base58 } from '@localfirst/crypto'
 import type { Base58, Hash, Keyring, SyncMessage as SyncPayload } from '@localfirst/crdx'
 import type { Challenge, IdentityClaim } from 'connection/types.js'
+import type { InvitationKind } from 'invitation/index.js'
 import type { ErrorMessage, LocalErrorMessage } from './errors.js'
 
 export type ReadyMessage = {
   type: 'REQUEST_IDENTITY'
+  payload: {
+    acceptorNonce: Base58
+  }
+}
+
+/** Runtime validation for the first protocol message, which is received from untyped wire data. */
+export const isReadyMessage = (message: unknown): message is ReadyMessage => {
+  if (!isRecord(message) || message.type !== 'REQUEST_IDENTITY' || !isRecord(message.payload)) {
+    return false
+  }
+  const { acceptorNonce } = message.payload
+  return typeof acceptorNonce === 'string' && base58.detect(acceptorNonce)
 }
 
 export type DisconnectMessage = {
@@ -53,12 +67,29 @@ export type RejectIdentityMessage = {
   }
 }
 
+export type InvitationAcceptance = {
+  domain: 'localfirst-auth/invitation-acceptance'
+  version: 2
+  invitationId: Base58
+  invitationKind: InvitationKind
+  claimDigest: Base58
+  acceptorNonce: Base58
+  inviteeNonce: Base58
+  acceptorDeviceId: string
+  serializedGraph: Uint8Array
+  teamKeyring: Keyring
+}
+
+export type AcceptInvitationPayload = {
+  version: 2
+  senderDeviceId: string
+  senderPublicKey: Base58
+  encryptedAcceptance: Uint8Array
+}
+
 export type AcceptInvitationMessage = {
   type: 'ACCEPT_INVITATION'
-  payload: {
-    serializedGraph: Uint8Array
-    teamKeyring: Keyring
-  }
+  payload: AcceptInvitationPayload
 }
 // Synchronization
 
@@ -104,3 +135,6 @@ export type ConnectionMessage =
   | SeedMessage
   | SyncMessage
   | RequestResendMessage
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)

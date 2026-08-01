@@ -26,10 +26,26 @@ export const deserializeTeamGraph = (serialized: Uint8Array, keys: Keyring): Tea
   return decryptGraph({ encryptedGraph, keys })
 }
 
+/**
+ * Loads a serialized graph or authenticates an in-memory graph for public use. Serialized sources
+ * are decrypted normally; in-memory plaintext `links` are ignored and reconstructed from encrypted
+ * links before validation or reduction.
+ */
 export const maybeDeserialize = (
   source: Uint8Array | TeamGraph,
   teamKeyring: Keyring
-): TeamGraph => (isGraph(source) ? source : deserializeTeamGraph(source, teamKeyring))
+): TeamGraph => {
+  if (!isGraph(source)) {
+    return deserializeTeamGraph(source, teamKeyring)
+  }
+
+  // A supplied Graph may contain attacker-controlled plaintext `links`. Reconstruct every link
+  // from its authenticated ciphertext before exposing it to validation or reduction.
+  return decryptGraph({
+    encryptedGraph: { ...source, childMap: getChildMap(source) },
+    keys: teamKeyring,
+  })
+}
 
 const isGraph = (source: Uint8Array | TeamGraph): source is TeamGraph =>
   source?.hasOwnProperty('root')

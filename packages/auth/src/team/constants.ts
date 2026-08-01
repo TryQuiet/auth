@@ -18,6 +18,7 @@ export const initialState: TeamState = {
   removedDevices: [],
   removedServers: [],
   pendingKeyRotations: [],
+  retiredAuthorKeys: [],
   metadata: { selfAssignableRoles: [] },
 }
 

@@ -1,4 +1,6 @@
 import { ADMIN } from 'role/index.js'
+import * as teams from 'team/index.js'
+import { asymmetric } from '@localfirst/crypto'
 import {
   TestChannel,
   any,
@@ -15,7 +17,7 @@ import {
   updated,
 } from 'util/testing/index.js'
 import { pause } from '@localfirst/shared'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { type MemberContext } from '../types.js'
 
 describe('connection', () => {
@@ -83,6 +85,29 @@ describe('connection', () => {
 
         // ✅ 👩🏾 Bob is up to date with Alice's changes
         expect(bob.team.hasRole('managers')).toBe(true)
+      })
+
+      it('decrypts only the new graph link during an incremental sync', async () => {
+        const { alice, bob } = setup('alice', 'bob')
+        await connect(alice, bob)
+
+        const existingCiphertexts = Object.values(bob.team.graph.encryptedLinks).map(
+          link => link.encryptedBody
+        )
+        const decrypt = vi.spyOn(asymmetric, 'decryptBytes')
+
+        try {
+          alice.team.addRole('operators')
+          const newHead = alice.team.graph.head[0]
+          const newCiphertext = alice.team.graph.encryptedLinks[newHead].encryptedBody
+
+          await vi.waitFor(() => expect(bob.team.hasRole('operators')).toBe(true))
+
+          expect(ciphertextDecryptions(decrypt.mock.calls, existingCiphertexts)).toBe(0)
+          expect(ciphertextDecryptions(decrypt.mock.calls, [newCiphertext])).toBe(1)
+        } finally {
+          decrypt.mockRestore()
+        }
       })
 
       it('updates local user while connected', async () => {
@@ -501,6 +526,10 @@ describe('connection', () => {
 
       it('when a member is demoted and concurrently adds a device, the new device is kept', async () => {
         const { alice, bob } = setup('alice', 'bob')
+        alice.team.addRole('member')
+        alice.team.addMemberRole(bob.userId, 'member')
+        bob.team = teams.load(alice.team.save(), bob.localContext, alice.team.teamKeyring())
+        bob.connectionContext = { user: bob.user, device: bob.device, team: bob.team }
 
         // 👩🏾 Alice removes 👨🏻‍🦲 Bob from admin role
         alice.team.removeMemberRole(bob.userId, ADMIN)
@@ -759,6 +788,9 @@ describe('connection', () => {
     describe('post-compromise recovery', () => {
       it("Eve steals Bob's phone; Bob heals the team", async () => {
         const { alice, bob, charlie } = setup('alice', 'bob', 'charlie')
+        alice.team.addRole('member')
+        bob.team.addRole('member')
+        charlie.team.addRole('member')
         await connect(alice, bob)
         await connect(bob, charlie)
 
@@ -800,3 +832,13 @@ describe('connection', () => {
     })
   })
 })
+
+type DecryptCall = Parameters<typeof asymmetric.decryptBytes>
+
+const ciphertextDecryptions = (calls: DecryptCall[], ciphertexts: Uint8Array[]): number =>
+  calls.filter(([options]) =>
+    ciphertexts.some(ciphertext => bytesAreEqual(options.cipher, ciphertext))
+  ).length
+
+const bytesAreEqual = (left: Uint8Array, right: Uint8Array): boolean =>
+  left.length === right.length && left.every((byte, index) => byte === right[index])

@@ -1,6 +1,15 @@
+import { ADMIN } from 'role/index.js'
 import { type TeamAction, type TeamLinkBody } from './types.js'
 
+/**
+ * Returns whether an action requires an administrator. Assigning the administrator role is always
+ * admin-only even though other `ADD_MEMBER_ROLE` actions may be self-service.
+ */
 export const isAdminOnlyAction = (action: TeamLinkBody) => {
+  if (action.type === 'ADD_MEMBER_ROLE' && action.payload.roleName === ADMIN) {
+    return true
+  }
+
   return isAdminOnlyActionType(action.type)
 }
 

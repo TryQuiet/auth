@@ -5,7 +5,13 @@
 //import { KeyMap } from '../../../../../../packages/auth/dist/team/selectors/keyMap.js'
 import { BaseChainService } from '../baseService.js'
 import { ProspectiveUser, MemberSearchOptions, DEFAULT_SEARCH_OPTIONS } from './types.js'
-import { DeviceWithSecrets, LocalUserContext, Member, User, UserWithSecrets } from '@localfirst/auth'
+import {
+  DeviceWithSecrets,
+  LocalUserContext,
+  Member,
+  User,
+  UserWithSecrets,
+} from '@localfirst/auth'
 import { SigChain } from '../../chain.js'
 import { DeviceService } from './deviceService.js'
 import { InviteService } from '../invites/inviteService.js'
@@ -18,7 +24,7 @@ class UserService extends BaseChainService {
 
   /**
    * Generates a brand new QuietUser instance with an initial device from a given username
-   * 
+   *
    * @param name The username
    * @param id Optionally specify the user's ID (otherwise autogenerate)
    * @returns New QuietUser instance with an initial device
@@ -29,19 +35,36 @@ class UserService extends BaseChainService {
 
     return {
       user,
-      device
+      device,
     }
   }
 
+  /**
+   * Creates a prospective member and a version-2 invitation proof bound to that member's public
+   * identity, initial device, and fresh handshake nonces.
+   *
+   * @param name Username claimed by the prospective member.
+   * @param seed Invitation seed shared by an existing team member.
+   * @returns The local context, public keys, proof, and acceptor nonce needed to join the team.
+   */
   public static createFromInviteSeed(name: string, seed: string): ProspectiveUser {
     const context = this.create(name)
-    const inviteProof = InviteService.generateProof(seed)
     const publicKeys = UserService.redactUser(context.user).keys
+    const claim = {
+      invitationKind: 'member',
+      userName: context.user.userName,
+      userKeys: publicKeys,
+      device: SigChain.lfa.redactDevice(context.device),
+    } as const
+    const acceptorNonce = SigChain.lfa.invitation.randomSeed()
+    const inviteeNonce = SigChain.lfa.invitation.randomSeed()
+    const inviteProof = InviteService.generateProof(seed, claim, acceptorNonce, inviteeNonce)
 
     return {
       context,
       inviteProof,
-      publicKeys
+      publicKeys,
+      acceptorNonce,
     }
   }
 
@@ -53,7 +76,10 @@ class UserService extends BaseChainService {
     return this.sigChain.team.members()
   }
 
-  public getMembersById(memberIds: string[], options: MemberSearchOptions = DEFAULT_SEARCH_OPTIONS): Member[] {
+  public getMembersById(
+    memberIds: string[],
+    options: MemberSearchOptions = DEFAULT_SEARCH_OPTIONS
+  ): Member[] {
     if (memberIds.length === 0) {
       return []
     }
@@ -62,7 +88,7 @@ class UserService extends BaseChainService {
   }
 
   public getMemberByName(memberName: string): Member | undefined {
-    return this.getAllMembers().find((member) => member.userName === memberName)
+    return this.getAllMembers().find(member => member.userName === memberName)
   }
 
   public static redactUser(user: UserWithSecrets): User {
@@ -70,6 +96,4 @@ class UserService extends BaseChainService {
   }
 }
 
-export {
-  UserService
-}
+export { UserService }

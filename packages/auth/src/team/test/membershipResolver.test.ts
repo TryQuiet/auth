@@ -306,7 +306,10 @@ describe('membershipResolver', () => {
   }
 
   const summary = (graph: TeamGraph) => {
-    let result = graphSummary(graph).replaceAll('_MEMBER', '').replaceAll('_ROLE', '')
+    let result = graphSummary(graph)
+      .replace('ROOT,SET_METADATA:{"metadata":{"selfAssignableRoles":[]}}', 'ROOT')
+      .replaceAll('_MEMBER', '')
+      .replaceAll('_ROLE', '')
     for (const user of users) {
       result = result.replaceAll(user.userId, user.userName)
     }

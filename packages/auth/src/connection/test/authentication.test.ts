@@ -5,6 +5,7 @@ import * as teams from 'team/index.js'
 import {
   TestChannel,
   all,
+  asFirstUseDevice,
   anyDisconnected,
   anyUpdated,
   connect,
@@ -198,6 +199,7 @@ describe('connection', () => {
         charlie.connectionContext = {
           ...charlie.connectionContext,
           invitationSeed: charlieSeed,
+          expectedTeamId: alice.team.id,
         }
 
         // 👩🏾 Alice invites 👴 Dwight
@@ -205,6 +207,7 @@ describe('connection', () => {
         dwight.connectionContext = {
           ...dwight.connectionContext,
           invitationSeed: dwightSeed,
+          expectedTeamId: alice.team.id,
         }
 
         expect(await connect(charlie, dwight)).toEqual(false)
@@ -212,6 +215,8 @@ describe('connection', () => {
 
       it('lets a member use an invitation to add a device', async () => {
         const { alice, bob } = setup('alice', 'bob')
+        alice.team.addRole('member')
+        bob.team.addRole('member')
 
         await connect(alice, bob)
 
@@ -223,8 +228,9 @@ describe('connection', () => {
         // 💻<->📱📧 Bob's phone and laptop connect and the phone joins
         const phoneContext: InviteeDeviceContext = {
           userName: bob.userName,
-          device: bob.phone!,
-          invitationSeed: seed,
+          device: asFirstUseDevice(bob.phone!),
+          invitationSeed: `${seed.slice(0, 4)}+${seed.slice(4, 8)}-${seed.slice(8, 12)}_${seed.slice(12)}`,
+          expectedTeamId: bob.team.id,
         }
         const join = joinTestChannel(new TestChannel())
 
@@ -244,11 +250,13 @@ describe('connection', () => {
 
       it('lets a member invite a device, remove it, and then add it back', async () => {
         const { alice, bob } = setup('alice', 'bob')
+        alice.team.addRole('member')
+        bob.team.addRole('member')
         await connect(alice, bob)
 
         // Bob invites and admits his phone
 
-        const phone = bob.phone!
+        const phone = asFirstUseDevice(bob.phone!)
 
         {
           const { seed } = bob.team.inviteDevice()
@@ -256,6 +264,7 @@ describe('connection', () => {
             userName: bob.userName,
             device: phone,
             invitationSeed: seed,
+            expectedTeamId: bob.team.id,
           }
           const join = joinTestChannel(new TestChannel())
           const laptopConnection = join(bob.connectionContext).start()
@@ -284,6 +293,7 @@ describe('connection', () => {
             userName: bob.userName,
             device: phone,
             invitationSeed: seed,
+            expectedTeamId: bob.team.id,
           }
           const join = joinTestChannel(new TestChannel())
           const laptopConnection = join(bob.connectionContext).start()
@@ -299,6 +309,8 @@ describe('connection', () => {
 
       it('lets a different member admit an invited device', async () => {
         const { alice, bob } = setup('alice', 'bob')
+        alice.team.addRole('member')
+        bob.team.addRole('member')
 
         await connect(alice, bob)
 
@@ -310,8 +322,9 @@ describe('connection', () => {
         // 💻<->📱📧 Bob's phone and Alice's laptop connect and the phone joins
         const phoneContext: InviteeDeviceContext = {
           userName: bob.userName,
-          device: bob.phone!,
+          device: asFirstUseDevice(bob.phone!),
           invitationSeed: seed,
+          expectedTeamId: bob.team.id,
         }
         const join = joinTestChannel(new TestChannel())
         const aliceConnection = join(alice.connectionContext).start()
@@ -339,6 +352,7 @@ describe('connection', () => {
         bob.connectionContext = {
           ...bob.connectionContext,
           invitationSeed: 'password',
+          expectedTeamId: alice.team.id,
         }
 
         void connect(bob, alice)
@@ -357,6 +371,7 @@ describe('connection', () => {
         bob.connectionContext = {
           ...bob.connectionContext,
           invitationSeed: 'password',
+          expectedTeamId: alice.team.id,
         }
 
         {
@@ -369,6 +384,7 @@ describe('connection', () => {
         bob.connectionContext = {
           ...bob.connectionContext,
           invitationSeed: 'passw0rd',
+          expectedTeamId: alice.team.id,
         }
 
         {
