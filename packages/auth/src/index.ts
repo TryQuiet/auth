@@ -20,7 +20,7 @@ export type * from './team/context.js'
 export type * from './device/types.js'
 export type * from './invitation/types.js'
 export type * from './lockbox/types.js'
-export type * from './role/types.js'
+export * from './role/types.js'
 export type * from './server/types.js'
 export type * from './team/types.js'
 

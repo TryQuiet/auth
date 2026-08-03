@@ -9,7 +9,9 @@ import {
   type TeamState,
   type TeamStateValidator,
   type TeamStateValidatorSet,
+  type ValidationFuncResult,
 } from './types.js'
+import { Permission, type ModifiableMembershipPermissionConfig, type Role } from 'role/types.js'
 
 export const validate: TeamStateValidator = (previousState: TeamState, link: TeamLink, extendableLogger?: Logger) => {
   const logger = extendableLogger != null ? extendableLogger.extend('validate') : new Logger({ moduleName: 'auth:validate' })
@@ -25,16 +27,29 @@ export const validate: TeamStateValidator = (previousState: TeamState, link: Tea
   return VALID
 }
 
-export const canUserAddMemberToRole = (roleName: string, assigningUserId: string, previousState: TeamState): boolean => {
-    const metadata = select.getMetadata(previousState)
-    if (metadata.selfAssignableRoles.includes(roleName)) {
+export const canUserAddMemberToRole = (role: Role, assigningUserId: string, teamState: TeamState): boolean => {
+    const metadata = select.getMetadata(teamState)
+    if (metadata.selfAssignableRoles.includes(role.roleName)) {
       return true
     }
-    if (select.memberIsAdmin(previousState, assigningUserId)) {
+    if (select.memberIsAdmin(teamState, assigningUserId)) {
       return true
     }
     return false
   }
+
+export const canUserAddMemberToStaticRole = (role: Role, assigningUserId: string, teamState: TeamState): ValidationFuncResult => {
+  if (assigningUserId !== role.createdBy) {
+    return { valid: false, reason: `User ${assigningUserId} attempted to assign role ${role.roleName} but they are not the owner of this role` }
+  }
+  if (role.permissions == null) {
+    return { valid: false, reason: `User ${assigningUserId} attempted to assign role ${role.roleName} to member using ADD_MEMBER_STATIC_ROLE but the role has no permissions` }
+  }
+  if (role.permissions[Permission.MODIFIABLE_MEMBERSHIP] == null || role.permissions[Permission.MODIFIABLE_MEMBERSHIP] === true) {
+    return { valid: false, reason: `User ${assigningUserId} attempted to assign role ${role.roleName} to member using ADD_MEMBER_STATIC_ROLE but the role is not static` }
+  }
+  return { valid: true }
+}
 
 const validators: TeamStateValidatorSet = {
   rootDeviceBelongsToRootUser(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
@@ -129,8 +144,44 @@ const validators: TeamStateValidatorSet = {
     if (link.body.type === 'ADD_MEMBER_ROLE') {
       const { userId: assigningUserId } = link.body
       const { roleName } = link.body.payload
-      if (canUserAddMemberToRole(roleName, assigningUserId, previousState)) return VALID
+      const role = select.role(previousState, roleName)
+      if (canUserAddMemberToRole(role, assigningUserId, previousState)) return VALID
       return fail(`User ${assigningUserId} attempted to assign role ${roleName} illegally`, previousState, link, logger)
+    }
+    return VALID
+  },
+
+  /** Check that members not listed in the permissions map for a role aren't added */
+  cantModifyStaticRolesWithAddMemberRole(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('cantModifyStaticRolesWithAddMemberRole')
+    if (link.body.type === 'ADD_MEMBER_ROLE') {
+      const { userId: assigningUserId } = link.body
+      const { userId, roleName } = link.body.payload
+      const role = select.role(previousState, roleName)
+      if (role.permissions == null) {
+        return VALID
+      }
+      if (role.permissions[Permission.MODIFIABLE_MEMBERSHIP] == null || role.permissions[Permission.MODIFIABLE_MEMBERSHIP] === true) {
+        return VALID
+      }
+      return fail(`User ${assigningUserId} attempted to assign role ${roleName} to member ${userId} using ADD_MEMBER_ROLE but the role is static`, previousState, link, logger)
+    }
+    return VALID
+  },
+
+  /** Check that members not listed in the permissions map for a role aren't added */
+  cantAddNewMembersToStaticRole(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('cantAddNewMembersToStaticRole')
+    if (link.body.type === 'ADD_MEMBER_STATIC_ROLE') {
+      const { userId: assigningUserId } = link.body
+      const { userId: targetUserId, roleName } = link.body.payload
+      const role = select.role(previousState, roleName)
+      const { valid, reason } = canUserAddMemberToStaticRole(role, assigningUserId, previousState)
+      if (valid && role.permissions != null && (role.permissions[Permission.MODIFIABLE_MEMBERSHIP] as ModifiableMembershipPermissionConfig).memberIds.includes(targetUserId)) {
+        return VALID
+      }
+      const failureReason = reason ?? `User ${assigningUserId} attempted to assign role ${role.roleName} to member ${targetUserId} not specified in role's permissions`
+      return fail(failureReason, previousState, link, logger)
     }
     return VALID
   },

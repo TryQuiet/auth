@@ -15,6 +15,8 @@ export const isAdminOnlyActionType = (actionType: TeamAction['type']): boolean =
     'ADMIT_MEMBER',
     'ADMIT_DEVICE',
     'ADD_MEMBER_ROLE',
+    'ADD_STATIC_ROLE',
+    'ADD_MEMBER_STATIC_ROLE',
     'SET_METADATA',
   ]
 

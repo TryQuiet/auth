@@ -16,7 +16,7 @@ import type { Client, LocalContext } from 'team/context.js'
 import type { Device } from 'device/index.js'
 import type { Invitation, InvitationState } from 'invitation/types.js'
 import type { Lockbox } from 'lockbox/index.js'
-import type { PermissionsMap, Role } from 'role/index.js'
+import type { PermissionsMap, Role, Permission } from 'role/index.js'
 import type { Host, Server } from 'server/index.js'
 import type { ValidationResult } from 'util/index.js'
 import { Logger, SharedLogger } from '@localfirst/shared'
@@ -120,6 +120,11 @@ export type AddRoleAction = {
   payload: BasePayload & Role
 }
 
+export type AddStaticRoleAction = {
+  type: 'ADD_STATIC_ROLE'
+  payload: BasePayload & Role
+}
+
 export type RemoveRoleAction = {
   type: 'REMOVE_ROLE'
   payload: BasePayload & {
@@ -129,6 +134,15 @@ export type RemoveRoleAction = {
 
 export type AddMemberRoleAction = {
   type: 'ADD_MEMBER_ROLE'
+  payload: BasePayload & {
+    userId: string
+    roleName: string
+    permissions?: PermissionsMap
+  }
+}
+
+export type AddMemberStaticRoleAction = {
+  type: 'ADD_MEMBER_STATIC_ROLE'
   payload: BasePayload & {
     userId: string
     roleName: string
@@ -269,6 +283,8 @@ export type TeamAction =
   | RemoveDeviceAction
   | RemoveRoleAction
   | RemoveMemberRoleAction
+  | AddStaticRoleAction
+  | AddMemberStaticRoleAction
   | InviteMemberAction
   | InviteDeviceAction
   | RevokeInvitationAction
@@ -367,3 +383,5 @@ export type LookupIdentityResult =
 export type EncryptStreamTeamPayload = { recipient: KeyMetadata, encryptStream: AsyncGenerator<Uint8Array>, header: Uint8Array }
 
 export type TeamMetadata = { selfAssignableRoles: string[] }
+
+export type ValidationFuncResult = { valid: boolean, reason?: string }
