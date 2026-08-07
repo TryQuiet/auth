@@ -794,9 +794,10 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** Removes a server from the team. */
   public removeServer = (host: string) => {
+    const { lockboxes } = this.rotateKeys({ type: KeyType.SERVER, name: host })
     this.dispatch({
       type: 'REMOVE_SERVER',
-      payload: { host },
+      payload: { host, lockboxes },
     })
   }
 

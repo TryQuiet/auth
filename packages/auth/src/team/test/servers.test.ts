@@ -21,7 +21,6 @@ import {
   type MemberContext,
   type Team,
 } from 'index.js'
-import { blob } from 'stream/consumers'
 
 describe('Team', () => {
   describe('a server', () => {
@@ -32,6 +31,7 @@ describe('Team', () => {
       const { server } = createServer(host)
       alice.team.addServer(server)
       expect(alice.team.servers().length).toBe(1)
+      expect(alice.team.teamKeys().generation).toBe(0)
 
       // Look up server
       const serverFromTeam = alice.team.servers(host)
@@ -41,6 +41,7 @@ describe('Team', () => {
       alice.team.removeServer(host)
       expect(alice.team.servers().length).toBe(0)
       expect(alice.team.serverWasRemoved(host)).toBe(true)
+      expect(alice.team.teamKeys().generation).toBe(1)
     })
 
     it("throws if a named server doesn't exist on the team", () => {
