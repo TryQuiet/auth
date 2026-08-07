@@ -1,4 +1,4 @@
-import { debug, Logger, truncateHashes } from '@localfirst/shared'
+import { Logger, truncateHashes } from '@localfirst/shared'
 import { ROOT } from '@localfirst/crdx'
 import { invitationCanBeUsed } from 'invitation/index.js'
 import { VALID, ValidationError, actionFingerprint } from 'util/index.js'
@@ -28,6 +28,12 @@ export const validate: TeamStateValidator = (previousState: TeamState, link: Tea
 
 export const canUserAddMemberToRole = (roleName: string, assigningUserId: string, previousState: TeamState): boolean => {
     const metadata = select.getMetadata(previousState)
+    if (select.hasServer(previousState, assigningUserId)) {
+      return false
+    }
+    if (!select.hasMember(previousState, assigningUserId)) {
+      return false
+    }
     if (metadata.selfAssignableRoles.includes(roleName)) {
       return true
     }
@@ -122,11 +128,17 @@ const validators: TeamStateValidatorSet = {
     const authorIsAdmin = select.memberIsAdmin(previousState, author)
     if (!authorIsAdmin) {
       if (link.body.type === 'CHANGE_MEMBER_KEYS') {
+        if (select.hasServer(previousState, author)) {
+          return fail("Can't change member keys as a server", previousState, link, logger)
+        }
         const target = link.body.payload.keys.name
         if (author !== target) {
           return fail("Can't change another user's keys.", previousState, link, logger)
         }
       } else if (link.body.type === 'CHANGE_SERVER_KEYS') {
+        if (!select.hasServer(previousState, author)) {
+          return fail("Can't change server keys when not a server", previousState, link, logger)
+        }
         const target = link.body.payload.keys.name
         if (author !== target) {
           return fail("Can't change another server's keys.", previousState, link, logger)

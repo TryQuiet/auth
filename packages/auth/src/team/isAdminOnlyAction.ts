@@ -2,7 +2,6 @@ import { type TeamAction, type TeamLinkBody } from './types.js'
 
 // Anyone with team key can perform these actions
 const NON_MEMBER_NON_ADMIN_ACTIONS: Array<TeamAction['type']> = [
-  'ADD_MEMBER_ROLE',
   'ADMIT_MEMBER',
   'ADD_DEVICE',
   'ADD_MEMBER_ROLE',
