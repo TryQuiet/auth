@@ -327,7 +327,6 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
           const hasMemberMarker = team.memberHasRoleMarker(userId, MEMBER)
           const hasMemberRole = team.memberHasRole(userId, MEMBER)
-          this.logger.debug('has member role?', hasMemberMarker, hasMemberRole, roles)
           if (!hasMemberRole && (hasMemberMarker || roles.includes(MEMBER))) {
             this.logger.warn(`Peer had marker for ${MEMBER} but lacked the appropriate lockboxes, this may be malicious or we are missing syncable data`)
           } else if (!hasMemberRole && !roles.includes(MEMBER) && context.server == null && !team.hasServer(userId)) {
