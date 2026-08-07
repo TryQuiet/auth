@@ -33,7 +33,7 @@ import { castServer } from 'server/castServer.js'
 import { type Host, type Server } from 'server/types.js'
 import { type LocalUserContext } from 'team/context.js'
 import { KeyType, VALID, getScope, scopesMatch } from 'util/index.js'
-import { ADMIN_SCOPE, ALL, DEFAULT_ROTATE_KEYS_OPTIONS, TEAM_SCOPE, initialState } from './constants.js'
+import { ADMIN_SCOPE, ALL, TEAM_SCOPE, initialState } from './constants.js'
 import { membershipResolver as resolver } from './membershipResolver.js'
 import { redactUser } from './redactUser.js'
 import { reducer } from './reducer.js'
@@ -994,7 +994,7 @@ export class Team extends EventEmitter<TeamEvents> {
         name: this.userId,
       })
       this.dispatch({ type: 'ROTATE_KEYS', payload: { userId, lockboxes } })
-      
+
       // update the keys on the member records
       this.updateMemberKeysWithLockboxes(updatedUserKeys, lockboxes)
     }
