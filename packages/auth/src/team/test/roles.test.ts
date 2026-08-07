@@ -234,6 +234,14 @@ describe('Team', () => {
       expect(alice.team.admins().map(m => m.userName)).toEqual(['alice', 'bob'])
     })
 
+    it(`excludes member from members in a role when they don't have a lockbox for that role`, () => {
+      const { alice, bob } = setup('alice', { user: 'bob', admin: false, rolesWithoutLockboxes: [ADMIN] })
+
+      // 👩🏾 Alice is the only member
+      expect(alice.team.membersInRole(ADMIN).map(m => m.userName)).toEqual(['alice'])
+      expect(alice.team.admins().map(m => m.userName)).toEqual(['alice'])
+    })
+
     it('returns true for memberHasRole if user has role marker and lockbox', () => {
       const { alice } = setup('alice', { user: 'bob', admin: true })
 

@@ -107,6 +107,11 @@ describe('Team', () => {
       // Team keys & admin keys have now been rotated once
       expect(alice.team.teamKeys().generation).toBe(1)
       expect(alice.team.adminKeys().generation).toBe(1)
+
+      // Doesn't update user keys on bob's member record after rotation
+      const bobUser = alice.team.members(bob.userId)
+      expect(bobUser.keys.generation).toBe(0)
+      expect(bobUser.keysHistory).toHaveLength(1)
     })
 
     it("doesn't do anything if asked to remove a nonexistent member", () => {

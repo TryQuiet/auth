@@ -119,7 +119,7 @@ describe('Team', () => {
       const newKeys = createKeyset({ type: USER, name: 'bob' })
 
       // @ts-expect-error - rotateKeys is private
-      const lockboxes = eve.team.rotateKeys(newKeys)
+      const { lockboxes } = eve.team.rotateKeys(newKeys)
 
       const tryToChangeBobsKeys = () => {
         eve.team.dispatch({
