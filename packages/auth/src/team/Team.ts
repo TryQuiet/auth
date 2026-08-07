@@ -253,6 +253,10 @@ export class Team extends EventEmitter<TeamEvents> {
     return select.members(this.state, userIdOrIds, options) // Many members
   }
 
+  public hasMember(userId: string): boolean {
+    return select.hasMember(this.state, userId)
+  }
+
   /**
    * Adds a member to the team, along with an (optional) device. Since this method assumes that you
    * know the member's secret keys, it only makes sense for unit tests. In real-world scenarios,
@@ -292,6 +296,12 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** Remove a member from the team */
   public remove = (userId: string) => {
+    this.logger.debug('Removing user', userId)
+    if (!this.hasMember(userId)) {
+      this.logger.warn('Attempted to remove nonexistent member', userId)
+      return
+    }
+
     // Create new keys & lockboxes for any keys this person had access to
     const { lockboxes, updatedUserKeys } = this.rotateKeys({ type: USER, name: userId })
 
@@ -358,6 +368,8 @@ export class Team extends EventEmitter<TeamEvents> {
       }
     }
 
+    this.logger.debug('Adding role', role.roleName)
+
     // We're creating this role so we need to generate new keys
     const roleKeys = createKeyset({ type: KeyType.ROLE, name: role.roleName }, this.seed)
 
@@ -380,6 +392,7 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** Remove a role from the team */
   public removeRole = (roleName: string) => {
+    this.logger.debug('Removing role', roleName)
     this._isRoleRemovable(roleName, true)
 
     this.dispatch({
@@ -507,6 +520,7 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** Remove a member's device */
   public removeDevice = (deviceId: string) => {
+    this.logger.debug('Removing device', deviceId)
     if (!this.hasDevice(deviceId)) throw new Error(`Device ${deviceId} not found`)
 
     // Create new keys & lockboxes for any keys this device had access to
@@ -784,6 +798,7 @@ export class Team extends EventEmitter<TeamEvents> {
    * other.)
    */
   public addServer = (server: Server) => {
+    this.logger.debug('Adding server', server.host)
     const lockboxes = this.createMemberLockboxes(castServer.toMember(server))
 
     this.dispatch({
@@ -794,6 +809,7 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** Removes a server from the team. */
   public removeServer = (host: string) => {
+    this.logger.debug('Removing server', host)
     const { lockboxes } = this.rotateKeys({ type: KeyType.SERVER, name: host })
     this.dispatch({
       type: 'REMOVE_SERVER',
@@ -950,6 +966,7 @@ export class Team extends EventEmitter<TeamEvents> {
   public changeKeys = (newKeys: KeysetWithSecrets) => {
     const { device, user } = this.context
     const { type } = newKeys
+    this.logger.debug('Changing user or device keys', type)
 
     assert(type !== DEVICE, "Can't change device keys")
     const isForUser = type === USER
@@ -987,6 +1004,7 @@ export class Team extends EventEmitter<TeamEvents> {
   }
 
   private checkForPendingKeyRotations() {
+    this.logger.debug('Checking for pending key rotations')
     // Only admins can rotate keys
     if (!this.memberIsAdmin(this.userId)) {
       return
@@ -1026,7 +1044,7 @@ export class Team extends EventEmitter<TeamEvents> {
    * compromised scope. If it is just a scope, new keys will be randomly generated for that scope.
    */
   private readonly rotateKeys = (compromised: KeyScope | KeysetWithSecrets): RotatedLockboxesWithUpdatedUserKeys => {
-    this.logger.debug('rotating keys for scope', getScope(compromised))
+    this.logger.debug('Rotating keys for scope', getScope(compromised))
     const newKeyset = isKeyset(compromised)
       ? compromised // We're given a keyset - use it as the new keys
       : createKeyset(compromised) // We're just given a scope - generate new keys for it
@@ -1068,6 +1086,15 @@ export class Team extends EventEmitter<TeamEvents> {
     }
   }
 
+  /**
+   * After rotation user keys need to be updated, if necessary
+   * 
+   * NOTE: some cases (e.g. removing a user) produce new keys for a given user but we don't want to update their keys since they won't propagate
+   * 
+   * @param newUserKeys Set of USER keysets that were updated during rotation
+   * @param lockboxes Lockboxes generated during rotation
+   * @param skipUserIds User IDs that we shouldn't update
+   */
   private readonly updateMemberKeysWithLockboxes = (newUserKeys: Set<Keyset>, lockboxes: lockbox.Lockbox[], skipUserIds: string[] = []): void => {
     for (const keyset of newUserKeys) {
       if (skipUserIds.includes(keyset.name)) {

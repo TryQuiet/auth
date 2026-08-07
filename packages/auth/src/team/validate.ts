@@ -11,6 +11,7 @@ import {
   type TeamStateValidatorSet,
 } from './types.js'
 import { MEMBER } from '../role/constants.js'
+import { isActionAllowedWithoutLockboxes } from './lockboxesRequiredForAction.js'
 
 export const validate: TeamStateValidator = (previousState: TeamState, link: TeamLink, extendableLogger?: Logger) => {
   const logger = extendableLogger != null ? extendableLogger.extend('validate') : new Logger({ moduleName: 'auth:validate' })
@@ -167,6 +168,23 @@ const validators: TeamStateValidatorSet = {
       const { roleName } = link.body.payload
       if (canUserAddMemberToRole(roleName, assigningUserId, previousState)) return VALID
       return fail(`User ${assigningUserId} attempted to assign role ${roleName} illegally`, previousState, link, logger)
+    }
+    return VALID
+  },
+
+  /** Validate the presence of lockboxes on an action payload when required */
+  lockboxesArePresentWhenRequired(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('lockboxesArePresentWhenRequired')
+    const action = link.body
+    if (isActionAllowedWithoutLockboxes(action)) {
+      return VALID
+    }
+    const { lockboxes } = link.body.payload
+    if (lockboxes == null) {
+      return fail(`Action ${action.type} requires lockboxes but value on payload was nullish`, previousState, link, logger)
+    }
+    if (lockboxes.length === 0) {
+      return fail(`Action ${action.type} requires lockboxes but value on payload was empty`, previousState, link, logger)
     }
     return VALID
   },

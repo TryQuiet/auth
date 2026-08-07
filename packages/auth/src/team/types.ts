@@ -89,12 +89,12 @@ export const isNewTeam = (options: NewOrExisting): options is NewTeamOptions =>
 
 // ********* ACTIONS
 
-type BasePayload = {
+export type BasePayload = {
   // Every action might include new lockboxes
   lockboxes?: Lockbox[]
 }
 
-type BasePayloadLockboxesRequired = {
+export type BasePayloadLockboxesRequired = {
   // Some actions require lockboxes to be present
   lockboxes: Lockbox[]
 }

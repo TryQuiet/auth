@@ -89,9 +89,9 @@ describe('Team', () => {
     })
 
     it("Bob can't change Alice's keys", () => {
-      const { bob } = setup('alice', { user: 'bob', admin: false })
+      const { bob, alice } = setup('alice', { user: 'bob', admin: false })
 
-      const newKeys = createKeyset({ type: USER, name: 'alice' })
+      const newKeys = createKeyset({ type: USER, name: alice.userId })
       const tryToChangeAlicesKeys = () => {
         bob.team.changeKeys(newKeys)
       }
@@ -115,8 +115,8 @@ describe('Team', () => {
     it("Eve can't change Bob's keys", () => {
       // Eve is tricker than Bob -- rather than try to go through the team object, she's going to
       // try to tamper with the team chain directly.
-      const { eve } = setup('alice', 'bob', { user: 'eve', admin: false })
-      const newKeys = createKeyset({ type: USER, name: 'bob' })
+      const { eve, bob } = setup('alice', 'bob', { user: 'eve', admin: false })
+      const newKeys = createKeyset({ type: USER, name: bob.userId })
 
       // @ts-expect-error - rotateKeys is private
       const { lockboxes } = eve.team.rotateKeys(newKeys)
@@ -132,6 +132,65 @@ describe('Team', () => {
       }
 
       expect(tryToChangeBobsKeys).toThrow()
+    })
+
+    it("Alice can't change Bob's keys when no lockboxes are provided", () => {
+      // Alice, despite having permissions, tries to rotate Bob's keys without publishing rotated
+      // team/role keys by initiating a key change without lockboxes
+      const { alice, bob } = setup('alice', 'bob', { user: 'eve', admin: false })
+      const newKeys = createKeyset({ type: USER, name: bob.userId })
+
+      const tryToChangeBobsKeysWithoutLockboxesEmpty = () => {
+        alice.team.dispatch({
+          type: 'CHANGE_MEMBER_KEYS',
+          payload: {
+            keys: redactKeys(newKeys),
+            lockboxes: [],
+          },
+        })
+      }
+
+      const tryToChangeBobsKeysWithoutLockboxesNullish = () => {
+        alice.team.dispatch({
+          type: 'CHANGE_MEMBER_KEYS',
+          payload: {
+            keys: redactKeys(newKeys),
+            lockboxes: undefined,
+          } as any,
+        })
+      }
+
+      expect(tryToChangeBobsKeysWithoutLockboxesEmpty).toThrow()
+      expect(tryToChangeBobsKeysWithoutLockboxesNullish).toThrow()
+    })
+
+    it("Alice can't rotate Bob's keys when no lockboxes are provided", () => {
+      // Alice, despite having permissions, tries to rotate Bob's keys without publishing rotated
+      // team/role keys by initiating a key change without lockboxes
+      const { alice, bob } = setup('alice', 'bob', { user: 'eve', admin: false })
+
+      const tryToRotateBobsKeysWithoutLockboxesEmpty = () => {
+        alice.team.dispatch({
+          type: 'ROTATE_KEYS',
+          payload: {
+            userId: bob.userId,
+            lockboxes: [],
+          },
+        })
+      }
+
+      const tryToRotateBobsKeysWithoutLockboxesNullish = () => {
+        alice.team.dispatch({
+          type: 'ROTATE_KEYS',
+          payload: {
+            userId: bob.userId,
+            lockboxes: undefined,
+          } as any,
+        })
+      }
+
+      expect(tryToRotateBobsKeysWithoutLockboxesEmpty).toThrow()
+      expect(tryToRotateBobsKeysWithoutLockboxesNullish).toThrow()
     })
   })
 })

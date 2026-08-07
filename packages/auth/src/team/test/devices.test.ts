@@ -128,5 +128,80 @@ describe('Team', () => {
       expect(bobUser.keys.generation).toBe(1)
       expect(bobUser.keysHistory).toHaveLength(2)
     })
+
+    it('fails to add a device when no lockboxes provided', () => {
+      const { alice, bob } = setup()
+      expect(alice.team.members().length).toBe(2)
+
+      // generate bob's phone
+      const phone = redactDevice(bob.phone!)
+
+      // bob's phone doesn't exist yet
+      expect(bob.team.hasDevice(phone.deviceId)).toBe(false)
+
+      const tryToAddDeviceWithoutLockboxesEmpty = () => {
+        bob.team.dispatch({
+          type: 'ADD_DEVICE',
+          payload: {
+            device: phone,
+            lockboxes: [],
+          },
+        })
+      }
+
+      const tryToAddDeviceWithoutLockboxesNullish = () => {
+        alice.team.dispatch({
+          type: 'ADD_DEVICE',
+          payload: {
+            device: phone,
+            lockboxes: undefined,
+          } as any,
+        })
+      }
+
+      expect(tryToAddDeviceWithoutLockboxesEmpty).toThrow()
+      expect(tryToAddDeviceWithoutLockboxesNullish).toThrow()
+
+      // bob's phone still doesn't exist
+      expect(bob.team.hasDevice(phone.deviceId)).toBe(false)
+    })
+
+    it('fails to remove a device when no lockboxes provided', () => {
+      const { alice, bob } = setup()
+      expect(alice.team.members().length).toBe(2)
+
+      // Add bob's phone
+      const phone = redactDevice(bob.phone!)
+      bob.team.addForTesting(bob.user, [], [], phone)
+
+      // bob's phone exists
+      expect(bob.team.hasDevice(phone.deviceId)).toBe(true)
+
+      const tryToRemoveDeviceWithoutLockboxesEmpty = () => {
+        bob.team.dispatch({
+          type: 'REMOVE_DEVICE',
+          payload: {
+            deviceId: phone.deviceId,
+            lockboxes: [],
+          },
+        })
+      }
+
+      const tryToRemoveDeviceWithoutLockboxesNullish = () => {
+        alice.team.dispatch({
+          type: 'REMOVE_DEVICE',
+          payload: {
+            deviceId: phone.deviceId,
+            lockboxes: undefined,
+          } as any,
+        })
+      }
+
+      expect(tryToRemoveDeviceWithoutLockboxesEmpty).toThrow()
+      expect(tryToRemoveDeviceWithoutLockboxesNullish).toThrow()
+
+      // bob's phone still exists
+      expect(bob.team.hasDevice(phone.deviceId)).toBe(true)
+    })
   })
 })
