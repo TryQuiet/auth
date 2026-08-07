@@ -94,6 +94,11 @@ type BasePayload = {
   lockboxes?: Lockbox[]
 }
 
+type BasePayloadLockboxesRequired = {
+  // Some actions require lockboxes to be present
+  lockboxes: Lockbox[]
+}
+
 export type RootAction = {
   type: typeof ROOT
   payload: BasePayload & {
@@ -105,7 +110,7 @@ export type RootAction = {
 
 export type AddMemberAction = {
   type: 'ADD_MEMBER'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     member: Member
     roles?: string[]
   }
@@ -113,14 +118,14 @@ export type AddMemberAction = {
 
 export type RemoveMemberAction = {
   type: 'REMOVE_MEMBER'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     userId: string
   }
 }
 
 export type AddRoleAction = {
   type: 'ADD_ROLE'
-  payload: BasePayload & Role
+  payload: BasePayloadLockboxesRequired & Role
 }
 
 export type RemoveRoleAction = {
@@ -132,7 +137,7 @@ export type RemoveRoleAction = {
 
 export type AddMemberRoleAction = {
   type: 'ADD_MEMBER_ROLE'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     userId: string
     roleName: string
     permissions?: PermissionsMap
@@ -141,7 +146,7 @@ export type AddMemberRoleAction = {
 
 export type RemoveMemberRoleAction = {
   type: 'REMOVE_MEMBER_ROLE'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     userId: string
     roleName: string
   }
@@ -149,14 +154,14 @@ export type RemoveMemberRoleAction = {
 
 export type AddDeviceAction = {
   type: 'ADD_DEVICE'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     device: Device
   }
 }
 
 export type RemoveDeviceAction = {
   type: 'REMOVE_DEVICE'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     deviceId: string
   }
 }
@@ -201,35 +206,35 @@ export type AdmitDeviceAction = {
 
 export type ChangeMemberKeysAction = {
   type: 'CHANGE_MEMBER_KEYS'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     keys: Keyset
   }
 }
 
 export type RotateKeysAction = {
   type: 'ROTATE_KEYS'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     userId: string
   }
 }
 
 export type AddServerAction = {
   type: 'ADD_SERVER'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     server: Server
   }
 }
 
 export type RemoveServerAction = {
   type: 'REMOVE_SERVER'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     host: Host
   }
 }
 
 export type ChangeServerKeysAction = {
   type: 'CHANGE_SERVER_KEYS'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     keys: Keyset
   }
 }
@@ -250,9 +255,7 @@ export type SetTeamNameAction = {
 
 export type AddLockboxesAction = {
   type: 'ADD_LOCKBOXES'
-  payload: BasePayload & {
-    lockboxes: Lockbox[]
-  }
+  payload: BasePayloadLockboxesRequired
 }
 
 export type SetMetadataAction = {
