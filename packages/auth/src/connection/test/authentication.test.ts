@@ -31,6 +31,36 @@ describe('connection', () => {
         await disconnect(alice, bob)
       })
 
+      it('connects two members and assigns member role', async () => {
+        const { alice, bob } = setup('alice', { user: 'bob', admin: false, member: false, addToTeam: true })
+
+        // 👩🏾 👨🏻‍🦲 Alice and Bob both join the channel
+        await connect(alice, bob)
+
+        // 👩🏾 👨🏻‍🦲 Alice and Bob both leave the channel
+        await disconnect(alice, bob)
+
+        expect(alice.team.memberHasRole(bob.userId, MEMBER)).toBe(true)
+        expect(bob.team.memberHasRole(bob.userId, MEMBER)).toBe(true)
+      })
+
+      it(`connects two members and doesn't assign member role when marker exists but no lockboxes`, async () => {
+        const { alice, bob } = setup('alice', { user: 'bob', admin: false, member: false, rolesWithoutLockboxes: [MEMBER] })
+        expect(alice.team.memberHasRole(bob.userId, MEMBER)).toBe(false)
+        expect(bob.team.memberHasRole(bob.userId, MEMBER)).toBe(false)
+        expect(alice.team.memberHasRoleMarker(bob.userId, MEMBER)).toBe(true)
+        expect(bob.team.memberHasRoleMarker(bob.userId, MEMBER)).toBe(true)
+
+        // 👩🏾 👨🏻‍🦲 Alice and Bob both join the channel
+        await connect(alice, bob)
+
+        // 👩🏾 👨🏻‍🦲 Alice and Bob both leave the channel
+        await disconnect(alice, bob)
+
+        expect(alice.team.memberHasRole(bob.userId, MEMBER)).toBe(false)
+        expect(bob.team.memberHasRole(bob.userId, MEMBER)).toBe(false)
+      })
+
       it("doesn't connect with a member who has been removed", async () => {
         const { alice, bob } = setup('alice', 'bob')
 
