@@ -21,6 +21,7 @@ import {
   type MemberContext,
   type Team,
 } from 'index.js'
+import { blob } from 'stream/consumers'
 
 describe('Team', () => {
   describe('a server', () => {
@@ -164,7 +165,7 @@ describe('Team', () => {
     it('can admit an invitee', async () => {
       const { server, alice, bob } = setup('alice', {
         user: 'bob',
-        member: false,
+        addToTeam: false,
       })
       const { seed: bobInvite } = alice.team.inviteMember()
 
@@ -300,6 +301,32 @@ describe('Team', () => {
       // No keys have been rotated
       expect(serverTeam.teamKeys().generation).toBe(0)
       expect(serverTeam.servers(host2).keys.generation).toBe(0)
+    })
+
+    it(`non-admin user can't change server's keys`, async () => {
+      const { alice, bob } = setupHumans('alice', { user: 'bob', admin: false })
+      const { server } = createServer(host)
+      alice.team.addServer(server)
+
+      const host2 = 'foo.com'
+      const { server: server2 } = createServer(host2)
+      alice.team.addServer(server2)
+
+      const savedGraph = alice.team.save()
+      const aliceTeamKeys = alice.team.teamKeys()
+      const bobTeam = loadTeam(savedGraph, bob.localContext, aliceTeamKeys)
+
+      expect(bobTeam.teamKeys().generation).toBe(0)
+      expect(bobTeam.servers(host2).keys.generation).toBe(0)
+
+      // non-admin tries to change server keys
+      expect(() => {
+        bobTeam.changeKeys(createKeyset({ type: KeyType.SERVER, name: host2 }))
+      }).toThrow()
+
+      // No keys have been rotated
+      expect(bobTeam.teamKeys().generation).toBe(0)
+      expect(bobTeam.servers(host2).keys.generation).toBe(0)
     })
   })
 })

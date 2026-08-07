@@ -10,6 +10,7 @@ import {
 } from 'util/testing/Network.js'
 import { TEST_GRAPH_KEYS as keys } from 'util/testing/setup.js'
 import { describe, expect, it, vitest } from 'vitest'
+import { appendLink } from '../../util/testing/graph.js'
 
 const { setSystemTime } = vitest.useFakeTimers()
 
@@ -665,14 +666,15 @@ describe('sync', () => {
       // no changes yet; 👩🏾 Alice and 🦹‍♀️ Eve are synced up
       expectToBeSynced(alice, eve)
 
-      // 🦹‍♀️ Eve sets her system clock back when appending a link
-      eve.peer.graph = appendLinkInThePast(eve.peer.graph, eve.user)
+      // 🦹‍♀️ Eve adds an invalid link
+
+      eve.peer.graph = appendLink(eve.peer.graph, 'foo', eve.user.keys)
       const badHash = eve.peer.graph.head[0]
 
       eve.peer.sync()
 
       // Since Eve's graph is invalid, the sync fails
-      expect(() => network.deliverAll()).toThrow(`timestamp can't be earlier`)
+      expect(() => network.deliverAll()).toThrow(`Failed to decrypt their graph`)
 
       // They are not synced
       expectNotToBeSynced(alice, eve)
@@ -695,14 +697,14 @@ describe('sync', () => {
 
       const TRIES = 10
       for (let i = 0; i < TRIES; i++) {
-        // 🦹‍♀️ Eve sets her system clock back when appending a link
-        eve.peer.graph = appendLinkInThePast(originalGraph, eve.user)
+        // 🦹‍♀️ Eve adds an invalid link
+        eve.peer.graph = appendLink(originalGraph, 'foo', eve.user.keys)
         const badHash = eve.peer.graph.head[0]
 
         eve.peer.sync()
 
         // Since Eve's graph is invalid, the sync fails
-        expect(() => network.deliverAll()).toThrow("timestamp can't be earlier")
+        expect(() => network.deliverAll()).toThrow("Failed to decrypt their graph")
 
         // They are not synced
         expectNotToBeSynced(alice, eve)

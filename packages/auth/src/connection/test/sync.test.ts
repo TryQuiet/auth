@@ -276,7 +276,7 @@ describe('connection', () => {
       it('eventually updates disconnected members when someone uses an invitation to join', async () => {
         const { alice, bob, charlie } = setup('alice', 'bob', {
           user: 'charlie',
-          member: false,
+          addToTeam: false,
         })
 
         // 👩🏾📧👳🏽‍♂️ Alice invites Charlie
@@ -295,7 +295,7 @@ describe('connection', () => {
       it('updates connected members when someone uses an invitation to join', async () => {
         const { alice, bob, charlie } = setup('alice', 'bob', {
           user: 'charlie',
-          member: false,
+          addToTeam: false,
         })
 
         // 👩🏾<->👨🏻‍🦲 Alice and Bob connect
@@ -319,8 +319,8 @@ describe('connection', () => {
         const { alice, bob, charlie, dwight } = setup([
           'alice',
           'bob',
-          { user: 'charlie', member: false },
-          { user: 'dwight', member: false },
+          { user: 'charlie', addToTeam: false },
+          { user: 'dwight', addToTeam: false },
         ])
 
         // 👩🏾📧👳🏽‍♂️👴 Alice invites Charlie and Dwight
@@ -486,6 +486,8 @@ describe('connection', () => {
 
         // 👩🏾 Alice removes 👨🏻‍🦲 Bob from admin role
         alice.team.removeMemberRole(bob.userId, ADMIN)
+        expect(bob.team.memberHasRole(bob.userId, ADMIN)).toBe(true) // bob still sees himself as admin
+        expect(alice.team.memberHasRole(bob.userId, ADMIN)).toBe(false) // bob is not an admin on alice's team
 
         // 👨🏻‍🦲 concurrently, Bob makes 👳🏽‍♂️ Charlie an admin
         bob.team.addMemberRole(charlie.userId, ADMIN)
@@ -530,7 +532,7 @@ describe('connection', () => {
       it('when an invitation is discarded, also discard related admittance actions', async () => {
         const { alice, bob, charlie } = setup('alice', 'bob', {
           user: 'charlie',
-          member: false,
+          addToTeam: false,
         })
 
         // 👩🏾 Alice removes 👨🏻‍🦲 Bob from admin role
@@ -676,7 +678,7 @@ describe('connection', () => {
       })
 
       it('allows a new member to join after team keys have been rotated', async () => {
-        const { alice, bob, charlie } = setup(['alice', 'bob', { user: 'charlie', member: false }])
+        const { alice, bob, charlie } = setup(['alice', 'bob', { user: 'charlie', addToTeam: false }])
 
         await connect(alice, bob)
 
@@ -727,7 +729,7 @@ describe('connection', () => {
       it('unwinds an invalidated admission', async () => {
         const { alice, bob, charlie } = setup('alice', 'bob', {
           user: 'charlie',
-          member: false,
+          addToTeam: false,
         })
         expect(alice.team.adminKeys().generation).toBe(0)
 

@@ -5,7 +5,7 @@ import { ADMIN } from 'role/index.js'
 import { KeyType } from 'util/index.js'
 import { setup } from 'util/testing/index.js'
 
-const { bob, eve } = setup('alice', 'bob', { user: 'eve', member: false })
+const { bob, eve } = setup('alice', 'bob', { user: 'eve', addToTeam: false })
 const MANAGERS = 'managers'
 
 describe('lockbox', () => {

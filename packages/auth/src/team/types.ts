@@ -35,6 +35,9 @@ export type Member = {
   /** The member's public keys */
   keys: Keyset
 
+  /** Historical public keys */
+  keysHistory: Keyset[]
+
   /** Array of role names that the member belongs to */
   roles: string[]
 
@@ -367,3 +370,8 @@ export type LookupIdentityResult =
 export type EncryptStreamTeamPayload = { recipient: KeyMetadata, encryptStream: AsyncGenerator<Uint8Array>, header: Uint8Array }
 
 export type TeamMetadata = { selfAssignableRoles: string[] }
+
+export interface RotatedLockboxesWithUpdatedUserKeys {
+  lockboxes: Lockbox[]
+  updatedUserKeys: Set<Keyset>
+}

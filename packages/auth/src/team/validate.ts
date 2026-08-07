@@ -1,8 +1,8 @@
-import { debug, Logger, truncateHashes } from '@localfirst/shared'
+import { Logger, truncateHashes } from '@localfirst/shared'
 import { ROOT } from '@localfirst/crdx'
 import { invitationCanBeUsed } from 'invitation/index.js'
 import { VALID, ValidationError, actionFingerprint } from 'util/index.js'
-import { isAdminOnlyAction } from './isAdminOnlyAction.js'
+import { isActionAllowedWithMemberRole, isAdminOnlyAction } from './isAdminOnlyAction.js'
 import * as select from './selectors/index.js'
 import {
   type TeamLink,
@@ -10,6 +10,7 @@ import {
   type TeamStateValidator,
   type TeamStateValidatorSet,
 } from './types.js'
+import { MEMBER } from '../role/constants.js'
 
 export const validate: TeamStateValidator = (previousState: TeamState, link: TeamLink, extendableLogger?: Logger) => {
   const logger = extendableLogger != null ? extendableLogger.extend('validate') : new Logger({ moduleName: 'auth:validate' })
@@ -27,6 +28,12 @@ export const validate: TeamStateValidator = (previousState: TeamState, link: Tea
 
 export const canUserAddMemberToRole = (roleName: string, assigningUserId: string, previousState: TeamState): boolean => {
     const metadata = select.getMetadata(previousState)
+    if (select.hasServer(previousState, assigningUserId)) {
+      return false
+    }
+    if (!select.hasMember(previousState, assigningUserId)) {
+      return false
+    }
     if (metadata.selfAssignableRoles.includes(roleName)) {
       return true
     }
@@ -69,6 +76,29 @@ const validators: TeamStateValidatorSet = {
     return VALID
   },
 
+  /** The user who made these changes was a member with the MEMBER role at the time */
+  mustBeMember(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('mustBeMember')
+    const action = link.body
+    const { type, userId } = action
+
+    // At root link, team doesn't yet have members
+    if (type === ROOT) return VALID
+
+    if (select.memberIsAdmin(previousState, userId)) {
+      return VALID
+    }
+
+    // Certain actions are allowed to be performed by non-members
+    if (isActionAllowedWithMemberRole(action)) {
+      const isntMember = !select.memberHasRole(previousState, userId, MEMBER)
+      if (isntMember) {
+        return fail(`User '${userId}' is missing the MEMBER role`, previousState, link, logger)
+      }
+    }
+    return VALID
+  },
+
   /** Unless I'm an admin, I can't remove anyone's devices but my own */
   canOnlyRemoveYourOwnDevices(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
     const logger = extendableLogger.extend('canOnlyRemoveYourOwnDevices')
@@ -98,11 +128,17 @@ const validators: TeamStateValidatorSet = {
     const authorIsAdmin = select.memberIsAdmin(previousState, author)
     if (!authorIsAdmin) {
       if (link.body.type === 'CHANGE_MEMBER_KEYS') {
+        if (select.hasServer(previousState, author)) {
+          return fail("Can't change member keys as a server", previousState, link, logger)
+        }
         const target = link.body.payload.keys.name
         if (author !== target) {
           return fail("Can't change another user's keys.", previousState, link, logger)
         }
       } else if (link.body.type === 'CHANGE_SERVER_KEYS') {
+        if (!select.hasServer(previousState, author)) {
+          return fail("Can't change server keys when not a server", previousState, link, logger)
+        }
         const target = link.body.payload.keys.name
         if (author !== target) {
           return fail("Can't change another server's keys.", previousState, link, logger)

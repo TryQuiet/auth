@@ -28,6 +28,7 @@ export const invalidLinkReducer = (state: TeamState, link: TeamLink): TeamState 
         userName: '', // not needed here
         userId,
         keys,
+        keysHistory: [keys],
         roles: [],
       }
       const removedMembers = [...state.removedMembers, member]

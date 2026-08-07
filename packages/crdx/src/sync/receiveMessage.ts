@@ -2,7 +2,7 @@ import { assert, Logger } from '@localfirst/shared'
 import { decryptGraph, type DecryptFn } from 'graph/decrypt.js'
 import { getChildMap, invertLinkMap, merge, type Action, type Graph } from 'graph/index.js'
 import { createKeyring, type Keyring, type KeysetWithSecrets } from 'keyset/index.js'
-import { validate } from 'validator/index.js'
+import { validate, ValidationError } from 'validator/index.js'
 import { type SyncMessage, type SyncState } from './types.js'
 
 /**
@@ -66,21 +66,29 @@ export const receiveMessage = <A extends Action, C>(
       childMap,
     }
 
-    const theirGraph = decrypt({ encryptedGraph, keys: keyring })
-
-    // merge with our graph
-    const mergedGraph = merge(graph, theirGraph)
-
-    // check the integrity of the merged graph
-    const validation = validate(mergedGraph, undefined, logger)
-    if (validation.isValid) {
-      graph = mergedGraph
-    } else {
-      // We only get here if we've received bad links from them — maliciously, or not. The
-      // application should monitor `failedSyncCount` and decide not to trust them if it's too high.
+    let theirGraph: Graph<A, C> | undefined = undefined
+    try {
+      theirGraph = decrypt({ encryptedGraph, keys: keyring })
+    } catch (e) {
       state.failedSyncCount += 1
-      // Record the error so we can surface it in generateMessage
-      state.our.reportedError = validation.error
+      state.our.reportedError = new ValidationError('Failed to decrypt their graph')
+    }
+
+    if (theirGraph != null) {
+      // merge with our graph
+      const mergedGraph = merge(graph, theirGraph)
+
+      // check the integrity of the merged graph
+      const validation = validate(mergedGraph, undefined, logger)
+      if (validation.isValid) {
+        graph = mergedGraph
+      } else {
+        // We only get here if we've received bad links from them — maliciously, or not. The
+        // application should monitor `failedSyncCount` and decide not to trust them if it's too high.
+        state.failedSyncCount += 1
+        // Record the error so we can surface it in generateMessage
+        state.our.reportedError = validation.error
+      }
     }
 
     // either way, we can discard all pending links

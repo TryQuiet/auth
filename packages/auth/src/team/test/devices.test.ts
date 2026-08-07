@@ -114,7 +114,7 @@ describe('Team', () => {
 
       // Add bob's phone
       const phone = redactDevice(bob.phone!)
-      bob.team.addForTesting(bob.user, [], phone)
+      bob.team.addForTesting(bob.user, [], [], phone)
 
       // Remove bob's phone
       bob.team.removeDevice(phone.deviceId)
@@ -122,6 +122,11 @@ describe('Team', () => {
       // Team keys have now been rotated once
       expect(bob.team.teamKeys().generation).toBe(1)
       expect(bob.team.teamKeys().secretKey).not.toBe(secretKey)
+
+      // Updates user keys on member record after rotation
+      const bobUser = bob.team.members(bob.userId)
+      expect(bobUser.keys.generation).toBe(1)
+      expect(bobUser.keysHistory).toHaveLength(2)
     })
   })
 })

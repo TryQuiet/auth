@@ -79,13 +79,13 @@ describe('Team', () => {
       }
 
       expect(alice.team.adminKeys().generation).toBe(0)
-      expect(alice.team.state.lockboxes.length).toBe(3) // Team keys for alice, admin keys for alice, alice user keys for alice's laptop
+      expect(alice.team.state.lockboxes.length).toBe(5) // Team keys for alice, admin keys for alice, alice user keys for alice's laptop, admin keys for member role, alice keys for member role
 
       changeKeys()
       changeKeys()
       changeKeys()
       expect(alice.team.adminKeys().generation).toBe(3)
-      expect(alice.team.state.lockboxes.length).toBe(12) // The number of lockboxes shouldn't grow exponentially
+      expect(alice.team.state.lockboxes.length).toBe(20) // The number of lockboxes shouldn't grow exponentially
     })
 
     it("Bob can't change Alice's keys", () => {
@@ -119,7 +119,7 @@ describe('Team', () => {
       const newKeys = createKeyset({ type: USER, name: 'bob' })
 
       // @ts-expect-error - rotateKeys is private
-      const lockboxes = eve.team.rotateKeys(newKeys)
+      const { lockboxes } = eve.team.rotateKeys(newKeys)
 
       const tryToChangeBobsKeys = () => {
         eve.team.dispatch({

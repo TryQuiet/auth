@@ -1,7 +1,7 @@
 import { Connection } from 'connection/Connection.js'
 import { isServerContext, type Context } from 'connection/types.js'
 import { type TestChannel } from './TestChannel.js'
-import { pause } from '@localfirst/shared'
+import { pause, type SharedLogger } from '@localfirst/shared'
 
 /** Returns a function that can be used to join a specific test channel */
 export const joinTestChannel = (channel: TestChannel) => (context: Context) => {

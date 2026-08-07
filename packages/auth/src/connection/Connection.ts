@@ -59,6 +59,7 @@ import {
   isMemberContext,
   isServerContext,
 } from './types.js'
+import { MEMBER } from '../role/constants.js'
 
 /*
 
@@ -216,7 +217,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
                 !team.hasServer(context.user?.userId!)
               ) {
                 this.logger.debug(userId, context.user?.userId, context.userName)
-                team.addMemberRole(userId, 'member')
+                team.addMemberRole(userId, MEMBER)
               }
               return team.members(userId)
             } else {
@@ -324,8 +325,8 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           assert(roles)
           assert(userId)
 
-          if (!roles!.includes('member') && context.server == null && !team!.hasServer(userId!)) {
-            team!.addMemberRole(userId!, 'member')
+          if (!roles!.includes(MEMBER) && context.server == null && !team!.hasServer(userId!)) {
+            team!.addMemberRole(userId!, MEMBER)
           }
           this.#queueMessage('ACCEPT_IDENTITY')
         },
@@ -385,11 +386,9 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           )
 
           if (headsAreEqual(newChain.head, team.graph.head)) {
-            // console.log(`${context!.user!.userName}: Sync message received but heads were equal`)
             // nothing changed
             return { syncState }
           } else {
-            // console.log(`${context!.user!.userName}: Sync message received and merging`)
             this.emit('updated', newChain.head)
             return { team: team.merge(newChain), syncState }
           }
@@ -454,7 +453,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
             const decryptedMessage = symmetric.decryptBytes(encryptedMessage, sessionKey)
             this.emit('message', decryptedMessage)
           } catch (error) {
-            if (String(error).includes('wrong secret key')) {
+            if (String(error).includes('wrong secret key') || String(error).includes('Invalid tag')) {
               this.logger.error(
                 `failed to decrypt message using session key ${base58.encode(sessionKey)}`,
                 error
@@ -475,6 +474,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           assertEvent(event, 'ERROR')
           const error = event.payload
           this.logger.error('receiveError', error)
+          this.emit('remoteError', error)
           return { error }
         }),
 

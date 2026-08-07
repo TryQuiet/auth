@@ -10,6 +10,7 @@ export const changeMemberKeys =
         ? {
             ...member,
             keys, // 🡐 replace keys with new ones
+            keysHistory: !member.keysHistory.find(k => k.generation === keys.generation && k.encryption === keys.encryption) ? [keys, ...member.keysHistory] : member.keysHistory,
           }
         : member
     ),

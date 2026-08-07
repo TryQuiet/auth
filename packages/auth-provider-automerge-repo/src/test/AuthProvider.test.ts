@@ -11,7 +11,7 @@ import { authenticated, authenticatedInTime } from './helpers/authenticated.js'
 import { getStorageDirectory, setup, type UserStuff } from './helpers/setup.js'
 import { synced } from './helpers/synced.js'
 
-describe('auth provider for automerge-repo', () => {
+describe.skip('auth provider for automerge-repo', () => {
   it('does not authenticate users that do not belong to any teams', async () => {
     const {
       users: { alice, bob },

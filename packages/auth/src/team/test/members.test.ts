@@ -53,7 +53,7 @@ describe('Team', () => {
     })
 
     it("doesn't care if you add a member twice", () => {
-      const { alice, bob } = setup('alice', { user: 'bob', member: false })
+      const { alice, bob } = setup('alice', { user: 'bob', addToTeam: false })
 
       const addBob = () => {
         alice.team.addForTesting(bob.user)
@@ -70,7 +70,7 @@ describe('Team', () => {
     })
 
     it('removes a member', () => {
-      const { alice, bob, charlie } = setup('alice', 'bob', { user: 'charlie', member: false })
+      const { alice, bob, charlie } = setup('alice', 'bob', { user: 'charlie', addToTeam: false })
 
       expect(alice.team.has(bob.userId)).toBe(true)
       expect(alice.team.memberWasRemoved(bob.userId)).toBe(false)
@@ -107,6 +107,11 @@ describe('Team', () => {
       // Team keys & admin keys have now been rotated once
       expect(alice.team.teamKeys().generation).toBe(1)
       expect(alice.team.adminKeys().generation).toBe(1)
+
+      // Doesn't update user keys on bob's member record after rotation
+      const bobUser = alice.team.members(bob.userId)
+      expect(bobUser.keys.generation).toBe(0)
+      expect(bobUser.keysHistory).toHaveLength(1)
     })
 
     it("doesn't do anything if asked to remove a nonexistent member", () => {
@@ -136,8 +141,8 @@ describe('Team', () => {
     it('lists all members', () => {
       const { alice, bob, charlie } = setup([
         'alice',
-        { user: 'bob', member: false },
-        { user: 'charlie', member: false },
+        { user: 'bob', addToTeam: false },
+        { user: 'charlie', addToTeam: false },
       ])
 
       expect(alice.team.members()).toHaveLength(1)

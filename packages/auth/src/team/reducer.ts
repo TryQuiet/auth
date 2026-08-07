@@ -185,6 +185,7 @@ const getTransforms = (action: TeamAction): Transform[] => {
         userId,
         userName,
         keys: memberKeys,
+        keysHistory: [memberKeys],
         roles: [],
       }
 

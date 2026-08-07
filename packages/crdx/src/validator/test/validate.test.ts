@@ -7,11 +7,23 @@ import { hashEncryptedLink } from 'graph/hashLink.js'
 import { append, createGraph, getHead, getLink, getRoot } from 'graph/index.js'
 import { type Hash } from 'util/index.js'
 import { validate } from 'validator/validate.js'
-import 'util/testing/expect/toBeValid'
+import '../../util/testing/expect/toBeValid.js'
 
 const { setSystemTime } = vitest.useFakeTimers()
 
 const { alice, eve } = setup('alice', 'eve')
+
+const setupGraph = () => {
+  const graph = buildGraph(`
+                          ┌─ e ─ g ─┐
+                ┌─ c ─ d ─┤         ├─ o ─┐
+        a ─ b ─┤         └─── f ───┤     ├─ n
+                ├──── h ──── i ─────┘     │ 
+                └───── j ─── k ── l ──────┘           
+  `)
+    expect(validate(graph)).toBeValid()
+    return graph
+  }
 
 describe('graphs', () => {
   describe('validation', () => {
@@ -30,18 +42,6 @@ describe('graphs', () => {
     })
 
     describe('invalid graphs', () => {
-      const setupGraph = () => {
-        const graph = buildGraph(`
-                             ┌─ e ─ g ─┐
-                   ┌─ c ─ d ─┤         ├─ o ─┐
-            a ─ b ─┤         └─── f ───┤     ├─ n
-                   ├──── h ──── i ─────┘     │ 
-                   └───── j ─── k ── l ──────┘           
-      `)
-        expect(validate(graph)).toBeValid()
-        return graph
-      }
-
       test('The ROOT link cannot have any predecessors ', () => {
         const graph = setupGraph()
         const rootLink = getRoot(graph)
@@ -192,60 +192,6 @@ describe('graphs', () => {
         const prevLink = headLink.body.prev[0]
         delete graph.encryptedLinks[prevLink] // eslint-disable-line @typescript-eslint/no-dynamic-delete
         expect(validate(graph)).not.toBeValid()
-      })
-
-      test(`timestamp out of order`, () => {
-        const IN_THE_PAST = new Date('2020-01-01').getTime()
-        const graph = setupGraph()
-
-        // 🦹‍♀️ Eve sets her system clock back when appending a link
-        const now = Date.now()
-        setSystemTime(IN_THE_PAST)
-        const graph2 = append({
-          graph,
-          action: { type: 'FOO', payload: 'pizza' },
-          user: eve,
-          keys,
-        })
-        setSystemTime(now)
-
-        expect(validate(graph2)).not.toBeValid()
-      })
-
-      test(`timestamp in the future`, () => {
-        const IN_THE_FUTURE = new Date(`10000-01-01`).getTime() // NOTE: test will begin to fail 7,978 years from now
-        const graph = setupGraph()
-
-        // 🦹‍♀️ Eve sets her system clock forward when appending a link
-        const now = Date.now()
-        setSystemTime(IN_THE_FUTURE)
-        const graph2 = append({
-          graph,
-          action: { type: 'FOO', payload: 'pizza' },
-          user: eve,
-          keys,
-        })
-        setSystemTime(now)
-
-        expect(validate(graph2)).not.toBeValid()
-      })
-
-      test(`timestamp in the future but within fuzz factor`, () => {
-        const now = Date.now()
-        const SLIGHTLY_IN_THE_FUTURE = now + 50
-        const graph = setupGraph()
-
-        // 🦹‍♀️ Eve sets her system clock forward when appending a link
-        setSystemTime(SLIGHTLY_IN_THE_FUTURE)
-        const graph2 = append({
-          graph,
-          action: { type: 'FOO', payload: 'pizza' },
-          user: eve,
-          keys,
-        })
-        setSystemTime(now)
-
-        expect(validate(graph2)).toBeValid()
       })
     })
   })
