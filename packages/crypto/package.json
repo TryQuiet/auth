@@ -26,7 +26,7 @@
     "@localfirst/shared": "workspace:*",
     "@types/lodash-es": "^4.17.12",
     "bs58": "^5.0.0",
-    "libsodium-wrappers-sumo": "^0.7.13",
+    "libsodium-wrappers-sumo": "0.7.16",
     "lodash-es": "^4.17.21",
     "msgpackr": "1.10.2"
   },

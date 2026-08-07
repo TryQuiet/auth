@@ -27,7 +27,7 @@ importers:
         specifier: ^4.17.21
         version: 4.17.21
       '@types/libsodium-wrappers-sumo':
-        specifier: ^0.7.8
+        specifier: 0.7.8
         version: 0.7.8
       '@types/lodash-es':
         specifier: ^4.17.12
@@ -596,8 +596,8 @@ importers:
         specifier: ^5.0.0
         version: 5.0.0
       libsodium-wrappers-sumo:
-        specifier: ^0.7.13
-        version: 0.7.13
+        specifier: 0.7.16
+        version: 0.7.16
       lodash-es:
         specifier: ^4.17.21
         version: 4.17.21
@@ -6423,11 +6423,11 @@ packages:
   libp2p@1.8.1:
     resolution: {integrity: sha512-c+y3dlTtFo2HtuEQKLVpZ7b+NyYBDITwv7ynVH0dBkCAvStOHEsGeq4jW9pPw99cgmhH9c5sDAYBv9Hs5ufHZw==}
 
-  libsodium-sumo@0.7.13:
-    resolution: {integrity: sha512-zTGdLu4b9zSNLfovImpBCbdAA4xkpkZbMnSQjP8HShyOutnGjRHmSOKlsylh1okao6QhLiz7nG98EGn+04cZjQ==}
+  libsodium-sumo@0.7.16:
+    resolution: {integrity: sha512-x6atrz2AdXCJg6G709x9W9TTJRI6/0NcL5dD0l5GGVqNE48UJmDsjO4RUWYTeyXXUpg+NXZ2SHECaZnFRYzwGA==}
 
-  libsodium-wrappers-sumo@0.7.13:
-    resolution: {integrity: sha512-lz4YdplzDRh6AhnLGF2Dj2IUj94xRN6Bh8T0HLNwzYGwPehQJX6c7iYVrFUPZ3QqxE0bqC+K0IIqqZJYWumwSQ==}
+  libsodium-wrappers-sumo@0.7.16:
+    resolution: {integrity: sha512-gR0JEFPeN3831lB9+ogooQk0KH4K5LSMIO5Prd5Q5XYR2wHFtZfPg0eP7t1oJIWq+UIzlU4WVeBxZ97mt28tXw==}
 
   lighthouse-logger@1.4.2:
     resolution: {integrity: sha512-gPWxznF6TKmUHrOQjlVo2UbaL2EJ71mb2CCeRs/2qBpi4L/g4LUVc9+3lKQ6DTUZwJswfM7ainGrLO1+fOqa2g==}
@@ -17124,11 +17124,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  libsodium-sumo@0.7.13: {}
+  libsodium-sumo@0.7.16: {}
 
-  libsodium-wrappers-sumo@0.7.13:
+  libsodium-wrappers-sumo@0.7.16:
     dependencies:
-      libsodium-sumo: 0.7.13
+      libsodium-sumo: 0.7.16
 
   lighthouse-logger@1.4.2:
     dependencies:
