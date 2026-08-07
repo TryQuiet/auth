@@ -11,9 +11,11 @@ export const createUser = (
   userId: string = createId(),
   seed: string = randomKey()
 ): UserWithSecrets => {
+  const keys = createKeyset({ type: KeyType.USER, name: userId }, seed)
   return {
     userName,
     userId,
-    keys: createKeyset({ type: KeyType.USER, name: userId }, seed),
+    keys,
+    keysHistory: [keys],
   }
 }

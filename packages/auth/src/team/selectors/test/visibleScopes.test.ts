@@ -1,5 +1,5 @@
 import { createKeyset } from '@localfirst/crdx'
-import { ADMIN } from 'role/index.js'
+import { ADMIN, MEMBER } from 'role/index.js'
 import { KeyType } from 'util/index.js'
 import { setup } from 'util/testing/index.js'
 import { describe, expect, it } from 'vitest'
@@ -8,7 +8,7 @@ import * as select from '../index.js'
 const { USER, TEAM, ROLE } = KeyType
 
 describe('visibleScopes', () => {
-  it("alice's device can see user, admin and team keys", () => {
+  it("alice's device can see user, admin, member and team keys", () => {
     const { alice } = setup('alice')
 
     const { type, name } = alice.device.keys
@@ -17,10 +17,11 @@ describe('visibleScopes', () => {
       { type: USER, name: alice.userId },
       { type: TEAM, name: TEAM },
       { type: ROLE, name: ADMIN },
+      { type: ROLE, name: MEMBER },
     ])
   })
 
-  it('alice can see admin and team keys', () => {
+  it('alice can see admin, member and team keys', () => {
     const { alice } = setup('alice')
     const aliceScopes = select.visibleScopes(alice.team.state, {
       type: USER,
@@ -29,11 +30,12 @@ describe('visibleScopes', () => {
     expect(aliceScopes).toEqual([
       { type: TEAM, name: TEAM },
       { type: ROLE, name: ADMIN },
+      { type: ROLE, name: MEMBER },
     ])
   })
 
   it('bob can only see team keys', () => {
-    const { bob } = setup('alice', { user: 'bob', admin: false })
+    const { bob } = setup('alice', { user: 'bob', admin: false, member: false, addToTeam: true })
     const bobScopes = select.visibleScopes(bob.team.state, {
       type: USER,
       name: bob.userId,
@@ -48,7 +50,7 @@ describe('visibleScopes', () => {
       type: ROLE,
       name: ADMIN,
     })
-    expect(adminScopes).toEqual([{ type: ROLE, name: 'MANAGERS' }])
+    expect(adminScopes).toEqual([{type: ROLE, name: MEMBER}, { type: ROLE, name: 'MANAGERS' }])
   })
 
   it('after rotating keys, can still see the same scopes', () => {
@@ -66,13 +68,14 @@ describe('visibleScopes', () => {
     expect(getUserScopes()).toEqual([
       { type: TEAM, name: TEAM },
       { type: ROLE, name: ADMIN },
+      { type: ROLE, name: MEMBER },
     ])
 
     // Rotating the keys creates new lockboxes, but we don't see duplicate scopes
     changeUserKeys()
-    expect(getUserScopes().length).toBe(2)
+    expect(getUserScopes().length).toBe(3)
 
     changeUserKeys()
-    expect(getUserScopes().length).toBe(2)
+    expect(getUserScopes().length).toBe(3)
   })
 })

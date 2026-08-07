@@ -35,6 +35,9 @@ export type Member = {
   /** The member's public keys */
   keys: Keyset
 
+  /** Historical public keys */
+  keysHistory: Keyset[]
+
   /** Array of role names that the member belongs to */
   roles: string[]
 

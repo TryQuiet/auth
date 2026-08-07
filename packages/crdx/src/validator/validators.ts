@@ -36,10 +36,10 @@ const _validators: ValidatorSet = {
 
   /** If this is a root link, it should not have any predecessors, and should be the graph's root */
   validateRoot(link, graph) {
+    const root = getRoot(graph)
     const hasNoPrevLink = link.body.prev.length === 0
     const hasRootType = 'type' in link.body && link.body.type === ROOT
-    const isTheGraphRoot = getRoot(graph) === link
-    // all should be true, or all should be false
+    const isTheGraphRoot = root === link
     if (hasNoPrevLink === isTheGraphRoot && isTheGraphRoot === hasRootType) return VALID
 
     const message = hasRootType
@@ -99,7 +99,7 @@ export const fail = (msg: string, args?: any) => {
 const memoizeFunctionMap = (source: ValidatorSet) => {
   const result = {} as ValidatorSet
   const memoizeResolver = (link: Link<any, any>, graph: Graph<any, any>) => {
-    return `${link.hash}:${graph.root}`
+    return `${link.hash}:${graph.root}:${hashEncryptedLink(link.body)}`
   }
 
   for (const key in source) result[key] = memoize(source[key], memoizeResolver)

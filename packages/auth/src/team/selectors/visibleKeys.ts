@@ -1,6 +1,7 @@
 import { type KeysetWithSecrets } from '@localfirst/crdx'
 import { open } from 'lockbox/index.js'
 import { type TeamState } from 'team/types.js'
+import { unique } from '../../util/unique.js'
 
 /**
  * Returns all keys that can be accessed directly or indirectly (via lockboxes) by the given keyset
@@ -20,5 +21,5 @@ export const visibleKeys = (state: TeamState, keyset: KeysetWithSecrets): Keyset
   // Recursively get all the keys *those* keys can access
   const keys = keysets.flatMap(keyset => visibleKeys(state, keyset))
 
-  return [...keysets, ...keys]
+  return unique([...keysets, ...keys], s => s.name + s.type + s.generation)
 }

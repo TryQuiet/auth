@@ -114,7 +114,7 @@ describe('Team', () => {
 
       // Add bob's phone
       const phone = redactDevice(bob.phone!)
-      bob.team.addForTesting(bob.user, [], phone)
+      bob.team.addForTesting(bob.user, [], [], phone)
 
       // Remove bob's phone
       bob.team.removeDevice(phone.deviceId)

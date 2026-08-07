@@ -1,6 +1,6 @@
 import { eventPromise, pause } from '@localfirst/shared'
 import { cloneDeep } from 'lodash-es'
-import { ADMIN } from 'role/index.js'
+import { ADMIN, MEMBER } from 'role/index.js'
 import * as teams from 'team/index.js'
 import {
   TestChannel,
@@ -34,6 +34,8 @@ describe('connection', () => {
       it("doesn't connect with a member who has been removed", async () => {
         const { alice, bob } = setup('alice', 'bob')
 
+        expect(alice.team.memberIsAdmin(alice.userId)).toBe(true)
+
         // 👩🏾 Alice removes Bob
         alice.team.remove(bob.userId)
 
@@ -45,7 +47,7 @@ describe('connection', () => {
       it("doesn't connect with someone who doesn't belong to the team", async () => {
         const { alice, charlie } = setup('alice', 'bob', {
           user: 'charlie',
-          member: false,
+          addToTeam: false,
         })
 
         charlie.connectionContext = {
@@ -110,7 +112,7 @@ describe('connection', () => {
 
     describe('with invitations', () => {
       it('connects an invitee with a member', async () => {
-        const { alice, bob } = setup('alice', { user: 'bob', member: false })
+        const { alice, bob } = setup('alice', { user: 'bob', addToTeam: false })
 
         // 👩🏾📧👨🏻‍🦲 Alice invites Bob
         const { seed } = alice.team.inviteMember()
@@ -125,8 +127,8 @@ describe('connection', () => {
       it('alice invites bob then bob invites charlie', async () => {
         const { alice, bob, charlie } = setup(
           'alice',
-          { user: 'bob', member: false },
-          { user: 'charlie', member: false }
+          { user: 'bob', addToTeam: false },
+          { user: 'charlie', addToTeam: false }
         )
 
         // 👩🏾📧👨🏻‍🦲 Alice invites Bob
@@ -151,7 +153,7 @@ describe('connection', () => {
       })
 
       it('after being admitted, invitee has team keys', async () => {
-        const { alice, bob } = setup('alice', { user: 'bob', member: false })
+        const { alice, bob } = setup('alice', { user: 'bob', addToTeam: false })
 
         // 👩🏾📧👨🏻‍🦲 Alice invites Bob
         const { seed } = alice.team.inviteMember()
@@ -168,7 +170,7 @@ describe('connection', () => {
       })
 
       it('after an invitee is admitted, the device recorded on the team includes user-agent metadata', async () => {
-        const { alice, bob } = setup('alice', { user: 'bob', member: false })
+        const { alice, bob } = setup('alice', { user: 'bob', addToTeam: false })
 
         // 👩🏾📧👨🏻‍🦲 Alice invites Bob
         const { seed } = alice.team.inviteMember()
@@ -189,8 +191,8 @@ describe('connection', () => {
       it("doesn't allow two invitees to connect", async () => {
         const { alice, charlie, dwight } = setup([
           'alice',
-          { user: 'charlie', member: false },
-          { user: 'dwight', member: false },
+          { user: 'charlie', addToTeam: false },
+          { user: 'dwight', addToTeam: false },
         ])
 
         // 👩🏾 Alice invites 👳🏽‍♂️ Charlie
@@ -218,6 +220,7 @@ describe('connection', () => {
         expect(bob.team.members(bob.userId).devices).toHaveLength(1)
 
         // 👨🏻‍🦲💻📧->📱 on his laptop, Bob creates an invitation and gets it to his phone
+        expect(bob.team.memberHasRole(bob.userId, MEMBER)).toBe(true)
         const { seed } = bob.team.inviteDevice()
 
         // 💻<->📱📧 Bob's phone and laptop connect and the phone joins
@@ -244,7 +247,7 @@ describe('connection', () => {
 
       it('admits a first-use device before continuing authentication', async () => {
         const { bob } = setup('bob')
-        bob.team.addRole('member')
+        bob.team.addRole(MEMBER)
         const { userId: _userId, ...phone } = bob.phone!
         const { seed } = bob.team.inviteDevice()
         const phoneContext: InviteeDeviceContext = {
@@ -272,7 +275,8 @@ describe('connection', () => {
 
         const phone = bob.phone!
 
-        {
+        const inviteDeviceFirstTime = async () => {
+          expect(bob.team.memberHasRole(bob.userId, MEMBER)).toBe(true)
           const { seed } = bob.team.inviteDevice()
           const phoneContext: InviteeDeviceContext = {
             userName: bob.userName,
@@ -293,14 +297,15 @@ describe('connection', () => {
           laptopConnection.stop()
           bob.team.removeDevice(phone.deviceId)
           await anyUpdated(alice, bob)
-          await pause(50)
+          await pause(500)
 
           expect(bob.team.members(bob.userId).devices).toHaveLength(1)
           expect(alice.team.members(bob.userId).devices).toHaveLength(1)
         }
-        {
-          // Bob invites his phone again
 
+        const inviteDeviceSecondTime = async () => {
+          // Bob invites his phone again
+          expect(bob.team.memberHasRole(bob.userId, MEMBER)).toBe(true)
           const { seed } = bob.team.inviteDevice()
           const phoneContext: InviteeDeviceContext = {
             userName: bob.userName,
@@ -317,6 +322,9 @@ describe('connection', () => {
           expect(bob.team.members(bob.userId).devices).toHaveLength(2)
           expect(alice.team.members(bob.userId).devices).toHaveLength(2)
         }
+
+        await inviteDeviceFirstTime()
+        await inviteDeviceSecondTime()
       })
 
       it('lets a different member admit an invited device', async () => {
@@ -351,7 +359,7 @@ describe('connection', () => {
       })
 
       it('fails to connect when the wrong invitation code is entered', async () => {
-        const { alice, bob } = setup('alice', { user: 'bob', member: false })
+        const { alice, bob } = setup('alice', { user: 'bob', addToTeam: false })
 
         // 👩🏾📧👨🏻‍🦲 Alice invites Bob
         const seed = 'passw0rd'
@@ -369,7 +377,7 @@ describe('connection', () => {
       })
 
       it('connects an invitee after one failed attempt', async () => {
-        const { alice, bob } = setup('alice', { user: 'bob', member: false })
+        const { alice, bob } = setup('alice', { user: 'bob', addToTeam: false })
 
         // 👩🏾📧👨🏻‍🦲 Alice invites Bob
         const seed = 'passw0rd'

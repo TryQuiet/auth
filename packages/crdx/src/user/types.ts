@@ -10,6 +10,9 @@ export type User = {
 
   /** The user's public keys. */
   keys: Keyset
+
+  /** Historical public keys */
+  keysHistory: Keyset[]
 }
 
 /** The local user and their full set of keys, including secrets.   */
@@ -19,4 +22,7 @@ export type UserWithSecrets = {
 
   /** The user's secret keys. */
   keys: KeysetWithSecrets
+
+  /** Historical secret keys */
+  keysHistory: KeysetWithSecrets[]
 }

@@ -1,4 +1,4 @@
-import { AddRoleInput, ADMIN } from 'role/index.js'
+import { AddRoleInput, ADMIN, MEMBER } from 'role/index.js'
 import * as teams from 'team/index.js'
 import { setup } from 'util/testing/index.js'
 import 'util/testing/expect/toLookLikeKeyset.js'
@@ -34,20 +34,20 @@ describe('Team', () => {
       const { alice, bob } = setup('alice', 'bob')
 
       // We only have default roles to start out
-      expect(alice.team.roles().map(r => r.roleName)).toEqual([ADMIN])
+      expect(alice.team.roles().map(r => r.roleName)).toEqual([ADMIN, MEMBER])
       expect(alice.team.hasRole(ADMIN)).toBe(true)
       expect(alice.team.hasRole(MANAGERS)).toBe(false)
 
       // 👩🏾 Alice adds the managers role
       alice.team.addRole(managers)
-      expect(alice.team.roles().map(r => r.roleName)).toEqual([ADMIN, MANAGERS])
+      expect(alice.team.roles().map(r => r.roleName)).toEqual([ADMIN, MEMBER, MANAGERS])
       expect(alice.team.roles(MANAGERS).roleName).toBe(MANAGERS)
       expect(alice.team.roles(MANAGERS).createdBy).toBe(alice.userId)
       expect(alice.team.hasRole(MANAGERS)).toBe(true)
 
       // 👩🏾 Alice adds 👨🏻‍🦲 Bob to the managers role
       alice.team.addMemberRole(bob.userId, MANAGERS)
-      expect(alice.team.membersInRole(MANAGERS).map(m => m.userName)).toEqual(['bob'])
+      expect(alice.team.membersInRole(MANAGERS).map(m => m.userName)).toEqual(['alice', 'bob'])
     })
 
     it('admins have access to all role keys', () => {
@@ -56,8 +56,8 @@ describe('Team', () => {
       // 👩🏾 Alice adds the managers role
       alice.team.addRole(managers)
 
-      // 👩🏾 Alice is not a member of the managers role
-      expect(alice.team.memberHasRole(alice.userId, MANAGERS)).toBe(false)
+      // 👩🏾 Alice is a member of the managers role by default
+      expect(alice.team.memberHasRole(alice.userId, MANAGERS)).toBe(true)
 
       // But she does have access to the managers' keys
       const managersKeys = alice.team.roleKeys(MANAGERS)
@@ -85,31 +85,6 @@ describe('Team', () => {
       // 👨🏻‍🦲 Bob has admin keys
       const bobsAdminKeys = bob.team.roleKeys(ADMIN)
       expect(bobsAdminKeys).toLookLikeKeyset()
-    })
-
-    it('non-admin adds self to a role when creating', () => {
-      const { alice, bob } = setup('alice', { user: 'bob', admin: false })
-
-      // 👨🏻‍🦲 Bob isn't an admin
-      expect(alice.team.memberIsAdmin(bob.userId)).toBe(false)
-
-      // 👨🏻‍🦲 Bob adds a role and gives himself that role
-      bob.team.addRole(foobar)
-
-      // Now 👨🏻‍🦲 Bob is a foobar
-      expect(bob.team.hasRole(FOOBAR)).toBe(true)
-
-      // Bob persists the team
-      const savedTeam = bob.team.save()
-
-      // 👩🏾 Alice loads the team
-      alice.team = teams.load(savedTeam, alice.localContext, bob.team.teamKeys())
-
-      // 👩🏾 Alice sees 👨🏻‍🦲 Bob has the foobar role
-      expect(alice.team.memberHasRole(bob.userId, FOOBAR)).toBe(true)
-
-      // 👩🏾 Alice doesn't have the foobar role
-      expect(alice.team.memberHasRole(alice.userId, FOOBAR)).toBe(false)
     })
 
     it('removes a member from a role', () => {
@@ -144,21 +119,17 @@ describe('Team', () => {
     })
 
     it('self-assigns a role using pre-shared keys', () => {
-      const { alice, bob } = setup('alice', 'bob')
-      
-      // 👩🏾 Alice creates MEMBER role
-      alice.team.addRole('MEMBER')
-      alice.team.addMemberRole(alice.userId, 'MEMBER')
+      const { alice, bob } = setup('alice', { user: 'bob', admin: false, member: false })
 
       // 👩🏾 Alice is a MEMBER
-      expect(alice.team.hasRole('MEMBER')).toBe(true)
-      expect(alice.team.memberHasRole(alice.userId, 'MEMBER')).toBe(true)
+      expect(alice.team.hasRole(MEMBER)).toBe(true)
+      expect(alice.team.memberHasRole(alice.userId, MEMBER)).toBe(true)
 
       // 👩🏾 Alice creates a lockbox for MEMBER keys under arbitrary keys
       const randomSeed = randomUUID()
       const arbitraryScope: KeyScope = { type: 'TESTING', name: 'TESTING' }
       const keySet = createKeyset(arbitraryScope, randomSeed)
-      alice.team.createLockbox('MEMBER', keySet)
+      alice.team.createLockbox(MEMBER, keySet)
       
       // 👩🏾 Alice persists the team
       const savedTeam = alice.team.save()
@@ -167,13 +138,13 @@ describe('Team', () => {
       bob.team = teams.load(savedTeam, bob.localContext, alice.team.teamKeys())
 
       // 👨🏻‍🦲 Bob doesn't have the MEMBER role
-      expect(bob.team.memberHasRole(bob.userId, 'MEMBER')).toBe(false)
+      expect(bob.team.memberHasRole(bob.userId, MEMBER)).toBe(false)
 
       // 👨🏻‍🦲 Bob self-assigns the MEMBER role
-      bob.team.addMemberRoleToSelf('MEMBER', keySet)
+      bob.team.addMemberRoleToSelf(MEMBER, keySet)
 
       // 👨🏻‍🦲 Bob has the MEMBER role keys
-      const bobsMemberKeys = bob.team.roleKeys('MEMBER')
+      const bobsMemberKeys = bob.team.roleKeys(MEMBER)
       expect(bobsMemberKeys).toLookLikeKeyset()
     })
 
@@ -215,12 +186,12 @@ describe('Team', () => {
 
       // 👩🏾 Alice adds the managers role
       alice.team.addRole(managers)
-      expect(alice.team.roles().map(r => r.roleName)).toEqual([ADMIN, MANAGERS])
+      expect(alice.team.roles().map(r => r.roleName)).toEqual([ADMIN, MEMBER, MANAGERS])
       expect(alice.team.roles(MANAGERS).roleName).toBe(MANAGERS)
 
       // 👩🏾 Alice removes the managers role
       alice.team.removeRole(MANAGERS)
-      expect(alice.team.roles().length).toBe(1)
+      expect(alice.team.roles().length).toBe(2) // admin, managers
     })
 
     it("won't remove the admin role", () => {
@@ -251,8 +222,8 @@ describe('Team', () => {
       const { alice } = setup('alice')
       alice.team.addRole(managers)
       const roles = alice.team.roles()
-      expect(roles).toHaveLength(2)
-      expect(roles.map(role => role.roleName)).toEqual([ADMIN, MANAGERS])
+      expect(roles).toHaveLength(3) // admin, member, managers
+      expect(roles.map(role => role.roleName)).toEqual([ADMIN, MEMBER, MANAGERS])
     })
 
     it('lists all members in a role ', () => {
@@ -261,6 +232,34 @@ describe('Team', () => {
       // 👩🏾 Alice and 👨🏻‍🦲 Bob are members
       expect(alice.team.membersInRole(ADMIN).map(m => m.userName)).toEqual(['alice', 'bob'])
       expect(alice.team.admins().map(m => m.userName)).toEqual(['alice', 'bob'])
+    })
+
+    it('returns true for memberHasRole if user has role marker and lockbox', () => {
+      const { alice } = setup('alice', { user: 'bob', admin: true })
+
+      // 👩🏾 Alice and 👨🏻‍🦲 Bob are members
+      expect(alice.team.memberHasRole(alice.userId, ADMIN)).toBe(true)
+    })
+
+    it('returns false for memberHasRole if user has no role marker or lockbox', () => {
+      const { alice, bob } = setup('alice', { user: 'bob', admin: false })
+
+      // 👩🏾 Alice and 👨🏻‍🦲 Bob are members
+      expect(alice.team.memberHasRole(bob.userId, ADMIN)).toBe(false)
+    })
+
+    it('returns false for memberHasRole if user does not exist', () => {
+      const { alice, bob } = setup('alice', { user: 'bob', admin: false })
+
+      // 👩🏾 Alice and 👨🏻‍🦲 Bob are members
+      expect(alice.team.memberHasRole('NOT_A_USER', ADMIN)).toBe(false)
+    })
+
+    it('returns false for memberHasRole if user has role marker but no lockbox', () => {
+      const { alice, bob } = setup('alice', { user: 'bob', admin: false, rolesWithoutLockboxes: [ADMIN] })
+
+      // 👩🏾 Alice and 👨🏻‍🦲 Bob are members
+      expect(alice.team.memberHasRole(bob.userId, ADMIN)).toBe(false)
     })
 
     it('allows an admin other than Alice to add a member', () => {
@@ -283,7 +282,7 @@ describe('Team', () => {
       const { bob, charlie } = setup(
         'alice',
         { user: 'bob', admin: false },
-        { user: 'charlie', member: false }
+        { user: 'charlie', addToTeam: false }
       )
 
       // 👨🏻‍🦲 Bob tries to add 👳🏽‍♂️ Charlie to the team

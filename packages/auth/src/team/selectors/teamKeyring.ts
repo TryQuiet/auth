@@ -6,6 +6,7 @@ import { keyMap } from './keyMap.js'
 const { TEAM } = KeyType
 
 export const teamKeyring = (state: TeamState, keys: KeysetWithSecrets) => {
-  const allTeamKeys = keyMap(state, keys)[TEAM][TEAM]
+  const resolvedKeyMap = keyMap(state, keys)
+  const allTeamKeys = resolvedKeyMap[TEAM][TEAM]
   return createKeyring(allTeamKeys)
 }

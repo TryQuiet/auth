@@ -8,5 +8,6 @@ export const redactUser = (user: User | UserWithSecrets): User => {
     userId,
     userName,
     keys: redactKeys(user.keys),
+    keysHistory: user.keysHistory.map(k => redactKeys(k)),
   }
 }

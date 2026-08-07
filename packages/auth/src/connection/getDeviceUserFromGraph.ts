@@ -40,5 +40,6 @@ export const getDeviceUserFromGraph = ({
     userName,
     userId,
     keys: userKeys,
+    keysHistory: [userKeys],
   }
 }

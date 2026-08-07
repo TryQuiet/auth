@@ -164,7 +164,7 @@ describe('Team', () => {
     it('can admit an invitee', async () => {
       const { server, alice, bob } = setup('alice', {
         user: 'bob',
-        member: false,
+        addToTeam: false,
       })
       const { seed: bobInvite } = alice.team.inviteMember()
 

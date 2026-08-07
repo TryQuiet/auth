@@ -2,7 +2,7 @@ import { debug, Logger, truncateHashes } from '@localfirst/shared'
 import { ROOT } from '@localfirst/crdx'
 import { invitationCanBeUsed } from 'invitation/index.js'
 import { VALID, ValidationError, actionFingerprint } from 'util/index.js'
-import { isAdminOnlyAction } from './isAdminOnlyAction.js'
+import { isActionAllowedWithMemberRole, isAdminOnlyAction } from './isAdminOnlyAction.js'
 import * as select from './selectors/index.js'
 import {
   type TeamLink,
@@ -10,6 +10,7 @@ import {
   type TeamStateValidator,
   type TeamStateValidatorSet,
 } from './types.js'
+import { MEMBER } from '../role/constants.js'
 
 export const validate: TeamStateValidator = (previousState: TeamState, link: TeamLink, extendableLogger?: Logger) => {
   const logger = extendableLogger != null ? extendableLogger.extend('validate') : new Logger({ moduleName: 'auth:validate' })
@@ -64,6 +65,29 @@ const validators: TeamStateValidatorSet = {
       const isntAdmin = !select.memberIsAdmin(previousState, userId)
       if (isntAdmin) {
         return fail(`Member '${userId}' is not an admin`, previousState, link, logger)
+      }
+    }
+    return VALID
+  },
+
+  /** The user who made these changes was a member with the MEMBER role at the time */
+  mustBeMember(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
+    const logger = extendableLogger.extend('mustBeMember')
+    const action = link.body
+    const { type, userId } = action
+
+    // At root link, team doesn't yet have members
+    if (type === ROOT) return VALID
+
+    if (select.memberIsAdmin(previousState, userId)) {
+      return VALID
+    }
+
+    // Certain actions are allowed to be performed by non-members
+    if (isActionAllowedWithMemberRole(action)) {
+      const isntMember = !select.memberHasRole(previousState, userId, MEMBER)
+      if (isntMember) {
+        return fail(`User '${userId}' is missing the MEMBER role`, previousState, link, logger)
       }
     }
     return VALID

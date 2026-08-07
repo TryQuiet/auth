@@ -4,7 +4,7 @@ import { createId } from '@paralleldrive/cuid2'
 import type { Connection, Context, InviteeContext, MemberContext } from 'connection/index.js'
 import type { DeviceWithSecrets } from 'device/index.js'
 import * as devices from 'device/index.js'
-import { ADMIN } from 'role/index.js'
+import { ADMIN, MEMBER } from 'role/index.js'
 import type { LocalUserContext } from 'team/context.js'
 import type { Team, TeamContext } from 'team/index.js'
 import * as teams from 'team/index.js'
@@ -20,7 +20,7 @@ Usage:
 
 ```ts
 const {alice, bob} = setup(['alice', 'bob'])
-const {alice, bob, charlie} = setup(['alice', 'bob', {user: 'charlie', member: false}])
+const {alice, bob, charlie} = setup(['alice', 'bob', {user: 'charlie', addToTeam: false}])
 const {alice, bob, charlie, dwight} = setup(['alice', 'bob', 'charlie', {user: 'dwight', admin: false}])
 
 alice.team.add('bob')
@@ -77,23 +77,30 @@ export const setup = (..._config: SetupConfig) => {
   const founderContext = { user: testUsers[founder], device: laptops[founder] }
   const teamName = 'Spies Я Us'
   const randomSeed = teamName
-  const team = teams.createTeam(teamName, founderContext, randomSeed, { selfAssignableRoles: ['MEMBER'] })
+  const team = teams.createTeam(teamName, founderContext, randomSeed, { selfAssignableRoles: [MEMBER] })
   const teamKeys = team.teamKeys()
+  team.addRole({ roleName: MEMBER, permissions: undefined })
 
   // Add members
-  for (const { user: userName, admin = true, member = true } of config) {
+  for (const { user: userName, admin = true, addToTeam = true, member = true, rolesWithoutLockboxes = [] } of config) {
     const user = testUsers[userName]
-    if (member && !team.has(user.userId)) {
+    if (addToTeam && !team.has(user.userId)) {
       const user = testUsers[userName]
-      const roles = admin ? [ADMIN] : []
+      const roles = []
+      if (admin) {
+        roles.push(ADMIN)
+      }
+      if (member) {
+        roles.push(MEMBER)
+      }
       const device = devices.redactDevice(laptops[userName])
-      team.addForTesting(user, roles, device)
+      team.addForTesting(user, roles, rolesWithoutLockboxes, device)
     }
   }
 
   const { graph } = team
 
-  const makeUserStuff = ({ user: userName, member = true }: TestUserSettings): UserStuff => {
+  const makeUserStuff = ({ user: userName, addToTeam = true }: TestUserSettings): UserStuff => {
     const user = testUsers[userName]
     const randomSeed = userName
     const device = laptops[userName]
@@ -101,11 +108,11 @@ export const setup = (..._config: SetupConfig) => {
 
     const localContext = { user, device }
     const graphContext = { deviceId: device.deviceId }
-    const team = member
+    const team = addToTeam
       ? teams.load(graph, localContext, createKeyring(teamKeys)) // Members get a copy of the source team
       : teams.createTeam(userName, localContext, randomSeed) // Non-members get a dummy empty placeholder team
 
-    const connectionContext: Context = member
+    const connectionContext: Context = addToTeam
       ? { user, device, team }
       : { user, device, invitationSeed: '' }
 
@@ -114,7 +121,7 @@ export const setup = (..._config: SetupConfig) => {
       userId: user.userId,
       deviceId: phone.deviceId,
       user,
-      team: member
+      team: addToTeam
         ? teams.load(graph, localContext, createKeyring(teamKeys)) // Members get a copy of the source team
         : teams.createTeam(userName, localContext, randomSeed), // Non-members get a dummy empty placeholder team
       device: phone,
@@ -156,8 +163,10 @@ export const setup = (..._config: SetupConfig) => {
 
 export type TestUserSettings = {
   user: string
+  addToTeam?: boolean
   admin?: boolean
   member?: boolean
+  rolesWithoutLockboxes?: string[]
 }
 
 export type UserStuff = {

@@ -42,7 +42,7 @@ describe('membershipResolver', () => {
       context: bob.graphContext,
       keys,
     })
-    expect(summary(bGraph)).toEqual('ROOT,ADD:bob,ADD:managers')
+    expect(summary(bGraph)).toEqual('ROOT,SET_METADATA:{"metadata":{"selfAssignableRoles":[]}},ADD:bob,ADD:managers')
 
     // 👩🏾 Concurrently,Alice makes a change
     aGraph = append({
@@ -52,14 +52,14 @@ describe('membershipResolver', () => {
       context: alice.graphContext,
       keys,
     })
-    expect(summary(aGraph)).toEqual('ROOT,ADD:bob,ADD:charlie')
+    expect(summary(aGraph)).toEqual('ROOT,SET_METADATA:{"metadata":{"selfAssignableRoles":[]}},ADD:bob,ADD:charlie')
 
     // 🔌✔ Alice and Bob reconnect and synchronize graphs
 
     // ✅ the result will be one of these two (could be either because timestamps change with each test run)
     expectMergedResult(aGraph, bGraph, [
-      'ROOT,ADD:bob,ADD:charlie,ADD:managers',
-      'ROOT,ADD:bob,ADD:managers,ADD:charlie',
+      'ROOT,SET_METADATA:{"metadata":{"selfAssignableRoles":[]}},ADD:bob,ADD:charlie,ADD:managers',
+      'ROOT,SET_METADATA:{"metadata":{"selfAssignableRoles":[]}},ADD:bob,ADD:managers,ADD:charlie',
     ])
   })
 
@@ -77,7 +77,7 @@ describe('membershipResolver', () => {
       context: bob.graphContext,
       keys,
     })
-    expect(summary(bGraph)).toEqual('ROOT,ADD:bob,ADD:charlie')
+    expect(summary(bGraph)).toEqual('ROOT,SET_METADATA:{"metadata":{"selfAssignableRoles":[]}},ADD:bob,ADD:charlie')
 
     // 👩🏾 but concurrently,Alice removes Bob from the group
     aGraph = append({
@@ -87,12 +87,12 @@ describe('membershipResolver', () => {
       context: alice.graphContext,
       keys,
     })
-    expect(summary(aGraph)).toEqual('ROOT,ADD:bob,REMOVE:bob')
+    expect(summary(aGraph)).toEqual('ROOT,SET_METADATA:{"metadata":{"selfAssignableRoles":[]}},ADD:bob,REMOVE:bob')
 
     // 🔌✔ Alice and Bob reconnect and synchronize graphs
 
     // ✅ Bob's change is discarded - Charlie is not added
-    expectMergedResult(aGraph, bGraph, 'ROOT,ADD:bob,REMOVE:bob')
+    expectMergedResult(aGraph, bGraph, 'ROOT,SET_METADATA:{"metadata":{"selfAssignableRoles":[]}},ADD:bob,REMOVE:bob')
   })
 
   it('discards changes made by a member who is concurrently demoted', () => {
@@ -109,7 +109,7 @@ describe('membershipResolver', () => {
       context: bob.graphContext,
       keys,
     })
-    expect(summary(bGraph)).toEqual('ROOT,ADD:bob,ADD:charlie')
+    expect(summary(bGraph)).toEqual('ROOT,SET_METADATA:{"metadata":{"selfAssignableRoles":[]}},ADD:bob,ADD:charlie')
 
     // 👩🏾 but concurrently,Alice removes Bob from the admin role
     aGraph = append({
@@ -119,12 +119,12 @@ describe('membershipResolver', () => {
       context: alice.graphContext,
       keys,
     })
-    expect(summary(aGraph)).toEqual('ROOT,ADD:bob,REMOVE:admin:bob')
+    expect(summary(aGraph)).toEqual('ROOT,SET_METADATA:{"metadata":{"selfAssignableRoles":[]}},ADD:bob,REMOVE:admin:bob')
 
     // 🔌✔ Alice and Bob reconnect and synchronize graphs
 
     // ✅ Bob's change is discarded
-    expectMergedResult(aGraph, bGraph, 'ROOT,ADD:bob,REMOVE:admin:bob')
+    expectMergedResult(aGraph, bGraph, 'ROOT,SET_METADATA:{"metadata":{"selfAssignableRoles":[]}},ADD:bob,REMOVE:admin:bob')
   })
 
   it('resolves mutual concurrent removals in favor of the team founder', () => {
@@ -154,7 +154,7 @@ describe('membershipResolver', () => {
     // 🔌✔ Alice and Bob reconnect and synchronize graphs
 
     // ✅ Alice created the team; Bob's change is discarded,Alice stays
-    expectMergedResult(aGraph, bGraph, 'ROOT,ADD:bob,REMOVE:bob')
+    expectMergedResult(aGraph, bGraph, 'ROOT,SET_METADATA:{"metadata":{"selfAssignableRoles":[]}},ADD:bob,REMOVE:bob')
   })
 
   it('resolves mutual concurrent removals in favor of the senior member', () => {
@@ -196,7 +196,7 @@ describe('membershipResolver', () => {
     // 🔌✔ Bob and Charlie reconnect and synchronize graphs
 
     // ✅ Bob was added first; Charlie's change is discarded,Bob stays
-    expectMergedResult(bGraph, cGraph, 'ROOT,ADD:bob,ADD:charlie,REMOVE:charlie')
+    expectMergedResult(bGraph, cGraph, 'ROOT,SET_METADATA:{"metadata":{"selfAssignableRoles":[]}},ADD:bob,ADD:charlie,REMOVE:charlie')
   })
 
   it('resolves mutual concurrent demotions in favor of the team founder', () => {
@@ -226,7 +226,7 @@ describe('membershipResolver', () => {
     // 🔌✔ Alice and Bob reconnect and synchronize graphs
 
     // ✅ Alice created the team; Bob's change is discarded,Alice is still an admin
-    expectMergedResult(aGraph, bGraph, 'ROOT,ADD:bob,REMOVE:admin:bob')
+    expectMergedResult(aGraph, bGraph, 'ROOT,SET_METADATA:{"metadata":{"selfAssignableRoles":[]}},ADD:bob,REMOVE:admin:bob')
   })
 
   it('resolves circular mutual concurrent demotions in favor of the team founder', () => {
@@ -283,7 +283,7 @@ describe('membershipResolver', () => {
     ]
 
     // ✅ Alice created the team; Bob's change is discarded,Alice is still an admin
-    const expected = 'ROOT,ADD:bob,ADD:charlie,REMOVE:admin:bob'
+    const expected = 'ROOT,SET_METADATA:{"metadata":{"selfAssignableRoles":[]}},ADD:bob,ADD:charlie,REMOVE:admin:bob'
     for (const graph of mergedGraphs) {
       expect(summary(graph)).toBe(expected)
     }

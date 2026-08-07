@@ -7,6 +7,7 @@ const toMember = (server: Server): Member => ({
   userId: server.host,
   userName: server.host,
   keys: server.keys,
+  keysHistory: [server.keys],
   roles: [],
 })
 

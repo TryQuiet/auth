@@ -10,14 +10,14 @@ expect.extend({
         pass: true,
       }
 
-    if (expectedMessage && !new RegExp(expectedMessage).test(validation.error.message))
+    if (expectedMessage && (validation.error == null || !new RegExp(expectedMessage).test(validation.error.message)))
       return {
         message: () =>
           `expected validation to fail with message ${expectedMessage}, but got ${validation.error.message}`,
         pass: true,
       }
     return {
-      message: () => validation.error.message,
+      message: () => validation.error?.message ?? 'expected validation to pass',
       pass: false,
     }
   },

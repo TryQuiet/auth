@@ -53,7 +53,7 @@ describe('Team', () => {
     })
 
     it("doesn't care if you add a member twice", () => {
-      const { alice, bob } = setup('alice', { user: 'bob', member: false })
+      const { alice, bob } = setup('alice', { user: 'bob', addToTeam: false })
 
       const addBob = () => {
         alice.team.addForTesting(bob.user)
@@ -70,7 +70,7 @@ describe('Team', () => {
     })
 
     it('removes a member', () => {
-      const { alice, bob, charlie } = setup('alice', 'bob', { user: 'charlie', member: false })
+      const { alice, bob, charlie } = setup('alice', 'bob', { user: 'charlie', addToTeam: false })
 
       expect(alice.team.has(bob.userId)).toBe(true)
       expect(alice.team.memberWasRemoved(bob.userId)).toBe(false)
@@ -136,8 +136,8 @@ describe('Team', () => {
     it('lists all members', () => {
       const { alice, bob, charlie } = setup([
         'alice',
-        { user: 'bob', member: false },
-        { user: 'charlie', member: false },
+        { user: 'bob', addToTeam: false },
+        { user: 'charlie', addToTeam: false },
       ])
 
       expect(alice.team.members()).toHaveLength(1)

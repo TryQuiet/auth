@@ -10,6 +10,7 @@ export const changeMemberKeys =
         ? {
             ...member,
             keys, // 🡐 replace keys with new ones
+            keysHistory: [keys, ...member.keysHistory]
           }
         : member
     ),

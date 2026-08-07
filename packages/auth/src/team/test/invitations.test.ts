@@ -1,5 +1,6 @@
 import { createKeyset, type UnixTimestamp } from '@localfirst/crdx'
 import { signatures } from '@localfirst/crypto'
+import { Logger } from '@localfirst/shared'
 import { redactDevice, type FirstUseDevice } from 'index.js'
 import { generateProof } from 'invitation/index.js'
 import * as teams from 'team/index.js'
@@ -13,7 +14,7 @@ describe('Team', () => {
   describe('invitations', () => {
     describe('members', () => {
       it('accepts valid proof of invitation', () => {
-        const { alice, bob } = setup('alice', { user: 'bob', member: false })
+        const { alice, bob } = setup('alice', { user: 'bob', addToTeam: false })
 
         // 👩🏾 Alice invites 👨🏻‍🦲 Bob by sending him a random secret key
         const { seed } = alice.team.inviteMember()
@@ -30,7 +31,7 @@ describe('Team', () => {
       })
 
       it('lets you use a secret invitation seed of your choosing', () => {
-        const { alice, bob } = setup('alice', { user: 'bob', member: false })
+        const { alice, bob } = setup('alice', { user: 'bob', addToTeam: false })
 
         // 👩🏾 Alice invites 👨🏻‍🦲 Bob by sending him a secret key of her choosing
         const seed = 'passw0rd'
@@ -45,7 +46,7 @@ describe('Team', () => {
       })
 
       it('normalizes the a secret invitation seed ', () => {
-        const { alice, bob } = setup('alice', { user: 'bob', member: false })
+        const { alice, bob } = setup('alice', { user: 'bob', addToTeam: false })
 
         // 👩🏾 Alice invites 👨🏻‍🦲 Bob
         const seed = 'abc def ghi'
@@ -63,7 +64,7 @@ describe('Team', () => {
         const { alice, bob, charlie } = setup(
           'alice',
           { user: 'bob', admin: false },
-          { user: 'charlie', member: false }
+          { user: 'charlie', addToTeam: false }
         )
 
         // 👩🏾 Alice invites 👳🏽‍♂️ Charlie by sending him a secret key
@@ -92,7 +93,7 @@ describe('Team', () => {
       })
 
       it("will use an invitation that hasn't expired yet", () => {
-        const { alice, bob } = setup('alice', { user: 'bob', member: false })
+        const { alice, bob } = setup('alice', { user: 'bob', addToTeam: false })
 
         // 👩🏾 Alice invites 👨🏻‍🦲 Bob with a future expiration date
         const expiration = new Date(Date.UTC(2999, 12, 25)).valueOf() as UnixTimestamp // NOTE 👩‍🚀 this test will fail if run in the distant future
@@ -105,7 +106,7 @@ describe('Team', () => {
       })
 
       it("won't use an expired invitation", () => {
-        const { alice, bob } = setup('alice', { user: 'bob', member: false })
+        const { alice, bob } = setup('alice', { user: 'bob', addToTeam: false })
 
         // A long time ago 👩🏾 Alice invited 👨🏻‍🦲 Bob
         const expiration = new Date(Date.UTC(2020, 12, 25)).valueOf() as UnixTimestamp
@@ -126,8 +127,8 @@ describe('Team', () => {
       it('can use an invitation multiple times', () => {
         const { alice, bob, charlie } = setup(
           'alice',
-          { user: 'bob', member: false },
-          { user: 'charlie', member: false }
+          { user: 'bob', addToTeam: false },
+          { user: 'charlie', addToTeam: false }
         )
 
         const { seed } = alice.team.inviteMember({ maxUses: 2 })
@@ -173,8 +174,8 @@ describe('Team', () => {
       it("won't use an invitation more than the maximum uses defined", () => {
         const { alice, bob, charlie } = setup(
           'alice',
-          { user: 'bob', member: false },
-          { user: 'charlie', member: false }
+          { user: 'bob', addToTeam: false },
+          { user: 'charlie', addToTeam: false }
         )
 
         const { seed } = alice.team.inviteMember({ maxUses: 1 })
@@ -207,7 +208,7 @@ describe('Team', () => {
         const { alice, bob, charlie } = setup(
           'alice',
           { user: 'bob', admin: false },
-          { user: 'charlie', member: false }
+          { user: 'charlie', addToTeam: false }
         )
 
         // 👩🏾 Alice invites 👳🏽‍♂️ Charlie by sending him a secret key
@@ -291,6 +292,7 @@ describe('Team', () => {
             serializedGraph,
             teamKeyring,
             invitationSeed: seed,
+            logger: new Logger({moduleName: 'foo'})
           })
 
           const phoneTeam = teams.load(

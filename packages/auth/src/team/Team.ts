@@ -28,11 +28,11 @@ import * as invitations from 'invitation/index.js'
 import { type ProofOfInvitation } from 'invitation/index.js'
 import { normalize } from 'invitation/normalize.js'
 import * as lockbox from 'lockbox/index.js'
-import { AddRoleInput, ADMIN, type Role } from 'role/index.js'
+import { AddRoleInput, ADMIN, MEMBER, type Role } from 'role/index.js'
 import { castServer } from 'server/castServer.js'
 import { type Host, type Server } from 'server/types.js'
 import { type LocalUserContext } from 'team/context.js'
-import { KeyType, Optional, VALID, scopesMatch } from 'util/index.js'
+import { KeyType, VALID, getScope, scopesMatch } from 'util/index.js'
 import { ADMIN_SCOPE, ALL, TEAM_SCOPE, initialState } from './constants.js'
 import { membershipResolver as resolver } from './membershipResolver.js'
 import { redactUser } from './redactUser.js'
@@ -54,7 +54,7 @@ import type {
 } from './types.js'
 import { isNewTeam } from './types.js'
 import { canUserAddMemberToRole } from './validate.js'
-import { isAdminOnlyActionType } from './isAdminOnlyAction.js'
+import { isActionTypeAllowedWithMemberRole, isActionTypeAllowedWithTeamKey } from './isAdminOnlyAction.js'
 
 const { DEVICE, USER } = KeyType
 /**
@@ -261,12 +261,16 @@ export class Team extends EventEmitter<TeamEvents> {
    * This can be used to add a device for an existing member - just pass the existing user as the
    * first argument.
    */
-  public addForTesting = (user: UserWithSecrets, roles: string[] = [], device?: Device) => {
-    const member = { ...redactUser(user), roles }
+  public addForTesting = (user: UserWithSecrets, roles: string[] = [], rolesWithoutLockboxes: string[] = [], device?: Device) => {
+    let member = { ...redactUser(user), roles }
 
     if (!this.has(member.userId)) {
       // Make lockboxes for the new member
       const lockboxes = this.createMemberLockboxes(member)
+
+      if (rolesWithoutLockboxes.length > 0) {
+        member = { ...member, roles: [...member.roles, ...rolesWithoutLockboxes]}
+      }
 
       // Post the member to the graph
       this.dispatch({
@@ -317,8 +321,9 @@ export class Team extends EventEmitter<TeamEvents> {
   }
 
   /** Returns true if the member with the given userId has the given role */
-  public memberHasRole = (userId: string, roleName: string) =>
-    select.memberHasRole(this.state, userId, roleName)
+  public memberHasRole = (userId: string, roleName: string) => {
+    return select.memberHasRole(this.state, userId, roleName)
+  }
 
   /** Returns true if the member with the given userId is a member of the 3 role */
   public memberIsAdmin = (userId: string) => select.memberIsAdmin(this.state, userId)
@@ -427,9 +432,18 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** Check if member is priveleged enough to perform a specific action */
   private _memberHasPrivelegeToPerformAction(memberId: string, actionType: TeamAction['type']): boolean {
-    if (!isAdminOnlyActionType(actionType)) {
+    if (this.members(memberId) == null) {
+      return false
+    }
+
+    if (isActionTypeAllowedWithTeamKey(actionType)) {
       return true
     }
+
+    if (isActionTypeAllowedWithMemberRole(actionType) && this.memberHasRole(memberId, MEMBER)) {
+      return true
+    }
+
     return this.memberIsAdmin(memberId)
   }
 
@@ -993,6 +1007,7 @@ export class Team extends EventEmitter<TeamEvents> {
    * compromised scope. If it is just a scope, new keys will be randomly generated for that scope.
    */
   private readonly rotateKeys = (compromised: KeyScope | KeysetWithSecrets) => {
+    this.logger.debug('rotating keys for scope', getScope(compromised))
     const newKeyset = isKeyset(compromised)
       ? compromised // We're given a keyset - use it as the new keys
       : createKeyset(compromised) // We're just given a scope - generate new keys for it
@@ -1003,24 +1018,41 @@ export class Team extends EventEmitter<TeamEvents> {
 
     // Generate new keys for each one
     const newKeysets = [newKeyset, ...otherNewKeysets]
+    const newUserKeys: Set<Keyset> = new Set()
+    const _addUpdatedUserKeys = (updatedRecipientKeys: Keyset | undefined | null): void => {
+      if (updatedRecipientKeys != null && updatedRecipientKeys.type === KeyType.USER) {
+        newUserKeys.add(updatedRecipientKeys)
+      }
+    }
 
     // Create new lockboxes for each of these
     const newLockboxes = newKeysets.flatMap(newKeyset => {
       const oldLockboxes = select.lockboxesInScope(this.state, newKeyset)
-
       return oldLockboxes.map(oldLockbox => {
         // Check whether we have new keys for the recipient of this lockbox
         const updatedKeyset = newKeysets.find(k => scopesMatch(k, oldLockbox.recipient))
-        return lockbox.rotate({
+        const updatedRecipientKeys = updatedKeyset ? redactKeys(updatedKeyset) : undefined
+        const newLockbox = lockbox.rotate({
           oldLockbox,
           newContents: newKeyset,
           // If we did, address the new lockbox to those keys
-          updatedRecipientKeys: updatedKeyset ? redactKeys(updatedKeyset) : undefined,
+          updatedRecipientKeys,
         })
+        _addUpdatedUserKeys(updatedRecipientKeys)
+        return newLockbox
       })
     })
 
+    // update the keys on the member records
+    this.updateMemberKeysWithLockboxes(newUserKeys, newLockboxes)
     return newLockboxes
+  }
+
+  private readonly updateMemberKeysWithLockboxes = (newUserKeys: Set<Keyset>, lockboxes: lockbox.Lockbox[]): void => {
+    for (const keyset of newUserKeys) {
+      this.logger.debug('updating member keys after rotation (user ID, new key generation, lockbox count)', keyset.name, keyset.generation, lockboxes.length)
+      this.dispatch({ type: 'CHANGE_MEMBER_KEYS', payload: { keys: keyset, lockboxes }})
+    }
   }
 }
 
