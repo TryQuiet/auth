@@ -325,9 +325,15 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           assert(roles)
           assert(userId)
 
-          if (!roles!.includes(MEMBER) && context.server == null && !team!.hasServer(userId!)) {
-            team!.addMemberRole(userId!, MEMBER)
+          const hasMemberMarker = team.memberHasRoleMarker(userId, MEMBER)
+          const hasMemberRole = team.memberHasRole(userId, MEMBER)
+          if (!hasMemberRole && (hasMemberMarker || roles.includes(MEMBER))) {
+            this.logger.warn(`Peer had marker for ${MEMBER} but lacked the appropriate lockboxes, this may be malicious or we are missing syncable data`)
+          } else if (!hasMemberRole && !roles.includes(MEMBER) && context.server == null && !team.hasServer(userId)) {
+            this.logger.debug(`Assigning ${MEMBER} role to peer`)
+            team.addMemberRole(userId, MEMBER)
           }
+
           this.#queueMessage('ACCEPT_IDENTITY')
         },
 
