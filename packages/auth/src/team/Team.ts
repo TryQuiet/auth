@@ -19,7 +19,7 @@ import {
   redactKeys,
 } from '@localfirst/crdx'
 import { randomKey, signatures, symmetric, type Base58 } from '@localfirst/crypto'
-import { assert, debug, Logger } from '@localfirst/shared'
+import { assert, Logger } from '@localfirst/shared'
 import * as identity from 'connection/identity.js'
 import { type Challenge } from 'connection/types.js'
 import * as devices from 'device/index.js'
@@ -276,7 +276,7 @@ export class Team extends EventEmitter<TeamEvents> {
       // Post the member to the graph
       this.dispatch({
         type: 'ADD_MEMBER',
-        payload: { member, roles, lockboxes },
+        payload: { member, roles: [...member.roles, ...rolesWithoutLockboxes], lockboxes },
       })
     }
 
@@ -324,9 +324,14 @@ export class Team extends EventEmitter<TeamEvents> {
       : select.role(this.state, roleName) // One role
   }
 
-  /** Returns true if the member with the given userId has the given role */
+  /** Returns true if the member with the given userId has the given role marker and associated lockbox */
   public memberHasRole = (userId: string, roleName: string) => {
     return select.memberHasRole(this.state, userId, roleName)
+  }
+
+  /** Returns true if the member with the given userId has the given role marker */
+  public memberHasRoleMarker = (userId: string, roleName: string) => {
+    return select.memberHasRoleMarker(this.state, userId, roleName)
   }
 
   /** Returns true if the member with the given userId is a member of the 3 role */

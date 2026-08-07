@@ -240,6 +240,8 @@ describe('Team', () => {
       // 👩🏾 Alice is the only member
       expect(alice.team.membersInRole(ADMIN).map(m => m.userName)).toEqual(['alice'])
       expect(alice.team.admins().map(m => m.userName)).toEqual(['alice'])
+      expect(bob.team.memberHasRoleMarker(bob.userId, ADMIN)).toBe(true)
+      expect(alice.team.memberHasRoleMarker(bob.userId, ADMIN)).toBe(true)
     })
 
     it('returns true for memberHasRole if user has role marker and lockbox', () => {
@@ -268,6 +270,8 @@ describe('Team', () => {
 
       // 👩🏾 Alice and 👨🏻‍🦲 Bob are members
       expect(alice.team.memberHasRole(bob.userId, ADMIN)).toBe(false)
+      expect(bob.team.memberHasRoleMarker(bob.userId, ADMIN)).toBe(true)
+      expect(alice.team.memberHasRoleMarker(bob.userId, ADMIN)).toBe(true)
     })
 
     it('allows an admin other than Alice to add a member', () => {
