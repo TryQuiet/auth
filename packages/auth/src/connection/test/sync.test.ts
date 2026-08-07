@@ -478,7 +478,7 @@ describe('connection', () => {
         await disconnection(bob, charlie)
       })
 
-      it.only('when a member is demoted and makes concurrent admin-only changes, discards those changes', async () => {
+      it('when a member is demoted and makes concurrent admin-only changes, discards those changes', async () => {
         const { alice, bob, charlie } = setup('alice', 'bob', {
           user: 'charlie',
           admin: false,
