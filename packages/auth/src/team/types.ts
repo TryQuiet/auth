@@ -116,6 +116,14 @@ export type AddMemberAction = {
   }
 }
 
+export type AddMemberTestAction = {
+  type: 'ADD_MEMBER_TEST'
+  payload: BasePayload & {
+    member: Member
+    roles?: string[]
+  }
+}
+
 export type RemoveMemberAction = {
   type: 'REMOVE_MEMBER'
   payload: BasePayloadLockboxesRequired & {
@@ -189,7 +197,7 @@ export type RevokeInvitationAction = {
 
 export type AdmitMemberAction = {
   type: 'ADMIT_MEMBER'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     id: Base58 // Invitation ID
     userName: string
     memberKeys: Keyset // Member keys provided by the new member
@@ -268,6 +276,7 @@ export type SetMetadataAction = {
 export type TeamAction =
   | RootAction
   | AddMemberAction
+  | AddMemberTestAction
   | AddDeviceAction
   | AddRoleAction
   | AddMemberRoleAction

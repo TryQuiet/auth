@@ -248,7 +248,8 @@ describe('connection', () => {
       it('admits a first-use device before continuing authentication', async () => {
         const { bob } = setup('bob')
         bob.team.addRole(MEMBER)
-        const { userId: _userId, ...phone } = bob.phone!
+        const phone = bob.phone!
+        const { userId: _userId } = phone
         const { seed } = bob.team.inviteDevice()
         const phoneContext: InviteeDeviceContext = {
           userName: bob.userName,

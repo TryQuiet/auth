@@ -99,6 +99,7 @@ const getTransforms = (action: TeamAction): Transform[] => {
       ]
     }
 
+    case 'ADD_MEMBER_TEST':
     case 'ADD_MEMBER': {
       const { member, roles } = action.payload
       return [

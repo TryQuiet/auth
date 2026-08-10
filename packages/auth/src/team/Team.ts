@@ -279,8 +279,8 @@ export class Team extends EventEmitter<TeamEvents> {
 
       // Post the member to the graph
       this.dispatch({
-        type: 'ADD_MEMBER',
-        payload: { member, roles: [...member.roles, ...rolesWithoutLockboxes], lockboxes },
+        type: 'ADD_MEMBER_TEST',
+        payload: { member, roles: member.roles, lockboxes },
       })
     }
 
@@ -524,7 +524,7 @@ export class Team extends EventEmitter<TeamEvents> {
     if (!this.hasDevice(deviceId)) throw new Error(`Device ${deviceId} not found`)
 
     // Create new keys & lockboxes for any keys this device had access to
-    const { lockboxes, updatedUserKeys } = this.rotateKeys({ type: DEVICE, name: deviceId })
+    const { lockboxes, updatedUserKeys } = this.rotateKeys({ type: DEVICE, name: deviceId }, true)
 
     // update the keys on the member records
     this.updateMemberKeysWithLockboxes(updatedUserKeys, lockboxes)
@@ -757,7 +757,6 @@ export class Team extends EventEmitter<TeamEvents> {
 
     const lockboxUserKeysForDevice = lockbox.create(user.keys, device.keys)
 
-    this.logger.debug('Adding device on join')
     this.dispatch(
       {
         type: 'ADD_DEVICE',
@@ -810,7 +809,7 @@ export class Team extends EventEmitter<TeamEvents> {
   /** Removes a server from the team. */
   public removeServer = (host: string) => {
     this.logger.debug('Removing server', host)
-    const { lockboxes } = this.rotateKeys({ type: KeyType.SERVER, name: host })
+    const { lockboxes } = this.rotateKeys({ type: KeyType.SERVER, name: host }, true)
     this.dispatch({
       type: 'REMOVE_SERVER',
       payload: { host, lockboxes },
@@ -1043,8 +1042,8 @@ export class Team extends EventEmitter<TeamEvents> {
    * @param compromised If `compromised` is a keyset, that will become the new keyset for the
    * compromised scope. If it is just a scope, new keys will be randomly generated for that scope.
    */
-  private readonly rotateKeys = (compromised: KeyScope | KeysetWithSecrets): RotatedLockboxesWithUpdatedUserKeys => {
-    this.logger.debug('Rotating keys for scope', getScope(compromised))
+  private readonly rotateKeys = (compromised: KeyScope | KeysetWithSecrets, removed = false): RotatedLockboxesWithUpdatedUserKeys => {
+    this.logger.debug('Rotating keys for scope', getScope(compromised), removed)
     const newKeyset = isKeyset(compromised)
       ? compromised // We're given a keyset - use it as the new keys
       : createKeyset(compromised) // We're just given a scope - generate new keys for it
@@ -1069,6 +1068,10 @@ export class Team extends EventEmitter<TeamEvents> {
         // Check whether we have new keys for the recipient of this lockbox
         const updatedKeyset = newKeysets.find(k => scopesMatch(k, oldLockbox.recipient))
         const updatedRecipientKeys = updatedKeyset ? redactKeys(updatedKeyset) : undefined
+        // we don't want to write new keys to the compromised scope if that scope was removed (e.g. when removing a device)
+        if (updatedRecipientKeys != null && removed && updatedRecipientKeys.type === compromised.type && updatedRecipientKeys.name === compromised.name) {
+          return undefined
+        }
         const newLockbox = lockbox.rotate({
           oldLockbox,
           newContents: newKeyset,
@@ -1077,7 +1080,7 @@ export class Team extends EventEmitter<TeamEvents> {
         })
         _addUpdatedUserKeys(updatedRecipientKeys)
         return newLockbox
-      })
+      }).filter(l => l != null)
     })
 
     return {

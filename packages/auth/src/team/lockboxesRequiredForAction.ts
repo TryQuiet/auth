@@ -6,12 +6,12 @@ const NON_LOCKBOX_REQUIRED_ACTIONS: Array<TeamAction['type']> = [
   'MESSAGE',
   'SET_TEAM_NAME',
   'ADMIT_DEVICE',
-  'ADMIT_MEMBER',
   'REVOKE_INVITATION',
   'INVITE_DEVICE',
   'INVITE_MEMBER',
   'REMOVE_ROLE',
   'ROOT',
+  'ADD_MEMBER_TEST',
 ]
 
 export const isActionAllowedWithoutLockboxes = (action: TeamAction): boolean => {

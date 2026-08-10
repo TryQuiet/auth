@@ -173,6 +173,52 @@ describe('Team', () => {
       expect(tryToRemoveMemberWithoutLockboxesNullish).toThrow()
     })
 
+    it('allows ADD_MEMBER_TEST when flag is set', () => {
+      const { alice, bob } = setup('alice', { user: 'bob', addToTeam: false })
+      expect(alice.team.members().length).toBe(1)
+
+      const tryToAddMemberTest = () => {
+        const ogFlag = process.env.ALLOW_ADD_MEMBER_TEST
+        try {
+          process.env.ALLOW_ADD_MEMBER_TEST = 'true'
+          alice.team.dispatch({
+            type: 'ADD_MEMBER_TEST',
+            payload: {
+              member: redactUser(bob.user),
+              lockboxes: [],
+            },
+          })
+        } finally {
+          process.env.ALLOW_ADD_MEMBER_TEST = ogFlag
+        }
+      }
+
+      expect(tryToAddMemberTest).not.toThrow()
+    })
+
+    it('does not allow ADD_MEMBER_TEST when flag is not set', () => {
+      const { alice, bob } = setup('alice', { user: 'bob', addToTeam: false })
+      expect(alice.team.members().length).toBe(1)
+
+      const tryToAddMemberTest = () => {
+        const ogFlag = process.env.ALLOW_ADD_MEMBER_TEST
+        try {
+          process.env.ALLOW_ADD_MEMBER_TEST = undefined
+          alice.team.dispatch({
+            type: 'ADD_MEMBER_TEST',
+            payload: {
+              member: redactUser(bob.user),
+              lockboxes: [],
+            },
+          })
+        } finally {
+          process.env.ALLOW_ADD_MEMBER_TEST = ogFlag
+        }
+      }
+
+      expect(tryToAddMemberTest).toThrow()
+    })
+
     it("doesn't do anything if asked to remove a nonexistent member", () => {
       const { alice } = setup('alice')
 

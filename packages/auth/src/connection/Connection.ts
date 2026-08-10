@@ -867,6 +867,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
       },
       error: error => {
         this.logger.error('Connection encountered an unhandled error', error)
+        console.error('error', error)
         this.#messageQueue.send(createErrorMessage(UNHANDLED, 'REMOTE'))
         this.emit('localError', { type: UNHANDLED, message: 'Unhandled error' })
         this.#fail(UNHANDLED)
