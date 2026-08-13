@@ -11,7 +11,7 @@ import { authenticated, authenticatedInTime } from './helpers/authenticated.js'
 import { getStorageDirectory, setup, type UserStuff } from './helpers/setup.js'
 import { synced } from './helpers/synced.js'
 
-describe.skip('auth provider for automerge-repo', () => {
+describe('auth provider for automerge-repo', () => {
   it('does not authenticate users that do not belong to any teams', async () => {
     const {
       users: { alice, bob },
@@ -184,15 +184,15 @@ describe.skip('auth provider for automerge-repo', () => {
     const bobTeam = putUserOnTeam(aliceTeam, bob)
     await bob.authProvider.addTeam(bobTeam)
 
-    // there's only one role on the team by default (ADMIN)
-    expect(bobTeam.roles()).toHaveLength(1)
+    // Teams start with ADMIN and MEMBER roles.
+    expect(bobTeam.roles()).toHaveLength(2)
 
     // Alice adds a role
     aliceTeam.addRole('MANAGERS')
 
     // Bob sees the change
     await eventPromise(bobTeam, 'updated')
-    expect(bobTeam.roles()).toHaveLength(2) // ✅
+    expect(bobTeam.roles()).toHaveLength(3) // ✅
 
     teardown()
   })
@@ -408,7 +408,7 @@ describe.skip('auth provider for automerge-repo', () => {
 // HELPERS
 
 const putUserOnTeam = (team: Auth.Team, b: UserStuff) => {
-  team.addForTesting(b.user, [], Auth.redactDevice(b.device))
+  team.addForTesting(b.user, [Auth.MEMBER], [], Auth.redactDevice(b.device))
   const serializedTeam = team.save()
   const keys = team.teamKeys()
   return Auth.loadTeam(serializedTeam, b.context, keys)

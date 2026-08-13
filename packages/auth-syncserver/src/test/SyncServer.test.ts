@@ -1,10 +1,10 @@
-import { createTeam, device, loadTeam } from '@localfirst/auth'
+import { createTeam, device, loadTeam, MEMBER } from '@localfirst/auth'
 import { type ShareId } from '@localfirst/auth-provider-automerge-repo'
 import { eventPromise } from '@localfirst/shared'
 import { expect, it, describe } from 'vitest'
 import { host, setup } from './helpers/setup.js'
 
-describe.skip('SyncServer', () => {
+describe('SyncServer', () => {
   it('should start a server', async () => {
     const { url } = await setup()
     const response = await fetch(`http://${url}`)
@@ -161,7 +161,7 @@ describe.skip('SyncServer', () => {
     const aliceTeam = await alice.authProvider.createTeam('team A')
 
     // Alice puts Bob on her team
-    aliceTeam.addForTesting(bob.user, [], device.redactDevice(bob.device))
+    aliceTeam.addForTesting(bob.user, [MEMBER], [], device.redactDevice(bob.device))
 
     // Alice authenticates
     await eventPromise(alice.repo.networkSubsystem, 'peer')
