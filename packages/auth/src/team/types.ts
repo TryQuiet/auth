@@ -175,6 +175,8 @@ export type RemoveDeviceAction = {
   type: 'REMOVE_DEVICE'
   payload: BasePayloadLockboxesRequired & {
     deviceId: string
+    /** Updated owner keys produced while rotating access away from the removed device. */
+    updatedUserKeys?: Keyset[]
   }
 }
 
@@ -227,6 +229,8 @@ export type RotateKeysAction = {
   type: 'ROTATE_KEYS'
   payload: BasePayloadLockboxesRequired & {
     userId: string
+    /** Updated member keys produced by the same rotation. */
+    updatedUserKeys?: Keyset[]
   }
 }
 

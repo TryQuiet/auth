@@ -40,7 +40,10 @@ const hasDeviceLockbox = (userId: string, deviceId: string, lockboxes: Lockbox[]
   lockboxes.find(l => l.contents.type === KeyType.USER && l.contents.name === userId && l.recipient.name === deviceId && (!checkGenerationNonZero || l.contents.generation > 0)) != null
 
 const validateLockboxesOnChangeKeysOrRotateKeys = (actionType: 'CHANGE_MEMBER_KEYS' | 'ROTATE_KEYS', previousState: TeamState, userId: string, lockboxes: Lockbox[], link: TeamLink, logger: Logger) => {
-  const [member] = select.members(previousState, [userId], { includeRemoved: false, throwOnMissing: false })
+  // ROTATE_KEYS can clean up access for an admission that conflict resolution already moved to
+  // removedMembers; CHANGE_MEMBER_KEYS must still target an active member.
+  const includeRemoved = actionType === 'ROTATE_KEYS'
+  const [member] = select.members(previousState, [userId], { includeRemoved, throwOnMissing: false })
   if (member == null) {
     return fail(`${actionType} found no member for ID ${userId}`, previousState, link, logger)
   }
@@ -359,8 +362,11 @@ const validators: TeamStateValidatorSet = {
   correctLockboxesPresentOnRemoveDevice(previousState: TeamState, link: TeamLink, extendableLogger: Logger) {
     const logger = extendableLogger.extend('correctLockboxesPresentOnRemoveDevice')
     if (link.body.type === 'REMOVE_DEVICE') {
-      const { lockboxes, deviceId } = link.body.payload
+      const { lockboxes, deviceId, updatedUserKeys = [] } = link.body.payload
       const member = select.memberByDeviceId(previousState, deviceId)
+      if (updatedUserKeys.some(keys => keys.type !== KeyType.USER || keys.name !== member.userId)) {
+        return fail(`REMOVE_DEVICE can only update keys for the removed device's owner`, previousState, link, logger)
+      }
       logger.warn('lockboxes', lockboxes.map(l => JSON.stringify({ c: { id: l.contents.name, type: l.contents.type, gen: l.contents.generation }, r: { id: l.recipient.name, type: l.recipient.type, gen: l.recipient.generation }}, null, 2)))
       if (!hasTeamLockbox(member.userId, lockboxes, true)) {
         return fail(`REMOVE_DEVICE requires a team lockbox for the user`, previousState, link, logger)

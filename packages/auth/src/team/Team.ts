@@ -541,15 +541,13 @@ export class Team extends EventEmitter<TeamEvents> {
     // Create new keys & lockboxes for any keys this device had access to
     const { lockboxes, updatedUserKeys } = this.rotateKeys({ type: DEVICE, name: deviceId }, true)
 
-    // update the keys on the member records
-    this.updateMemberKeysWithLockboxes(updatedUserKeys, lockboxes)
-
     // Post the removal to the graph
     this.dispatch({
       type: 'REMOVE_DEVICE',
       payload: {
         deviceId,
         lockboxes,
+        updatedUserKeys: [...updatedUserKeys],
       },
     })
   }
@@ -1031,10 +1029,10 @@ export class Team extends EventEmitter<TeamEvents> {
         type: USER,
         name: this.userId,
       })
-      this.dispatch({ type: 'ROTATE_KEYS', payload: { userId, lockboxes } })
-
-      // update the keys on the member records
-      this.updateMemberKeysWithLockboxes(updatedUserKeys, lockboxes)
+      this.dispatch({
+        type: 'ROTATE_KEYS',
+        payload: { userId, lockboxes, updatedUserKeys: [...updatedUserKeys] },
+      })
     }
   }
 

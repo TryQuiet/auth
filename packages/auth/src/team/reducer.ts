@@ -142,8 +142,10 @@ const getTransforms = (action: TeamAction): Transform[] => {
     }
 
     case 'REMOVE_DEVICE': {
-      const { deviceId } = action.payload
+      // Older persisted REMOVE_DEVICE links predate updatedUserKeys.
+      const { deviceId, updatedUserKeys = [] } = action.payload
       return [
+        ...updatedUserKeys.map(keys => changeMemberKeys(keys)),
         removeDevice(deviceId), // Remove this device from the member's list of devices
       ]
     }
@@ -218,8 +220,10 @@ const getTransforms = (action: TeamAction): Transform[] => {
     }
 
     case 'ROTATE_KEYS': {
-      const { userId } = action.payload
+      // Older persisted ROTATE_KEYS links predate updatedUserKeys.
+      const { userId, updatedUserKeys = [] } = action.payload
       return [
+        ...updatedUserKeys.map(keys => changeMemberKeys(keys)),
         rotateKeys(userId), // Mark this member's keys as having been rotated (the rotated keys themselves are in the lockboxes)
       ]
     }
