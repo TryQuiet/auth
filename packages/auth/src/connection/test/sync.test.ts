@@ -57,16 +57,17 @@ describe('connection', () => {
 
         // At this point, Alice and Bob have the same signature chain
 
-        // 👨🏻‍🦲 but now Bob does some stuff
+        // 👨🏻‍🦲 but now Bob does some stuff. He puts Alice in the new role rather than himself,
+        // since 'managers' isn't one of the team's self-assignable roles.
         bob.team.addRole('managers')
-        bob.team.addMemberRole(bob.userId, 'managers')
+        bob.team.addMemberRole(alice.userId, 'managers')
 
         // 👩🏾 👨🏻‍🦲 Alice and Bob connect
         await connect(alice, bob)
 
         // ✅ 👩🏾 Alice is up to date with Bob's changes
         expect(alice.team.hasRole('managers')).toBe(true)
-        expect(alice.team.memberHasRole(bob.userId, 'managers')).toBe(true)
+        expect(alice.team.memberHasRole(alice.userId, 'managers')).toBe(true)
       })
 
       it('updates remote user while connected', async () => {

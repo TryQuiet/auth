@@ -14,16 +14,16 @@ it('should start a server', async () => {
   expect(text).toContain('🤖')
 })
 
-it("should return the server's public keys", async () => {
+it("should return the server's public record", async () => {
   const { url, server } = await setup()
   const response = await fetch(`http://${url}/keys`)
-  const keys = await response.json()
+  const serverRecord = await response.json()
 
-  // the keys look like keys
-  expect(lookLikeServerKeys(keys)).toBe(true)
+  // the record carries a self-certifying id and both keysets
+  expect(looksLikeAServer(serverRecord)).toBe(true)
 
-  // they match the server's public keys
-  expect(server.publicKeys).toEqual(keys)
+  // it matches what the server thinks it is
+  expect(server.publicServer).toEqual(serverRecord)
 })
 
 it('Alice can create a team', async () => {
@@ -48,12 +48,12 @@ it('Alice can create a team and manually register it with the server ', async ()
   {
     await alice.authProvider.addTeam(team)
 
-    // get the server's public keys
+    // get the server's public record
     const response = await fetch(`http://${url}/keys`)
-    const keys = await response.json()
+    const serverRecord = await response.json()
 
-    // add the server's public keys to the team
-    team.addServer({ host, keys })
+    // add the server to the team
+    team.addServer({ ...serverRecord, host })
 
     // register the team with the server
     await fetch(`http://${url}/teams`, {
@@ -118,9 +118,9 @@ it(`Eve can't replace the team on the sync server`, async () => {
   await alice.authProvider.addTeam(team)
 
   const keysResponse = await fetch(`http://${url}/keys`)
-  const keys = await keysResponse.json()
+  const serverRecord = await keysResponse.json()
 
-  team.addServer({ host, keys })
+  team.addServer({ ...serverRecord, host })
 
   const serializedGraph = team.save()
   const teamKeyring = team.teamKeyring()
@@ -220,10 +220,15 @@ it('Alice and Bob can sync over a public share', async () => {
   // that lets us e.g. add specific documents to a share.
 })
 
-const lookLikeServerKeys = (maybeKeyset: any) =>
-  maybeKeyset.generation === 0 &&
-  typeof maybeKeyset.encryption === 'string' &&
-  typeof maybeKeyset.signature === 'string'
+const looksLikeAKeyset = (maybeKeyset: any) =>
+  typeof maybeKeyset?.encryption === 'string' && typeof maybeKeyset?.signature === 'string'
+
+const looksLikeAServer = (maybeServer: any) =>
+  typeof maybeServer?.host === 'string' &&
+  typeof maybeServer?.serverId === 'string' &&
+  looksLikeAKeyset(maybeServer?.identityKeys) &&
+  maybeServer.identityKeys.generation === 0 &&
+  looksLikeAKeyset(maybeServer?.keys)
 
 type TestDoc = {
   foo: string

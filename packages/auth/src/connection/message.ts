@@ -4,6 +4,14 @@ import type { ErrorMessage, LocalErrorMessage } from './errors.js'
 
 export type ReadyMessage = {
   type: 'REQUEST_IDENTITY'
+  payload: {
+    /**
+     * A nonce chosen by the peer asking for our identity. An invitee has to bind its proof of
+     * invitation to this, which is why the request carries it: the proof can't be built until the
+     * acceptor's nonce has arrived.
+     */
+    acceptorNonce: Base58
+  }
 }
 
 export type DisconnectMessage = {

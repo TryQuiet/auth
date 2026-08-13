@@ -264,7 +264,7 @@ describe('connection', () => {
         expect(phoneConnection.team!.hasDevice(phone.deviceId)).toBe(true)
       })
 
-      it('lets a member invite a device, remove it, and then add it back', async () => {
+      it("won't re-admit a device that was removed, even with a fresh invitation", async () => {
         const { alice, bob } = setup('alice', 'bob')
         await connect(alice, bob)
 
@@ -299,7 +299,9 @@ describe('connection', () => {
           expect(alice.team.members(bob.userId).devices).toHaveLength(1)
         }
         {
-          // Bob invites his phone again
+          // Bob invites his phone again. A removed device is tombstoned: its id is the fingerprint
+          // of keys the team has already retired, and it can never be registered again — otherwise
+          // whoever took the device could talk their way back onto the team.
 
           const { seed } = bob.team.inviteDevice()
           const phoneContext: InviteeDeviceContext = {
@@ -310,12 +312,12 @@ describe('connection', () => {
           const join = joinTestChannel(new TestChannel())
           const laptopConnection = join(bob.connectionContext).start()
           const phoneConnection = join(phoneContext).start()
-          await all([laptopConnection, phoneConnection], 'connected')
+
+          const error = await eventPromise(phoneConnection, 'remoteError')
+          expect(error.type).toEqual('DEVICE_REMOVED') // ❌
 
           bob.team = laptopConnection.team!
-
-          expect(bob.team.members(bob.userId).devices).toHaveLength(2)
-          expect(alice.team.members(bob.userId).devices).toHaveLength(2)
+          expect(bob.team.members(bob.userId).devices).toHaveLength(1)
         }
       })
 

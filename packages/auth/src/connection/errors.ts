@@ -8,6 +8,7 @@ export const ADMIT_MEMBER_LINK_MISSING = 'ADMIT_MEMBER_LINK_MISSING' as const
 export const MEMBER_REMOVED = 'MEMBER_REMOVED' as const
 export const NEITHER_IS_MEMBER = 'NEITHER_IS_MEMBER' as const
 export const SERVER_REMOVED = 'SERVER_REMOVED' as const
+export const SERVER_UNKNOWN = 'SERVER_UNKNOWN' as const
 export const TIMEOUT = 'TIMEOUT' as const
 export const UNHANDLED = 'UNHANDLED' as const
 
@@ -49,6 +50,10 @@ export const connectionErrors: Record<string, ErrorDefinition> = {
   [SERVER_REMOVED]: {
     localMessage: 'The server was removed from this team',
     remoteMessage: 'You (a server) were removed from this team',
+  },
+  [SERVER_UNKNOWN]: {
+    localMessage: "The peer's server isn't listed on this team",
+    remoteMessage: "Your server isn't listed on this team",
   },
   [TIMEOUT]: {
     localMessage: "We didn't hear back from the peer; giving up",
