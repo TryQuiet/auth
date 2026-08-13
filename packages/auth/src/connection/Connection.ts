@@ -330,8 +330,13 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           assert(roles)
           assert(userId)
 
-          if (!roles!.includes(MEMBER) && context.server == null && !team!.hasServer(userId!)) {
-            team!.addMemberRole(userId!, MEMBER)
+          if (
+            !roles.includes(MEMBER) &&
+            context.server == null &&
+            !team.hasServer(userId) &&
+            !team.hasServer(context.user?.userId!)
+          ) {
+            team.addMemberRole(userId, MEMBER)
           }
           this.#queueMessage('ACCEPT_IDENTITY')
         },
