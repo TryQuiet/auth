@@ -1,20 +1,23 @@
-import { type Member } from 'team/index.js'
-import { type Transform } from 'team/types.js'
+import type { UnixTimestamp } from '@localfirst/crdx'
+import { type Device } from 'device/index.js'
+import { type NewMember, type Transform } from 'team/types.js'
 
+/**
+ * Adds a member to the team, along with the devices they're registering (if any).
+ *
+ * A member is never re-added once removed — their userId is tombstoned along with everything else
+ * in the id namespace — so there's no un-removal path here.
+ */
 export const addMember =
-  (newMember: Member): Transform =>
+  (newMember: NewMember, devices: Device[] = [], admittedAt: UnixTimestamp): Transform =>
   state => ({
     ...state,
-
-    // Add member to the team's list of members
     members: [
       ...state.members,
       {
         ...newMember,
         roles: [],
+        devices: devices.map(device => ({ ...device, admittedAt })),
       },
     ],
-
-    // Remove member's name from list of removed members (e.g. if member was removed and is now being re-added)
-    removedMembers: state.removedMembers.filter(m => m.userId === newMember.userId),
   })

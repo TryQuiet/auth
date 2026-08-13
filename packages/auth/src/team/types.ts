@@ -11,13 +11,21 @@ import type {
   Payload,
   ROOT,
   Sequence,
+  SignerInfo,
+  UnixTimestamp,
 } from '@localfirst/crdx'
 import type { Client, LocalContext } from 'team/context.js'
 import type { Device } from 'device/index.js'
-import type { Invitation, InvitationState } from 'invitation/types.js'
+import type {
+  DeviceInvitationClaim,
+  Invitation,
+  InvitationState,
+  MemberInvitationClaim,
+  ProofOfInvitation,
+} from 'invitation/types.js'
 import type { Lockbox } from 'lockbox/index.js'
 import type { PermissionsMap, Role } from 'role/index.js'
-import type { Host, Server } from 'server/index.js'
+import type { Server } from 'server/index.js'
 import type { ValidationResult } from 'util/index.js'
 import { Logger, SharedLogger } from '@localfirst/shared'
 
@@ -38,9 +46,36 @@ export type Member = {
   /** Array of role names that the member belongs to */
   roles: string[]
 
-  /** Devices that the member has added, along with their public */
-  devices?: Device[]
+  /** Devices that the member has registered */
+  devices?: DeviceRecord[]
 }
+
+/**
+ * A device as it appears in team state: the registered device plus when it was registered and, for
+ * tombstones, when it was removed. A removed device id is never registered again, so a tombstone is
+ * permanent — it's how we tell "this signer was removed" apart from "we've never heard of this
+ * signer", which are different answers to a peer trying to connect.
+ */
+export type DeviceRecord = Device & {
+  /** Timestamp of the link that registered this device */
+  admittedAt: UnixTimestamp
+
+  /** Timestamp of the link that removed this device (tombstones only) */
+  removedAt?: UnixTimestamp
+}
+
+/** A server as it appears in team state; see `DeviceRecord` for the timestamps. */
+export type ServerRecord = Server & {
+  admittedAt: UnixTimestamp
+  removedAt?: UnixTimestamp
+}
+
+/**
+ * A member as it appears in a link that registers one. Its devices are plain devices: the
+ * `admittedAt` stamp on the state record comes from the registering link, not from the payload, so
+ * nobody gets to choose their own registration time.
+ */
+export type NewMember = Omit<Member, 'devices'> & { devices?: Device[] }
 
 // ********* TEAM CONSTRUCTOR
 
@@ -97,13 +132,14 @@ export type RootAction = {
     name: string
     rootMember: Member
     rootDevice: Device
+    metadata?: TeamMetadata
   }
 }
 
 export type AddMemberAction = {
   type: 'ADD_MEMBER'
   payload: BasePayload & {
-    member: Member
+    member: NewMember
     roles?: string[]
   }
 }
@@ -144,13 +180,6 @@ export type RemoveMemberRoleAction = {
   }
 }
 
-export type AddDeviceAction = {
-  type: 'ADD_DEVICE'
-  payload: BasePayload & {
-    device: Device
-  }
-}
-
 export type RemoveDeviceAction = {
   type: 'REMOVE_DEVICE'
   payload: BasePayload & {
@@ -179,20 +208,41 @@ export type RevokeInvitationAction = {
   }
 }
 
+/**
+ * Admits a new member and the device they'll use, in a single link.
+ *
+ * The payload carries the invitation proof and the claim it was signed over, so that every replica
+ * can re-derive the admitted identity from signed material rather than trusting the admitting
+ * peer's summary of it. The member and the device both come out of `claim`.
+ */
 export type AdmitMemberAction = {
   type: 'ADMIT_MEMBER'
   payload: BasePayload & {
-    id: Base58 // Invitation ID
-    userName: string
-    memberKeys: Keyset // Member keys provided by the new member
+    /** Invitation ID */
+    id: Base58
+
+    /** Proof that the invitee knows the invitation seed */
+    proof: ProofOfInvitation
+
+    /** The identity being registered; the reducer builds the member and their device from this */
+    claim: MemberInvitationClaim
+
+    /** The new device's signature over the claim — proof that whoever is being admitted actually
+     * holds the device keys. The inviter knows the seed and can forge `proof`; it can't forge
+     * this. */
+    possessionProof: Base58
   }
 }
 
+/** Admits an additional device for an existing member. The device's owner comes from the
+ * invitation record on the graph, never from the claim. */
 export type AdmitDeviceAction = {
   type: 'ADMIT_DEVICE'
   payload: BasePayload & {
     id: Base58 // Invitation ID
-    device: Device
+    proof: ProofOfInvitation
+    claim: DeviceInvitationClaim
+    possessionProof: Base58
   }
 }
 
@@ -220,7 +270,9 @@ export type AddServerAction = {
 export type RemoveServerAction = {
   type: 'REMOVE_SERVER'
   payload: BasePayload & {
-    host: Host
+    /** A server is identified by its `serverId` (the fingerprint of its identity key), never by its
+     * host — a host is a mutable label. */
+    serverId: string
   }
 }
 
@@ -262,7 +314,6 @@ export type SetMetadataAction = {
 export type TeamAction =
   | RootAction
   | AddMemberAction
-  | AddDeviceAction
   | AddRoleAction
   | AddMemberRoleAction
   | RemoveMemberAction
@@ -284,10 +335,25 @@ export type TeamAction =
   | AddLockboxesAction
   | SetMetadataAction
 
+/**
+ * Application context added to every link. It deliberately says nothing about who authored the
+ * link: that's `body.signer`, which is bound to the link by a signature. Anything in here is an
+ * unauthenticated hint and must never be used for authorization.
+ */
 export type TeamContext = {
-  deviceId: string
   client?: Client
 }
+
+/** The kinds of signer that can author a team link. */
+export const SignerKind = { DEVICE: 'device', SERVER: 'server' } as const
+export type SignerKind = (typeof SignerKind)[keyof typeof SignerKind]
+
+/** A signer resolved against team state: the record it names, and what kind of thing that is. */
+export type ResolvedSigner =
+  | { kind: typeof SignerKind.DEVICE; device: DeviceRecord }
+  | { kind: typeof SignerKind.SERVER; server: ServerRecord }
+
+export type TeamSignerInfo = SignerInfo & { kind: SignerKind }
 
 export type TeamLinkBody = LinkBody<TeamAction, TeamContext>
 
@@ -299,7 +365,14 @@ export type TeamLinkMap = Record<Hash, TeamLink>
 export type TeamGraph = Graph<TeamAction, TeamContext>
 export type Branch = Sequence<TeamAction, TeamContext>
 export type TwoBranches = [Branch, Branch]
-export type MembershipRuleEnforcer = (links: TeamLink[], graph: TeamGraph) => TeamLink[]
+/** Maps each signer id known to a graph to the member it acts for. */
+export type SignerUserMap = Record<string, string>
+
+export type MembershipRuleEnforcer = (
+  links: TeamLink[],
+  graph: TeamGraph,
+  authors: SignerUserMap
+) => TeamLink[]
 
 // ********* TEAM STATE
 
@@ -307,10 +380,9 @@ export type TeamState = {
   head: Hash[]
 
   teamName: string
-  rootContext?: TeamContext
   members: Member[]
   roles: Role[]
-  servers: Server[]
+  servers: ServerRecord[]
   lockboxes: Lockbox[]
   invitations: InvitationMap
   messages: unknown[]
@@ -318,8 +390,8 @@ export type TeamState = {
   // We keep track of removed members and devices primarily so that we deliver the correct message
   // to them when we refuse to connect
   removedMembers: Member[]
-  removedDevices: Device[]
-  removedServers: Server[]
+  removedDevices: DeviceRecord[]
+  removedServers: ServerRecord[]
 
   // If a member's admission is reversed, we need to flag them as compromised so an admin can
   // rotate any keys they had access to at the first opportunity
@@ -331,11 +403,37 @@ export type InvitationMap = Record<string, InvitationState>
 
 // ********* VALIDATION
 
-export type TeamStateValidator = (previousState: TeamState, link: TeamLink, extendableLogger: Logger) => ValidationResult
+export type TeamStateValidator = (
+  previousState: TeamState,
+  link: TeamLink,
+  extendableLogger: Logger
+) => ValidationResult
 
 export type TeamStateValidatorSet = Record<string, TeamStateValidator>
 
-export type ValidationArgs = [TeamState, TeamLink, Logger | undefined]
+/**
+ * The authenticated author of a link, derived from `body.signer` after its signature has been
+ * verified against the registered record.
+ *
+ * Authorization rules take this rather than reading anything off the link body: a link body is
+ * whatever its author chose to write, and the whole point of the signature is that this isn't.
+ */
+export type LinkAuthor = {
+  /** The signer record the link's signature was verified against. */
+  signer: ResolvedSigner
+
+  /** The member the signer acts as: a device's owner, or a server's member projection. */
+  member: Member
+}
+
+export type AuthorizedValidator = (
+  previousState: TeamState,
+  link: TeamLink,
+  author: LinkAuthor,
+  extendableLogger: Logger
+) => ValidationResult
+
+export type AuthorizedValidatorSet = Record<string, AuthorizedValidator>
 
 // ********* CRYPTO
 
@@ -363,6 +461,8 @@ export type LookupIdentityResult =
   | 'MEMBER_REMOVED'
   | 'DEVICE_UNKNOWN'
   | 'DEVICE_REMOVED'
+  | 'VALID_SERVER'
+  | 'SERVER_REMOVED'
 
 export type EncryptStreamTeamPayload = { recipient: KeyMetadata, encryptStream: AsyncGenerator<Uint8Array>, header: Uint8Array }
 

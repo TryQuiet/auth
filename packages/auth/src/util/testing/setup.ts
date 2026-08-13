@@ -1,12 +1,13 @@
 import { assert } from '@localfirst/shared'
-import { createKeyring, createUser, type UserWithSecrets } from '@localfirst/crdx'
+import { createKeyring, createUser, type Signer, type UserWithSecrets } from '@localfirst/crdx'
 import { createId } from '@paralleldrive/cuid2'
 import type { Connection, Context, InviteeContext, MemberContext } from 'connection/index.js'
 import type { DeviceWithSecrets } from 'device/index.js'
 import * as devices from 'device/index.js'
 import { ADMIN } from 'role/index.js'
 import type { LocalUserContext } from 'team/context.js'
-import type { Team, TeamContext } from 'team/index.js'
+import type { Team } from 'team/index.js'
+import { deviceSigner } from 'team/index.js'
 import * as teams from 'team/index.js'
 import { arrayToMap } from 'util/index.js'
 import { phoneInfo, laptopInfo } from './constants.js'
@@ -100,7 +101,6 @@ export const setup = (..._config: SetupConfig) => {
     const phone = phones[userName]
 
     const localContext = { user, device }
-    const graphContext = { deviceId: device.deviceId }
     const team = member
       ? teams.load(graph, localContext, createKeyring(teamKeys)) // Members get a copy of the source team
       : teams.createTeam(userName, localContext, randomSeed) // Non-members get a dummy empty placeholder team
@@ -119,7 +119,7 @@ export const setup = (..._config: SetupConfig) => {
         : teams.createTeam(userName, localContext, randomSeed), // Non-members get a dummy empty placeholder team
       device: phone,
       localContext: { user, device: phone },
-      graphContext: { deviceId: phone.deviceId },
+      signer: deviceSigner(phone),
       connectionContext,
       connection: {} as Record<string, Connection>,
       getState: (peer: string) => phoneStuff.connection[peer].state,
@@ -136,7 +136,7 @@ export const setup = (..._config: SetupConfig) => {
       team,
       device,
       localContext,
-      graphContext,
+      signer: deviceSigner(device),
       phone,
       phoneStuff,
       connectionContext,
@@ -170,7 +170,9 @@ export type UserStuff = {
   phone?: DeviceWithSecrets
   phoneStuff?: UserStuff
   localContext: LocalUserContext
-  graphContext: TeamContext
+
+  /** The identity this user's device signs links with, for tests that append to a graph directly. */
+  signer: Signer
   connectionContext: MemberContext | InviteeContext
   connection: Record<string, Connection>
   getState: (peer: string) => any

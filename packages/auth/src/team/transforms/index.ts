@@ -1,4 +1,5 @@
 export * from './addDevice.js'
+export * from './addInvitedDevice.js'
 export * from './addMember.js'
 export * from './addMemberRoles.js'
 export * from './addMessage.js'

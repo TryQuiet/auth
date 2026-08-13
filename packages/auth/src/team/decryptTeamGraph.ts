@@ -55,9 +55,6 @@ export const decryptTeamGraph = ({
 
   const { encryptedLinks, childMap, root } = encryptedGraph
 
-  // ignore coverage
-  const links = encryptedGraph.links ?? {}
-
   /** Recursively decrypts a link and its children. */
   const decrypt = (
     hash: Hash,
@@ -65,17 +62,29 @@ export const decryptTeamGraph = ({
     previousDecryptedLinks: Record<Hash, TeamLink> = {},
     previousState: TeamState = initialState
   ): Record<Hash, TeamLink> => {
-    // Decrypt this link
+    // Decrypt this link. A graph from a peer can carry attacker-chosen plaintext alongside its
+    // ciphertext, so we always reconstruct the body from the bytes the hash commits to.
     const encryptedLink = encryptedLinks[hash]
-    const decryptedLink =
-      links[hash] ?? // If it's already decrypted, don't bother decrypting it again
-      decryptLink<TeamAction, TeamContext>(encryptedLink, previousKeys)
+    const decryptedLink = decryptLink<TeamAction, TeamContext>(encryptedLink, previousKeys)
     let decryptedLinks = {
       [hash]: decryptedLink,
     }
 
-    // Reduce & see if there are new team keys
-    const newState = reducer(previousState, decryptedLink, logger)
+    // Reduce & see if there are new team keys.
+    //
+    // This walk follows one root-to-link path at a time, so the state we accumulate is only what
+    // that path establishes — a link whose author was registered on a *concurrent* branch will
+    // fail to validate here even though the merged graph is perfectly good. Decryption isn't the
+    // acceptance boundary; the resolved, causally ordered sequence in `makeMachine` is, and it
+    // revalidates everything. So a rejection here only means "can't learn key rotations down this
+    // path", and we carry on with the keys we have.
+    let newState = previousState
+    try {
+      newState = reducer(previousState, decryptedLink, logger)
+    } catch (error) {
+      logger.debug(`Could not reduce link ${hash} along this path while decrypting`, error)
+    }
+
     let newKeys: KeysetWithSecrets | undefined
     try {
       newKeys = keys(newState, deviceKeys, TEAM_SCOPE)

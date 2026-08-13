@@ -1,32 +1,21 @@
+import type { UnixTimestamp } from '@localfirst/crdx'
 import { type Device } from 'device/index.js'
 import { type Transform } from 'team/types.js'
 
+/**
+ * Registers a device to its owner.
+ *
+ * There is no re-add path: a removed device id is tombstoned forever (see `removeDevice`), and the
+ * uniqueness validator rejects any link that tries to register an id we've already seen. Otherwise
+ * removing a compromised device would be undoable by whoever compromised it.
+ */
 export const addDevice =
-  (device: Device): Transform =>
-  state => {
-    const { userId } = device
-    return {
-      ...state,
-
-      // Add device to the member's list of devices
-      members: state.members.map(member => {
-        if (member.userId === userId) {
-          const { devices = [] } = member
-
-          // Don't add the device if it's already in the list
-          if (devices.find(d => d.deviceId === device.deviceId)) {
-            return member
-          } else
-            return {
-              ...member,
-              devices: [...devices, device],
-            }
-        }
-
-        return member
-      }),
-
-      // Remove device ID from list of removed devices (e.g. if it was removed at one point and is being re-added)
-      removedDevices: state.removedDevices.filter(d => d.keys.name === device.deviceId),
-    }
-  }
+  (device: Device, admittedAt: UnixTimestamp): Transform =>
+  state => ({
+    ...state,
+    members: state.members.map(member =>
+      member.userId === device.userId
+        ? { ...member, devices: [...(member.devices ?? []), { ...device, admittedAt }] }
+        : member
+    ),
+  })

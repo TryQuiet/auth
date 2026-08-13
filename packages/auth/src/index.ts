@@ -1,7 +1,10 @@
 export { Connection } from './connection/index.js'
 export { createDevice, redactDevice, type Device } from './device/index.js'
 export { generateProof } from './invitation/index.js'
-export { Team, createTeam, load as loadTeam } from './team/index.js'
+export { Team, createTeam, deviceSigner, load as loadTeam } from './team/index.js'
+
+/** Link signers are named by kind + id; these are the kinds this library uses. */
+export { SignerKind } from './team/types.js'
 
 export * as connection from './connection/index.js'
 export * as device from './device/index.js'

@@ -1,11 +1,15 @@
-import { createKeyset, redactKeys } from '@localfirst/crdx'
+import { createKeyset } from '@localfirst/crdx'
+import { createServer as makeServer, redactServer } from 'server/index.js'
 import type { Host, Server, ServerWithSecrets } from 'server/index.js'
 import { KeyType } from 'util/index.js'
 import { eventPromise } from '@localfirst/shared'
 import {
   TestChannel,
   all,
+  invitationNonces,
   joinTestChannel,
+  memberClaim,
+  memberPossessionProof,
   setup as setupHumans,
   type SetupConfig,
   type UserStuff,
@@ -32,14 +36,17 @@ describe('Team', () => {
       alice.team.addServer(server)
       expect(alice.team.servers().length).toBe(1)
 
-      // Look up server
-      const serverFromTeam = alice.team.servers(host)
+      // Look up server by its id
+      const serverFromTeam = alice.team.servers(server.serverId)
       expect(serverFromTeam.host).toBe(host)
 
+      // The host is a label, not an identity, so looking one up by host gives a list
+      expect(alice.team.serversByHost(host)).toHaveLength(1)
+
       // Remove server
-      alice.team.removeServer(host)
+      alice.team.removeServer(server.serverId)
       expect(alice.team.servers().length).toBe(0)
-      expect(alice.team.serverWasRemoved(host)).toBe(true)
+      expect(alice.team.serverWasRemoved(server.serverId)).toBe(true)
     })
 
     it("throws if a named server doesn't exist on the team", () => {
@@ -47,7 +54,7 @@ describe('Team', () => {
       expect(() => alice.team.servers('foo.com')).toThrow()
     })
 
-    it('can be re-added after being removed', () => {
+    it("can't be re-added after being removed", () => {
       const { alice } = setupHumans('alice')
 
       // Add server
@@ -56,14 +63,19 @@ describe('Team', () => {
       expect(alice.team.servers().length).toBe(1)
 
       // Remove server
-      alice.team.removeServer(host)
+      alice.team.removeServer(server.serverId)
       expect(alice.team.servers().length).toBe(0)
-      expect(alice.team.serverWasRemoved(host)).toBe(true)
+      expect(alice.team.serverWasRemoved(server.serverId)).toBe(true)
 
-      // Add server again
-      alice.team.addServer(server)
+      // A removed id is tombstoned for good: bringing it back would undo the removal for anyone
+      // still holding the server's keys.
+      expect(() => alice.team.addServer(server)).toThrow()
+      expect(alice.team.servers().length).toBe(0)
+
+      // A fresh server at the same host is a different identity, and that's fine
+      const { server: replacement } = createServer(host, 'a-different-seed')
+      alice.team.addServer(replacement)
       expect(alice.team.servers().length).toBe(1)
-      expect(alice.team.serverWasRemoved(host)).toBe(false)
     })
 
     it("can't be added by a non-admin member", () => {
@@ -87,7 +99,7 @@ describe('Team', () => {
       expect(alice.team.servers().length).toBe(1)
 
       const tryToRemoveServer = () => {
-        bob.team.removeServer(host)
+        bob.team.removeServer(server.serverId)
       }
 
       expect(tryToRemoveServer).toThrowError()
@@ -172,7 +184,12 @@ describe('Team', () => {
       await connectWithServer(alice, server)
 
       // Now if Bob connects to the server, the server can admit him
-      server.team.admitMember(invitation.generateProof(bobInvite), bob.user.keys, bob.userId)
+      const claim = memberClaim(bob.user, bob.device)
+      server.team.admitMember(
+        invitation.generateProof({ seed: bobInvite, claim, ...invitationNonces() }),
+        claim,
+        memberPossessionProof(invitation.deriveId(bobInvite), bob.user, bob.device)
+      )
       expect(server.team.members().length).toBe(2)
     })
 
@@ -246,60 +263,60 @@ describe('Team', () => {
       expect(alice.team.members(bob.userId).devices).toHaveLength(2)
     })
 
-    it('can change its own keys', async () => {
+    it('has its keys rotated by an admin', () => {
       const { alice } = setupHumans('alice', 'bob')
       const { server, serverWithSecrets } = createServer(host)
       alice.team.addServer(server)
 
-      const host2 = 'foo.com'
-      const { server: server2 } = createServer(host2)
-      alice.team.addServer(server2)
+      expect(alice.team.teamKeys().generation).toBe(0)
 
-      const savedGraph = alice.team.save()
-      const aliceTeamKeys = alice.team.teamKeys()
-      const serverTeam = loadTeam(savedGraph, { server: serverWithSecrets }, aliceTeamKeys)
+      // An admin rotates the server's keys
+      alice.team.changeKeys(createKeyset({ type: KeyType.SERVER, name: server.serverId }))
+      expect(alice.team.servers(server.serverId).keys.generation).toBe(1)
 
-      const teamKeys0 = serverTeam.teamKeys()
-      expect(teamKeys0.generation).toBe(0)
+      // The server's *identity* is untouched by the rotation — that's what its id commits to, and
+      // what every link it has ever signed was signed with
+      expect(alice.team.servers(server.serverId).serverId).toBe(server.serverId)
+      expect(alice.team.servers(server.serverId).identityKeys).toEqual(server.identityKeys)
 
-      // Server changes their keys
-      serverTeam.changeKeys(createKeyset({ type: KeyType.SERVER, name: host }))
-
-      // Server keys have been rotated
-      expect(serverTeam.servers(host).keys.generation).toBe(1)
-
-      // Server still has access to team keys
-      const teamKeys1 = serverTeam.teamKeys()
-
-      // The team keys were rotated, so these are new
-      expect(teamKeys1.encryption.publicKey).not.toEqual(teamKeys0.encryption.publicKey)
+      // The rotation reaches the team keys, since the old server keys could see them
+      const teamKeys1 = alice.team.teamKeys()
       expect(teamKeys1.generation).toBe(1)
+
+      // The server can still read the graph after the rotation, because it signs and decrypts with
+      // its identity keys
+      const serverTeam = loadTeam(
+        alice.team.save(),
+        { server: serverWithSecrets },
+        alice.team.teamKeyring()
+      )
+      expect(serverTeam.servers(server.serverId).keys.generation).toBe(1)
     })
 
-    it(`can't change another server's keys`, async () => {
+    it(`can't change anyone's keys, including its own`, () => {
       const { alice } = setupHumans('alice', 'bob')
       const { server, serverWithSecrets } = createServer(host)
       alice.team.addServer(server)
 
-      const host2 = 'foo.com'
-      const { server: server2 } = createServer(host2)
+      const { server: server2 } = createServer('foo.com', 'foo-seed')
       alice.team.addServer(server2)
 
       const savedGraph = alice.team.save()
-      const aliceTeamKeys = alice.team.teamKeys()
-      const serverTeam = loadTeam(savedGraph, { server: serverWithSecrets }, aliceTeamKeys)
+      const serverTeam = loadTeam(savedGraph, { server: serverWithSecrets }, alice.team.teamKeys())
 
-      expect(serverTeam.teamKeys().generation).toBe(0)
-      expect(serverTeam.servers(host2).keys.generation).toBe(0)
-
-      // server tries to change another server's keys
+      // A server may only author admissions. Anything else it posts — including a re-key of itself
+      // — is rejected by every replica, so it can't quietly grant itself anything.
       expect(() => {
-        serverTeam.changeKeys(createKeyset({ type: KeyType.SERVER, name: host2 }))
+        serverTeam.changeKeys(createKeyset({ type: KeyType.SERVER, name: server.serverId }))
+      }).toThrow()
+
+      expect(() => {
+        serverTeam.changeKeys(createKeyset({ type: KeyType.SERVER, name: server2.serverId }))
       }).toThrow()
 
       // No keys have been rotated
       expect(serverTeam.teamKeys().generation).toBe(0)
-      expect(serverTeam.servers(host2).keys.generation).toBe(0)
+      expect(serverTeam.servers(server2.serverId).keys.generation).toBe(0)
     })
   })
 })
@@ -327,19 +344,15 @@ const connectWithServer = async (user: UserStuff, server: ServerStuff) => {
   return connectionPromise(user.connection[host], server.connection[user.userId])
 }
 
-const createServer = (host: Host) => {
-  const serverKeys = createKeyset({ type: KeyType.SERVER, name: host })
-  const serverWithSecrets: ServerWithSecrets = { host, keys: serverKeys }
-  const server: Server = { host, keys: redactKeys(serverKeys) }
-  return { server, serverWithSecrets }
+const createServer = (host: Host, seed = host) => {
+  const serverWithSecrets = makeServer({ host, seed })
+  return { server: redactServer(serverWithSecrets), serverWithSecrets }
 }
 
 const host = 'example.com'
 
 const setup = (...humanUsers: SetupConfig) => {
-  const serverKeys = createKeyset({ type: KeyType.SERVER, name: host })
-  const serverWithSecrets: ServerWithSecrets = { host, keys: serverKeys }
-  const server: Server = { host, keys: redactKeys(serverKeys) }
+  const { server, serverWithSecrets } = createServer(host)
 
   const users = setupHumans(...humanUsers)
 

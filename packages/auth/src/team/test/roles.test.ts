@@ -180,13 +180,10 @@ describe('Team', () => {
     it(`attempts to self-assign a role that can't be self-assigned`, () => {
       const { alice, bob } = setup('alice', 'bob')
       
-      // 👩🏾 Alice creates FOOBAR role
+      // 👩🏾 Alice creates FOOBAR role. She doesn't give it to herself — FOOBAR isn't self-
+      // assignable, and that rule applies to her too; as an admin she holds its keys regardless.
       alice.team.addRole('FOOBAR')
-      alice.team.addMemberRole(alice.userId, 'FOOBAR')
-
-      // 👩🏾 Alice is a FOOBAR
       expect(alice.team.hasRole('FOOBAR')).toBe(true)
-      expect(alice.team.memberHasRole(alice.userId, 'FOOBAR')).toBe(true)
 
       // 👩🏾 Alice creates a lockbox for FOOBAR keys under arbitrary keys
       const randomSeed = randomUUID()

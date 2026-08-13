@@ -1,10 +1,12 @@
 import { ROOT, type Reducer } from '@localfirst/crdx'
+import { Logger } from '@localfirst/shared'
 import { ADMIN } from 'role/index.js'
 import { clone, composeTransforms } from 'util/index.js'
 import { invalidLinkReducer } from './invalidLinkReducer.js'
 import { setHead } from './setHead.js'
 import {
   addDevice,
+  addInvitedDevice,
   addMember,
   addMemberRoles,
   addMessage,
@@ -24,16 +26,16 @@ import {
   setTeamName,
   useInvitation,
 } from './transforms/index.js'
+import { setMetadata } from './transforms/setMetadata.js'
 import {
   type Member,
   type TeamAction,
   type TeamContext,
+  type TeamLink,
   type TeamState,
   type Transform,
 } from './types.js'
 import { validate } from './validate.js'
-import { setMetadata } from './transforms/setMetadata.js'
-import { Logger } from '@localfirst/shared'
 
 /**
  * Each link has a `type` and a `payload`, just like a Redux action. So we can derive a `TeamState`
@@ -61,40 +63,42 @@ export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (state, link
 
   state = clone(state)
 
-  // Make sure this link can be applied to the previous state & doesn't put us in an invalid state
+  // Make sure this link can be applied to the previous state & doesn't put us in an invalid state.
+  // This is where the link's signature is checked against the identity it claims to be from, so
+  // nothing below this line has to wonder whether the author is who they say they are.
   const validation = validate(state, link, logger)
   if (!validation.isValid) {
     throw validation.error
   }
 
-  // Recast as TeamAction so we get type enforcement on payloads
-  const action = link.body as TeamAction
-
   // Get all transforms and compose them into a single function
   const applyTransforms = composeTransforms([
     setHead(link),
-    collectLockboxes(action.payload.lockboxes), // Any payload can include lockboxes
-    ...getTransforms(action), // Get the specific transforms indicated by this action
+    collectLockboxes(link.body.payload.lockboxes), // Any payload can include lockboxes
+    ...getTransforms(link), // Get the specific transforms indicated by this action
   ])
-  const newState = applyTransforms(state)
 
-  return newState
+  return applyTransforms(state)
 }
 
 /**
  * Each action type generates one or more transforms (functions that take the old state and return a
  * new state). This returns an array of transforms that are then applied in order.
- * @param action The team action (type + payload) being processed
+ * @param link The link being processed; its body is the team action, and its timestamp is what
+ * registration and removal records are stamped with.
  */
-const getTransforms = (action: TeamAction): Transform[] => {
+const getTransforms = (link: TeamLink): Transform[] => {
+  const action = link.body as TeamAction
+  const { timestamp } = link.body
+
   switch (action.type) {
     case ROOT: {
-      const { name, rootMember, rootDevice } = action.payload
+      const { name, rootMember, rootDevice, metadata } = action.payload
       return [
         setTeamName(name),
+        ...(metadata === undefined ? [] : [setMetadata(metadata)]),
         addRole({ roleName: ADMIN, createdBy: action.payload.rootMember.userId }), // Create the admin role
-        addMember(rootMember), // Add the founding member
-        addDevice(rootDevice), // Add the founding member's device
+        addMember(rootMember, [rootDevice], timestamp), // Add the founding member & their device
         ...addMemberRoles(rootMember.userId, [ADMIN]), // Make the founding member an admin
       ]
     }
@@ -102,7 +106,7 @@ const getTransforms = (action: TeamAction): Transform[] => {
     case 'ADD_MEMBER': {
       const { member, roles } = action.payload
       return [
-        addMember(member), // Add this member to the team
+        addMember(member, member.devices ?? [], timestamp), // Add this member and any devices they're registering
         ...addMemberRoles(member.userId, roles), // Add each of these roles to the member's list of roles
       ]
     }
@@ -128,17 +132,10 @@ const getTransforms = (action: TeamAction): Transform[] => {
       ]
     }
 
-    case 'ADD_DEVICE': {
-      const { device } = action.payload
-      return [
-        addDevice(device), // Add this device to the member's list of devices
-      ]
-    }
-
     case 'REMOVE_DEVICE': {
       const { deviceId } = action.payload
       return [
-        removeDevice(deviceId), // Remove this device from the member's list of devices
+        removeDevice(deviceId, timestamp), // Tombstone this device
       ]
     }
 
@@ -159,14 +156,14 @@ const getTransforms = (action: TeamAction): Transform[] => {
     case 'INVITE_MEMBER': {
       const { invitation } = action.payload
       return [
-        postInvitation(invitation), // Add the invitation to the list of open invitations.
+        postInvitation(invitation, 'member'), // Add the invitation to the list of open invitations.
       ]
     }
 
     case 'INVITE_DEVICE': {
       const { invitation } = action.payload
       return [
-        postInvitation(invitation), // Add the invitation to the list of open invitations.
+        postInvitation(invitation, 'device'), // Add the invitation to the list of open invitations.
       ]
     }
 
@@ -178,28 +175,27 @@ const getTransforms = (action: TeamAction): Transform[] => {
     }
 
     case 'ADMIT_MEMBER': {
-      const { id, memberKeys, userName } = action.payload
-      const userId = memberKeys.name
-
+      // Everything we register comes out of the signed claim, not out of fields the admitting peer
+      // chose: the validator has checked that the claim is what the invitee signed.
+      const { id, claim } = action.payload
       const member: Member = {
-        userId,
-        userName,
-        keys: memberKeys,
+        userId: claim.memberKeys.name,
+        userName: claim.userName,
+        keys: claim.memberKeys,
         roles: [],
       }
 
       return [
         useInvitation(id), // Mark the invitation as used
-        addMember(member), // Add this member to the team
+        addMember(member, [claim.device], timestamp), // Add the member and the device they'll use
       ]
     }
 
     case 'ADMIT_DEVICE': {
-      const { id, device } = action.payload
-
+      const { id, claim } = action.payload
       return [
         useInvitation(id), // Mark the invitation as used
-        addDevice(device), // Add this device
+        addInvitedDevice(id, claim.device, timestamp), // Add the device to the invitation's owner
       ]
     }
 
@@ -220,14 +216,14 @@ const getTransforms = (action: TeamAction): Transform[] => {
     case 'ADD_SERVER': {
       const { server } = action.payload
       return [
-        addServer(server), // Add the specified server to the team
+        addServer(server, timestamp), // Add the specified server to the team
       ]
     }
 
     case 'REMOVE_SERVER': {
-      const { host } = action.payload
+      const { serverId } = action.payload
       return [
-        removeServer(host), // Remove the specified server from the team
+        removeServer(serverId, timestamp), // Tombstone the specified server
       ]
     }
 
