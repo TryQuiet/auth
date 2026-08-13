@@ -1,5 +1,6 @@
 import { AddRoleInput, ADMIN } from 'role/index.js'
 import * as teams from 'team/index.js'
+import { forge } from './forgeHelpers.js'
 import { setup } from 'util/testing/index.js'
 import 'util/testing/expect/toLookLikeKeyset.js'
 import { randomBytes, symmetric } from '@localfirst/crypto'
@@ -205,6 +206,29 @@ describe('Team', () => {
         bob.team.addMemberRoleToSelf('FOOBAR', keySet)
       }
       expect(attemptToSelfAssignRole).toThrow()
+    })
+
+    it(`a non-admin can't grant the admin role to another member`, () => {
+      const { alice, bob, charlie } = setup(
+        'alice',
+        { user: 'bob', admin: false },
+        { user: 'charlie', admin: false }
+      )
+      const teamKeys = alice.team.teamKeys()
+
+      // 👨🏻‍🦲 Bob (not an admin) hand-authors a link promoting 👳🏽‍♂️ Charlie to admin, signed with
+      // his own real device — authoring needs no admin keys, so this is the escalation an attacker
+      // runs by bypassing the Team API. Granting admin is admin-only, so every peer rejects it;
+      // without the gate Charlie (and then Bob) could evict the founder.
+      const bobBranch = forge({
+        graph: bob.team.graph,
+        action: { type: 'ADD_MEMBER_ROLE', payload: { userId: charlie.userId, roleName: ADMIN } },
+        signer: bob.signer,
+        teamKeys,
+      })
+
+      expect(() => alice.team.merge(bobBranch)).toThrow(/not an admin/)
+      expect(alice.team.memberIsAdmin(charlie.userId)).toBe(false)
     })
 
     it('removes a role', () => {
