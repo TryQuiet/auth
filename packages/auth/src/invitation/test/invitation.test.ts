@@ -1,11 +1,33 @@
+import { createKeyset, redactKeys, type UserWithSecrets } from '@localfirst/crdx'
+import { randomKey } from '@localfirst/crypto'
 import { describe, expect, test } from 'vitest'
-import { create, generateProof, randomSeed, validate } from 'invitation/index.js'
+import { createDevice, createFirstUseDevice, redactDevice } from 'device/index.js'
+import { create, randomSeed, validate, validateClaim } from 'invitation/index.js'
+import type { MemberInvitationClaim } from 'invitation/index.js'
+import { KeyType } from 'util/index.js'
+import 'util/testing/expect/toBeValid.js'
+import {
+  deviceClaim,
+  deviceInvitationProof,
+  invitationNonces,
+  memberClaim,
+  memberInvitationProof,
+} from 'util/testing/invitationProof.js'
+
+const createUser = (userName: string): Pick<UserWithSecrets, 'userName' | 'keys'> & { userId: string } => {
+  const userId = randomKey()
+  return { userId, userName, keys: createKeyset({ type: KeyType.USER, name: userId }) }
+}
+
+const bob = createUser('bob')
+const bobsLaptop = createDevice({ userId: bob.userId, deviceName: 'laptop' })
+
+const eve = createUser('eve')
+const evesLaptop = createDevice({ userId: eve.userId, deviceName: 'laptop' })
 
 describe('invitations', () => {
   test('create invitation', () => {
-    const seed = randomSeed()
-    const invitation = create({ seed })
-    // Looks like an invitation
+    const invitation = create({ seed: randomSeed() })
     expect(invitation).toHaveProperty('id')
     expect(invitation.id).toHaveLength(15)
     expect(invitation).toHaveProperty('publicKey')
@@ -15,33 +37,157 @@ describe('invitations', () => {
     // 👩🏾 Alice generates a secret key and sends it to 👨🏻‍🦲 Bob via a trusted side channel.
     const seed = 'passw0rd'
 
-    // 👩🏾 Alice generates an invitation with this key. Normally the invitation would be stored on the
-    // team's signature chain; here we're just keeping it around in a variable.
+    // 👩🏾 Alice posts an invitation derived from that key on the team's signature chain.
     const invitation = create({ seed })
 
-    // 👨🏻‍🦲 Bob accepts invitation and obtains a credential proving that he was invited.
-    const proofOfInvitation = generateProof(seed)
+    // 👨🏻‍🦲 Bob accepts the invitation, binding it to the identity he wants to register.
+    const claim = memberClaim(bob, bobsLaptop)
+    const nonces = invitationNonces()
+    const proof = memberInvitationProof(seed, bob, bobsLaptop, nonces)
 
-    // 👨🏻‍🦲 Bob shows up to join the team & sees 👳🏽‍♂️ Charlie. Bob shows Charlie his proof of invitation, and
-    // 👳🏽‍♂️ Charlie checks it against the invitation that Alice posted on the signature chain.
-    const validationResult = validate(proofOfInvitation, invitation)
+    // 👳🏽‍♂️ Charlie checks the proof against the invitation Alice posted.
+    expect(validate(proof, invitation, claim, nonces.acceptorNonce)).toBeValid()
+  })
 
-    // ✅
-    expect(validationResult.isValid).toBe(true)
+  test('validate device invitation', () => {
+    const seed = 'passw0rd'
+    const invitation = create({ seed, userId: bob.userId })
+
+    // Bob's phone doesn't know its own userId yet — the invitation record supplies it.
+    const bobsPhone = createFirstUseDevice({ deviceName: 'phone' })
+    const claim = deviceClaim(bobsPhone)
+    const proof = deviceInvitationProof(seed, bobsPhone)
+
+    expect(validate(proof, invitation, claim)).toBeValid()
   })
 
   test('you have to have the secret key to accept an invitation', () => {
-    // 👩🏾 Alice uses a secret key to create an invitation; she sends it to Bob via a trusted side channel
+    const invitation = create({ seed: 'passw0rd' })
+
+    // 🦹‍♀️ Eve tries to accept the invitation without the invitation key
+    const proof = memberInvitationProof('horsebatterycorrectstaple', eve, evesLaptop)
+    expect(validate(proof, invitation, memberClaim(eve, evesLaptop))).not.toBeValid()
+  })
+
+  test('a proof is bound to the keys it was created for', () => {
     const seed = 'passw0rd'
-
-    // And uses it to create an invitation for him
     const invitation = create({ seed })
+    const proof = memberInvitationProof(seed, bob, bobsLaptop)
 
-    // 🦹‍♀️ Eve tries to accept the invitation in Bob's place, but she doesn't have the correct invitation key
-    const proofOfInvitation = generateProof('horsebatterycorrectstaple')
+    // 🦹‍♀️ Eve intercepts Bob's proof and tries to use it to register her own device...
+    const substitutedDevice = { ...memberClaim(bob, bobsLaptop), device: redactDevice(evesLaptop) }
+    expect(validate(proof, invitation, substitutedDevice)).not.toBeValid()
 
-    // ❌ Nice try, Eve!!!
-    const validationResult = validate(proofOfInvitation, invitation)
-    expect(validationResult.isValid).toBe(false)
+    // ...or her own member keys
+    const substitutedKeys: MemberInvitationClaim = {
+      ...memberClaim(bob, bobsLaptop),
+      memberKeys: redactKeys(eve.keys),
+    }
+    expect(validate(proof, invitation, substitutedKeys)).not.toBeValid()
+
+    // ...or just a different user name
+    const substitutedName = { ...memberClaim(bob, bobsLaptop), userName: 'admin' }
+    expect(validate(proof, invitation, substitutedName)).not.toBeValid()
+  })
+
+  test('a proof is bound to the handshake it was created for', () => {
+    const seed = 'passw0rd'
+    const invitation = create({ seed })
+    const claim = memberClaim(bob, bobsLaptop)
+    const proof = memberInvitationProof(seed, bob, bobsLaptop)
+
+    // The proof is only good for the connection whose nonce it signed
+    expect(validate(proof, invitation, claim, proof.acceptorNonce)).toBeValid()
+    expect(validate(proof, invitation, claim, randomKey())).not.toBeValid()
+
+    // Replaying it with a rewritten nonce breaks the signature
+    const replayed = { ...proof, acceptorNonce: randomKey() }
+    expect(validate(replayed, invitation, claim, replayed.acceptorNonce)).not.toBeValid()
+  })
+
+  test('rejects a proof with extra or missing fields', () => {
+    const seed = 'passw0rd'
+    const invitation = create({ seed })
+    const claim = memberClaim(bob, bobsLaptop)
+    const proof = memberInvitationProof(seed, bob, bobsLaptop)
+
+    expect(validate({ ...proof, extra: 'junk' } as any, invitation, claim)).not.toBeValid()
+    const { inviteeNonce, ...incomplete } = proof
+    expect(validate(incomplete as any, invitation, claim)).not.toBeValid()
+  })
+})
+
+describe('validateClaim', () => {
+  test('accepts well-formed claims', () => {
+    expect(validateClaim(memberClaim(bob, bobsLaptop))).toBeValid()
+    expect(validateClaim(deviceClaim(createFirstUseDevice({ deviceName: 'phone' })))).toBeValid()
+  })
+
+  test('rejects a device id that is not the fingerprint of its signature key', () => {
+    const claim = memberClaim(bob, bobsLaptop)
+    const forged = {
+      ...claim,
+      device: {
+        ...claim.device,
+        deviceId: 'chosen-by-eve',
+        keys: { ...claim.device.keys, name: 'chosen-by-eve' },
+      },
+    }
+    expect(validateClaim(forged)).not.toBeValid()
+  })
+
+  test('rejects device keys of the wrong type', () => {
+    const claim = memberClaim(bob, bobsLaptop)
+    expect(
+      validateClaim({
+        ...claim,
+        device: { ...claim.device, keys: { ...claim.device.keys, type: KeyType.USER } },
+      })
+    ).not.toBeValid()
+  })
+
+  test('rejects device keys past generation 0', () => {
+    const claim = memberClaim(bob, bobsLaptop)
+    expect(
+      validateClaim({
+        ...claim,
+        device: { ...claim.device, keys: { ...claim.device.keys, generation: 1 } },
+      })
+    ).not.toBeValid()
+  })
+
+  test('rejects member keys that the device does not belong to', () => {
+    const claim = memberClaim(bob, bobsLaptop)
+    expect(validateClaim({ ...claim, memberKeys: redactKeys(eve.keys) })).not.toBeValid()
+  })
+
+  test('rejects member keys past generation 0', () => {
+    const claim = memberClaim(bob, bobsLaptop)
+    expect(
+      validateClaim({ ...claim, memberKeys: { ...claim.memberKeys, generation: 1 } })
+    ).not.toBeValid()
+  })
+
+  test('rejects a device claim that supplies its own owner', () => {
+    // The invitation says who a new device belongs to; an invitee saying so itself would let it
+    // attach to any user.
+    const claim = deviceClaim(bobsLaptop)
+    expect(validateClaim({ ...claim, device: { ...claim.device, userId: eve.userId } } as any)) //
+      .not.toBeValid()
+  })
+
+  test('rejects claims with extra or missing fields', () => {
+    const claim = memberClaim(bob, bobsLaptop)
+    expect(validateClaim({ ...claim, extra: 'junk' } as any)).not.toBeValid()
+
+    const { memberKeys, ...incomplete } = claim
+    expect(validateClaim(incomplete as any)).not.toBeValid()
+
+    expect(
+      validateClaim({
+        ...claim,
+        device: { ...claim.device, keys: { ...claim.device.keys, extra: 'junk' } },
+      } as any)
+    ).not.toBeValid()
   })
 })
