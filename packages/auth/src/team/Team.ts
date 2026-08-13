@@ -111,6 +111,11 @@ export class Team extends EventEmitter<TeamEvents> {
       const lockboxTeamKeysForMember = lockbox.create(options.teamKeys, user.keys)
       const adminKeys = createKeyset(ADMIN_SCOPE, this.seed)
       const lockboxAdminKeysForMember = lockbox.create(adminKeys, user.keys)
+      const memberKeys = createKeyset({ type: KeyType.ROLE, name: MEMBER }, this.seed)
+      const memberRoleLockboxes = [
+        lockbox.create(memberKeys, adminKeys),
+        lockbox.create(memberKeys, user.keys),
+      ]
 
       // We also store the founding user's keys in a lockbox for the user's device
       const lockboxUserKeysForDevice = lockbox.create(user.keys, this.context.device.keys)
@@ -120,7 +125,12 @@ export class Team extends EventEmitter<TeamEvents> {
         name: options.teamName,
         rootMember: redactUser(user),
         rootDevice: devices.redactDevice(device),
-        lockboxes: [lockboxTeamKeysForMember, lockboxAdminKeysForMember, lockboxUserKeysForDevice],
+        lockboxes: [
+          lockboxTeamKeysForMember,
+          lockboxAdminKeysForMember,
+          ...memberRoleLockboxes,
+          lockboxUserKeysForDevice,
+        ],
       }
 
       // Create CRDX store
@@ -253,6 +263,10 @@ export class Team extends EventEmitter<TeamEvents> {
     return select.members(this.state, userIdOrIds, options) // Many members
   }
 
+  public hasMember(userId: string): boolean {
+    return select.hasMember(this.state, userId)
+  }
+
   /**
    * Adds a member to the team, along with an (optional) device. Since this method assumes that you
    * know the member's secret keys, it only makes sense for unit tests. In real-world scenarios,
@@ -275,8 +289,8 @@ export class Team extends EventEmitter<TeamEvents> {
 
       // Post the member to the graph
       this.dispatch({
-        type: 'ADD_MEMBER',
-        payload: { member, roles: [...member.roles, ...rolesWithoutLockboxes], lockboxes },
+        type: 'ADD_MEMBER_TEST',
+        payload: { member, roles: member.roles, lockboxes },
       })
     }
 
@@ -292,6 +306,12 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** Remove a member from the team */
   public remove = (userId: string) => {
+    this.logger.debug('Removing user', userId)
+    if (!this.hasMember(userId)) {
+      this.logger.warn('Attempted to remove nonexistent member', userId)
+      return
+    }
+
     // Create new keys & lockboxes for any keys this person had access to
     const { lockboxes, updatedUserKeys } = this.rotateKeys({ type: USER, name: userId })
 
@@ -358,6 +378,8 @@ export class Team extends EventEmitter<TeamEvents> {
       }
     }
 
+    this.logger.debug('Adding role', role.roleName)
+
     // We're creating this role so we need to generate new keys
     const roleKeys = createKeyset({ type: KeyType.ROLE, name: role.roleName }, this.seed)
 
@@ -380,6 +402,7 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** Remove a role from the team */
   public removeRole = (roleName: string) => {
+    this.logger.debug('Removing role', roleName)
     this._isRoleRemovable(roleName, true)
 
     this.dispatch({
@@ -507,13 +530,11 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** Remove a member's device */
   public removeDevice = (deviceId: string) => {
+    this.logger.debug('Removing device', deviceId)
     if (!this.hasDevice(deviceId)) throw new Error(`Device ${deviceId} not found`)
 
     // Create new keys & lockboxes for any keys this device had access to
-    const { lockboxes, updatedUserKeys } = this.rotateKeys({ type: DEVICE, name: deviceId })
-
-    // update the keys on the member records
-    this.updateMemberKeysWithLockboxes(updatedUserKeys, lockboxes)
+    const { lockboxes, updatedUserKeys } = this.rotateKeys({ type: DEVICE, name: deviceId }, true)
 
     // Post the removal to the graph
     this.dispatch({
@@ -521,6 +542,7 @@ export class Team extends EventEmitter<TeamEvents> {
       payload: {
         deviceId,
         lockboxes,
+        updatedUserKeys: [...updatedUserKeys],
       },
     })
   }
@@ -743,7 +765,6 @@ export class Team extends EventEmitter<TeamEvents> {
 
     const lockboxUserKeysForDevice = lockbox.create(user.keys, device.keys)
 
-    this.logger.debug('Adding device on join')
     this.dispatch(
       {
         type: 'ADD_DEVICE',
@@ -784,6 +805,7 @@ export class Team extends EventEmitter<TeamEvents> {
    * other.)
    */
   public addServer = (server: Server) => {
+    this.logger.debug('Adding server', server.host)
     const lockboxes = this.createMemberLockboxes(castServer.toMember(server))
 
     this.dispatch({
@@ -794,7 +816,8 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** Removes a server from the team. */
   public removeServer = (host: string) => {
-    const { lockboxes } = this.rotateKeys({ type: KeyType.SERVER, name: host })
+    this.logger.debug('Removing server', host)
+    const { lockboxes } = this.rotateKeys({ type: KeyType.SERVER, name: host }, true)
     this.dispatch({
       type: 'REMOVE_SERVER',
       payload: { host, lockboxes },
@@ -950,6 +973,7 @@ export class Team extends EventEmitter<TeamEvents> {
   public changeKeys = (newKeys: KeysetWithSecrets) => {
     const { device, user } = this.context
     const { type } = newKeys
+    this.logger.debug('Changing user or device keys', type)
 
     assert(type !== DEVICE, "Can't change device keys")
     const isForUser = type === USER
@@ -987,6 +1011,7 @@ export class Team extends EventEmitter<TeamEvents> {
   }
 
   private checkForPendingKeyRotations() {
+    this.logger.debug('Checking for pending key rotations')
     // Only admins can rotate keys
     if (!this.memberIsAdmin(this.userId)) {
       return
@@ -999,10 +1024,10 @@ export class Team extends EventEmitter<TeamEvents> {
         type: USER,
         name: this.userId,
       })
-      this.dispatch({ type: 'ROTATE_KEYS', payload: { userId, lockboxes } })
-
-      // update the keys on the member records
-      this.updateMemberKeysWithLockboxes(updatedUserKeys, lockboxes)
+      this.dispatch({
+        type: 'ROTATE_KEYS',
+        payload: { userId, lockboxes, updatedUserKeys: [...updatedUserKeys] },
+      })
     }
   }
 
@@ -1025,8 +1050,8 @@ export class Team extends EventEmitter<TeamEvents> {
    * @param compromised If `compromised` is a keyset, that will become the new keyset for the
    * compromised scope. If it is just a scope, new keys will be randomly generated for that scope.
    */
-  private readonly rotateKeys = (compromised: KeyScope | KeysetWithSecrets): RotatedLockboxesWithUpdatedUserKeys => {
-    this.logger.debug('rotating keys for scope', getScope(compromised))
+  private readonly rotateKeys = (compromised: KeyScope | KeysetWithSecrets, removed = false): RotatedLockboxesWithUpdatedUserKeys => {
+    this.logger.debug('Rotating keys for scope', getScope(compromised), removed)
     const newKeyset = isKeyset(compromised)
       ? compromised // We're given a keyset - use it as the new keys
       : createKeyset(compromised) // We're just given a scope - generate new keys for it
@@ -1051,6 +1076,10 @@ export class Team extends EventEmitter<TeamEvents> {
         // Check whether we have new keys for the recipient of this lockbox
         const updatedKeyset = newKeysets.find(k => scopesMatch(k, oldLockbox.recipient))
         const updatedRecipientKeys = updatedKeyset ? redactKeys(updatedKeyset) : undefined
+        // we don't want to write new keys to the compromised scope if that scope was removed (e.g. when removing a device)
+        if (updatedRecipientKeys != null && removed && updatedRecipientKeys.type === compromised.type && updatedRecipientKeys.name === compromised.name) {
+          return undefined
+        }
         const newLockbox = lockbox.rotate({
           oldLockbox,
           newContents: newKeyset,
@@ -1059,7 +1088,7 @@ export class Team extends EventEmitter<TeamEvents> {
         })
         _addUpdatedUserKeys(updatedRecipientKeys)
         return newLockbox
-      })
+      }).filter((lockbox): lockbox is lockbox.Lockbox => lockbox != null)
     })
 
     return {
@@ -1068,6 +1097,15 @@ export class Team extends EventEmitter<TeamEvents> {
     }
   }
 
+  /**
+   * After rotation user keys need to be updated, if necessary
+   * 
+   * NOTE: some cases (e.g. removing a user) produce new keys for a given user but we don't want to update their keys since they won't propagate
+   * 
+   * @param newUserKeys Set of USER keysets that were updated during rotation
+   * @param lockboxes Lockboxes generated during rotation
+   * @param skipUserIds User IDs that we shouldn't update
+   */
   private readonly updateMemberKeysWithLockboxes = (newUserKeys: Set<Keyset>, lockboxes: lockbox.Lockbox[], skipUserIds: string[] = []): void => {
     for (const keyset of newUserKeys) {
       if (skipUserIds.includes(keyset.name)) {

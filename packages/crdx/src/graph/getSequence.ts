@@ -31,7 +31,9 @@ export const getSequence = <A extends Action, C>(
 
   // Rather than apply the filter directly, we mark links that would be filtered out as invalid.
   return sorted.map(link => {
-    const isInvalid = link.isInvalid ?? !filter(link)
+    // A link that was valid in an earlier, incomplete graph can become invalid after a concurrent
+    // branch is merged and the resolver has enough context to apply its conflict rules.
+    const isInvalid = link.isInvalid === true || !filter(link)
     return { ...link, isInvalid }
   })
 }

@@ -2,6 +2,7 @@ import { ADMIN } from 'role/index.js'
 import { setup } from 'util/testing/index.js'
 import 'util/testing/expect/toLookLikeKeyset.js'
 import { describe, expect, it } from 'vitest'
+import { redactUser } from '../redactUser.js'
 
 describe('Team', () => {
   describe('members', () => {
@@ -28,6 +29,36 @@ describe('Team', () => {
       // look bob up by userId
       const bob2 = alice.team.members(bob.userId)
       expect(bob2.userName).toBe('bob')
+    })
+
+    it('fails to add a member when no lockboxes provided', () => {
+      const { alice, bob, eve } = setup('alice', 'bob', { user: 'eve', addToTeam: false, admin: false, member: false })
+      expect(alice.team.members().length).toBe(2)
+
+      const potentialMember = redactUser(eve.user)
+
+      const tryToAddMemberWithoutLockboxesEmpty = () => {
+        alice.team.dispatch({
+          type: 'ADD_MEMBER',
+          payload: {
+            member: potentialMember,
+            lockboxes: [],
+          },
+        })
+      }
+
+      const tryToAddMemberWithoutLockboxesNullish = () => {
+        alice.team.dispatch({
+          type: 'ADD_MEMBER',
+          payload: {
+            member: potentialMember,
+            lockboxes: undefined,
+          } as any,
+        })
+      }
+
+      expect(tryToAddMemberWithoutLockboxesEmpty).toThrow()
+      expect(tryToAddMemberWithoutLockboxesNullish).toThrow()
     })
 
     it('makes lockboxes for added members', () => {
@@ -112,6 +143,80 @@ describe('Team', () => {
       const bobUser = alice.team.members(bob.userId)
       expect(bobUser.keys.generation).toBe(0)
       expect(bobUser.keysHistory).toHaveLength(1)
+    })
+
+    it('fails to remove a member when no lockboxes provided', () => {
+      const { alice, bob } = setup('alice', 'bob')
+      expect(alice.team.members().length).toBe(2)
+
+      const tryToRemoveMemberWithoutLockboxesEmpty = () => {
+        alice.team.dispatch({
+          type: 'REMOVE_MEMBER',
+          payload: {
+            userId: bob.userId,
+            lockboxes: [],
+          },
+        })
+      }
+
+      const tryToRemoveMemberWithoutLockboxesNullish = () => {
+        alice.team.dispatch({
+          type: 'REMOVE_MEMBER',
+          payload: {
+            userId: bob.userId,
+            lockboxes: undefined,
+          } as any,
+        })
+      }
+
+      expect(tryToRemoveMemberWithoutLockboxesEmpty).toThrow()
+      expect(tryToRemoveMemberWithoutLockboxesNullish).toThrow()
+    })
+
+    it('allows ADD_MEMBER_TEST when flag is set', () => {
+      const { alice, bob } = setup('alice', { user: 'bob', addToTeam: false })
+      expect(alice.team.members().length).toBe(1)
+
+      const tryToAddMemberTest = () => {
+        const ogFlag = process.env.ALLOW_ADD_MEMBER_TEST
+        try {
+          process.env.ALLOW_ADD_MEMBER_TEST = 'true'
+          alice.team.dispatch({
+            type: 'ADD_MEMBER_TEST',
+            payload: {
+              member: redactUser(bob.user),
+              lockboxes: [],
+            },
+          })
+        } finally {
+          process.env.ALLOW_ADD_MEMBER_TEST = ogFlag
+        }
+      }
+
+      expect(tryToAddMemberTest).not.toThrow()
+    })
+
+    it('does not allow ADD_MEMBER_TEST when flag is not set', () => {
+      const { alice, bob } = setup('alice', { user: 'bob', addToTeam: false })
+      expect(alice.team.members().length).toBe(1)
+
+      const tryToAddMemberTest = () => {
+        const ogFlag = process.env.ALLOW_ADD_MEMBER_TEST
+        try {
+          process.env.ALLOW_ADD_MEMBER_TEST = undefined
+          alice.team.dispatch({
+            type: 'ADD_MEMBER_TEST',
+            payload: {
+              member: redactUser(bob.user),
+              lockboxes: [],
+            },
+          })
+        } finally {
+          process.env.ALLOW_ADD_MEMBER_TEST = ogFlag
+        }
+      }
+
+      expect(tryToAddMemberTest).toThrow()
     })
 
     it("doesn't do anything if asked to remove a nonexistent member", () => {

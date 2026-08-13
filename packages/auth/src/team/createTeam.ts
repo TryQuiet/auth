@@ -10,5 +10,11 @@ export function createTeam(teamName: string, context: LocalContext, seed?: strin
   const defaultMetadata: TeamMetadata = {
     selfAssignableRoles: []
   }
-  return new Team({ teamName, context, teamKeys, metadata: metadata ?? defaultMetadata, sharedLogger })
+  return new Team({
+    teamName,
+    context,
+    teamKeys,
+    metadata: metadata ?? defaultMetadata,
+    sharedLogger,
+  })
 }

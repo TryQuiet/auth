@@ -14,3 +14,12 @@ export const server = (state: TeamState, host: Host, options = { includeRemoved:
 
   return server
 }
+
+export const servers = (state: TeamState, options = { includeRemoved: false }) => {
+  const servers = [
+    ...state.servers,
+    ...(options.includeRemoved ? state.removedServers : []),
+  ]
+
+  return servers
+}

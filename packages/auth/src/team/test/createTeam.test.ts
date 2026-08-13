@@ -4,6 +4,8 @@ import { createTeam } from '../createTeam.js'
 import { createDevice } from 'device/index.js'
 import { setup } from 'util/testing/index.js'
 import { load } from '../load.js'
+import { ADMIN, MEMBER } from 'role/index.js'
+import 'util/testing/expect/toLookLikeKeyset.js'
 
 describe('Team', () => {
   describe('createTeam', () => {
@@ -13,6 +15,21 @@ describe('Team', () => {
       const team = createTeam('Spies Я Us', { user, device })
       expect(team.teamName).toBe('Spies Я Us')
       expect(team.id).toBeDefined()
+    })
+
+    it('initializes the member role for the founding member', () => {
+      const user = createUser('alice')
+      const device = createDevice({ userId: user.userId, deviceName: 'laptop' })
+      const team = createTeam('Spies Я Us', { user, device })
+
+      expect(team.roles().map(role => role.roleName)).toEqual([ADMIN, MEMBER])
+      expect(team.memberHasRole(user.userId, MEMBER)).toBe(true)
+      expect(team.roleKeys(MEMBER)).toLookLikeKeyset()
+      expect(
+        team.state.lockboxes.filter(
+          lockbox => lockbox.contents.type === 'ROLE' && lockbox.contents.name === MEMBER
+        )
+      ).toHaveLength(2)
     })
 
     it(`doesn't allow creating a team where the device's userId doesn't match the user's`, () => {

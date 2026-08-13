@@ -57,6 +57,7 @@ export type NewTeamOptions = {
 
   /** Team metadata (e.g. roles that can be self-assigned by a member on the chain) */
   metadata?: TeamMetadata
+
 }
 
 /** Properties required when rehydrating from an existing graph  */
@@ -89,9 +90,14 @@ export const isNewTeam = (options: NewOrExisting): options is NewTeamOptions =>
 
 // ********* ACTIONS
 
-type BasePayload = {
+export type BasePayload = {
   // Every action might include new lockboxes
   lockboxes?: Lockbox[]
+}
+
+export type BasePayloadLockboxesRequired = {
+  // Some actions require lockboxes to be present
+  lockboxes: Lockbox[]
 }
 
 export type RootAction = {
@@ -105,6 +111,14 @@ export type RootAction = {
 
 export type AddMemberAction = {
   type: 'ADD_MEMBER'
+  payload: BasePayloadLockboxesRequired & {
+    member: Member
+    roles?: string[]
+  }
+}
+
+export type AddMemberTestAction = {
+  type: 'ADD_MEMBER_TEST'
   payload: BasePayload & {
     member: Member
     roles?: string[]
@@ -113,14 +127,14 @@ export type AddMemberAction = {
 
 export type RemoveMemberAction = {
   type: 'REMOVE_MEMBER'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     userId: string
   }
 }
 
 export type AddRoleAction = {
   type: 'ADD_ROLE'
-  payload: BasePayload & Role
+  payload: BasePayloadLockboxesRequired & Role
 }
 
 export type RemoveRoleAction = {
@@ -132,7 +146,7 @@ export type RemoveRoleAction = {
 
 export type AddMemberRoleAction = {
   type: 'ADD_MEMBER_ROLE'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     userId: string
     roleName: string
     permissions?: PermissionsMap
@@ -141,7 +155,7 @@ export type AddMemberRoleAction = {
 
 export type RemoveMemberRoleAction = {
   type: 'REMOVE_MEMBER_ROLE'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     userId: string
     roleName: string
   }
@@ -149,15 +163,17 @@ export type RemoveMemberRoleAction = {
 
 export type AddDeviceAction = {
   type: 'ADD_DEVICE'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     device: Device
   }
 }
 
 export type RemoveDeviceAction = {
   type: 'REMOVE_DEVICE'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     deviceId: string
+    /** Updated owner keys produced while rotating access away from the removed device. */
+    updatedUserKeys?: Keyset[]
   }
 }
 
@@ -184,7 +200,7 @@ export type RevokeInvitationAction = {
 
 export type AdmitMemberAction = {
   type: 'ADMIT_MEMBER'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     id: Base58 // Invitation ID
     userName: string
     memberKeys: Keyset // Member keys provided by the new member
@@ -201,35 +217,37 @@ export type AdmitDeviceAction = {
 
 export type ChangeMemberKeysAction = {
   type: 'CHANGE_MEMBER_KEYS'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     keys: Keyset
   }
 }
 
 export type RotateKeysAction = {
   type: 'ROTATE_KEYS'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     userId: string
+    /** Updated member keys produced by the same rotation. */
+    updatedUserKeys?: Keyset[]
   }
 }
 
 export type AddServerAction = {
   type: 'ADD_SERVER'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     server: Server
   }
 }
 
 export type RemoveServerAction = {
   type: 'REMOVE_SERVER'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     host: Host
   }
 }
 
 export type ChangeServerKeysAction = {
   type: 'CHANGE_SERVER_KEYS'
-  payload: BasePayload & {
+  payload: BasePayloadLockboxesRequired & {
     keys: Keyset
   }
 }
@@ -250,9 +268,7 @@ export type SetTeamNameAction = {
 
 export type AddLockboxesAction = {
   type: 'ADD_LOCKBOXES'
-  payload: BasePayload & {
-    lockboxes: Lockbox[]
-  }
+  payload: BasePayloadLockboxesRequired
 }
 
 export type SetMetadataAction = {
@@ -265,6 +281,7 @@ export type SetMetadataAction = {
 export type TeamAction =
   | RootAction
   | AddMemberAction
+  | AddMemberTestAction
   | AddDeviceAction
   | AddRoleAction
   | AddMemberRoleAction

@@ -1,5 +1,5 @@
 import { ROOT, type Reducer } from '@localfirst/crdx'
-import { ADMIN } from 'role/index.js'
+import { ADMIN, MEMBER } from 'role/index.js'
 import { clone, composeTransforms } from 'util/index.js'
 import { invalidLinkReducer } from './invalidLinkReducer.js'
 import { setHead } from './setHead.js'
@@ -93,12 +93,14 @@ const getTransforms = (action: TeamAction): Transform[] => {
       return [
         setTeamName(name),
         addRole({ roleName: ADMIN, createdBy: action.payload.rootMember.userId }), // Create the admin role
+        addRole({ roleName: MEMBER, createdBy: rootMember.userId }),
         addMember(rootMember), // Add the founding member
         addDevice(rootDevice), // Add the founding member's device
-        ...addMemberRoles(rootMember.userId, [ADMIN]), // Make the founding member an admin
+        ...addMemberRoles(rootMember.userId, [ADMIN, MEMBER]), // Make the founding member an admin and member
       ]
     }
 
+    case 'ADD_MEMBER_TEST':
     case 'ADD_MEMBER': {
       const { member, roles } = action.payload
       return [
@@ -136,8 +138,10 @@ const getTransforms = (action: TeamAction): Transform[] => {
     }
 
     case 'REMOVE_DEVICE': {
-      const { deviceId } = action.payload
+      // Older persisted REMOVE_DEVICE links predate updatedUserKeys.
+      const { deviceId, updatedUserKeys = [] } = action.payload
       return [
+        ...updatedUserKeys.map(keys => changeMemberKeys(keys)),
         removeDevice(deviceId), // Remove this device from the member's list of devices
       ]
     }
@@ -212,8 +216,10 @@ const getTransforms = (action: TeamAction): Transform[] => {
     }
 
     case 'ROTATE_KEYS': {
-      const { userId } = action.payload
+      // Older persisted ROTATE_KEYS links predate updatedUserKeys.
+      const { userId, updatedUserKeys = [] } = action.payload
       return [
+        ...updatedUserKeys.map(keys => changeMemberKeys(keys)),
         rotateKeys(userId), // Mark this member's keys as having been rotated (the rotated keys themselves are in the lockboxes)
       ]
     }

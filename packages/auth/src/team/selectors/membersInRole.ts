@@ -1,4 +1,4 @@
-import { ADMIN } from 'role/index.js'
+import { ADMIN, type Role } from 'role/index.js'
 import { type Member, type TeamState } from 'team/types.js'
 import { memberHasRole } from './memberHasRole.js'
 
@@ -12,3 +12,11 @@ export const membersWithRoleMarker = (state: TeamState, roleName: string): Membe
   state.members.filter(member => member.roles?.includes(roleName))
 
 export const admins = (state: TeamState) => membersInRole(state, ADMIN)
+
+export const rolesMemberIsIn = (state: TeamState, userId: string): Role[] => {
+  const roles: Role[] = []
+  for (const role of state.roles) {
+    if (memberHasRole(state, userId, role.roleName)) roles.push(role)
+  }
+  return roles
+}

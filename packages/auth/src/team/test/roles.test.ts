@@ -50,6 +50,44 @@ describe('Team', () => {
       expect(alice.team.membersInRole(MANAGERS).map(m => m.userName)).toEqual(['alice', 'bob'])
     })
 
+    it('fails to add a role when no lockboxes provided', () => {
+      const { alice, bob } = setup('alice', { user: 'bob', admin: false })
+      expect(alice.team.members().length).toBe(2)
+
+      // Managers role doesn't exist yet
+      expect(alice.team.hasRole(MANAGERS))
+
+      const tryToAddRoleWithoutLockboxesEmpty = () => {
+        alice.team.dispatch({
+          type: 'ADD_ROLE',
+          payload: {
+            roleName: ADMIN,
+            createdBy: alice.userId,
+            permissions: undefined,
+            lockboxes: [],
+          },
+        })
+      }
+
+      const tryToAddRoleWithoutLockboxesNullish = () => {
+        alice.team.dispatch({
+          type: 'ADD_ROLE',
+          payload: {
+            roleName: ADMIN,
+            createdBy: alice.userId,
+            permissions: undefined,
+            lockboxes: undefined,
+          } as any,
+        })
+      }
+
+      expect(tryToAddRoleWithoutLockboxesEmpty).toThrow()
+      expect(tryToAddRoleWithoutLockboxesNullish).toThrow()
+
+      // Managers role still doesn't exist
+      expect(alice.team.hasRole(MANAGERS)).toBe(false)
+    })
+
     it('admins have access to all role keys', () => {
       const { alice } = setup('alice')
 
@@ -87,6 +125,42 @@ describe('Team', () => {
       expect(bobsAdminKeys).toLookLikeKeyset()
     })
 
+    it('fails to add a member to role when no lockboxes provided', () => {
+      const { alice, bob } = setup('alice', { user: 'bob', admin: false })
+      expect(alice.team.members().length).toBe(2)
+
+      // 👨🏻‍🦲 Bob isn't an admin yet
+      expect(alice.team.memberIsAdmin(bob.userId)).toBe(false)
+
+      const tryToAddMemberWithoutLockboxesEmpty = () => {
+        alice.team.dispatch({
+          type: 'ADD_MEMBER_ROLE',
+          payload: {
+            userId: bob.userId,
+            roleName: ADMIN,
+            lockboxes: [],
+          },
+        })
+      }
+
+      const tryToAddMemberWithoutLockboxesNullish = () => {
+        alice.team.dispatch({
+          type: 'ADD_MEMBER_ROLE',
+          payload: {
+            userId: bob.userId,
+            roleName: ADMIN,
+            lockboxes: undefined,
+          } as any,
+        })
+      }
+
+      expect(tryToAddMemberWithoutLockboxesEmpty).toThrow()
+      expect(tryToAddMemberWithoutLockboxesNullish).toThrow()
+
+      // 👨🏻‍🦲 Bob still isn't an admin
+      expect(alice.team.memberIsAdmin(bob.userId)).toBe(false)
+    })
+
     it('removes a member from a role', () => {
       const { alice, bob } = setup('alice', 'bob')
 
@@ -116,6 +190,42 @@ describe('Team', () => {
       // 👨🏻‍🦲 Bob doesn't have admin keys any more
       const bobLooksForAdminKeys = () => bob.team.roleKeys(ADMIN)
       expect(bobLooksForAdminKeys).toThrow()
+    })
+
+    it('fails to remove a member from role when no lockboxes provided', () => {
+      const { alice, bob } = setup('alice', 'bob')
+      expect(alice.team.members().length).toBe(2)
+
+      // 👨🏻‍🦲 Bob is an admin
+      expect(alice.team.memberIsAdmin(bob.userId)).toBe(true)
+
+      const tryToRemoveMemberWithoutLockboxesEmpty = () => {
+        alice.team.dispatch({
+          type: 'REMOVE_MEMBER_ROLE',
+          payload: {
+            userId: bob.userId,
+            roleName: ADMIN,
+            lockboxes: [],
+          },
+        })
+      }
+
+      const tryToRemoveMemberWithoutLockboxesNullish = () => {
+        alice.team.dispatch({
+          type: 'REMOVE_MEMBER_ROLE',
+          payload: {
+            userId: bob.userId,
+            roleName: ADMIN,
+            lockboxes: undefined,
+          } as any,
+        })
+      }
+
+      expect(tryToRemoveMemberWithoutLockboxesEmpty).toThrow()
+      expect(tryToRemoveMemberWithoutLockboxesNullish).toThrow()
+
+      // 👨🏻‍🦲 Bob is still an admin
+      expect(alice.team.memberIsAdmin(bob.userId)).toBe(true)
     })
 
     it('self-assigns a role using pre-shared keys', () => {
@@ -307,7 +417,7 @@ describe('Team', () => {
     })
 
     it('does not allow a non-admin to remove a member', () => {
-      const { bob } = setup(
+      const { bob, charlie } = setup(
         'alice',
         { user: 'bob', admin: false },
         { user: 'charlie', admin: false }
@@ -315,7 +425,7 @@ describe('Team', () => {
 
       // 👨🏻‍🦲 Bob tries to remove 👳🏽‍♂️ Charlie
       const remove = () => {
-        bob.team.remove('charlie')
+        bob.team.remove(charlie.userId)
       }
 
       // 👨🏻‍🦲 Bob can't because he is not an admin
@@ -323,7 +433,7 @@ describe('Team', () => {
     })
 
     it('does not allow a non-admin to add a member to a role', () => {
-      const { bob } = setup(
+      const { bob, charlie } = setup(
         'alice',
         { user: 'bob', admin: false },
         { user: 'charlie', admin: false }
@@ -331,7 +441,7 @@ describe('Team', () => {
 
       // 👨🏻‍🦲 Bob tries to make 👳🏽‍♂️ Charlie an admin
       const add = () => {
-        bob.team.addMemberRole('charlie', ADMIN)
+        bob.team.addMemberRole(charlie.userId, ADMIN)
       }
 
       // 👨🏻‍🦲 Bob can't because he is not an admin
@@ -339,14 +449,14 @@ describe('Team', () => {
     })
 
     it('does not allow a non-admin to remove a member from a role', () => {
-      const { charlie } = setup('alice', 'bob', {
+      const { charlie, bob } = setup('alice', 'bob', {
         user: 'charlie',
         admin: false,
       })
 
       // 👳🏽‍♂️ Charlie tries to remove 👨🏻‍🦲 Bob as admin
       const remove = () => {
-        charlie.team.removeMemberRole('bob', ADMIN)
+        charlie.team.removeMemberRole(bob.userId, ADMIN)
       }
 
       // 👳🏽‍♂️ Charlie can't because he is not an admin
@@ -357,7 +467,7 @@ describe('Team', () => {
       const { alice } = setup('alice', { user: 'bob', admin: false })
 
       const remove = () => {
-        alice.team.removeMemberRole('alice', ADMIN)
+        alice.team.removeMemberRole(alice.userId, ADMIN)
       }
 
       expect(remove).toThrow()
@@ -367,7 +477,7 @@ describe('Team', () => {
       const { alice } = setup('alice', 'bob')
 
       const remove = () => {
-        alice.team.removeMemberRole('alice', ADMIN)
+        alice.team.removeMemberRole(alice.userId, ADMIN)
       }
 
       expect(remove).not.toThrow()

@@ -31,3 +31,12 @@ export const members = (state: TeamState, userIds: string[], options = { include
 
   return members
 }
+
+export const allMembers = (state: TeamState, options = { includeRemoved: false }) => {
+  const members = [
+    ...state.members,
+    ...(options.includeRemoved ? state.removedMembers : []),
+  ]
+
+  return members
+}

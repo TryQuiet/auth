@@ -642,20 +642,6 @@ describe('sync', () => {
   })
 
   describe('failure handling', () => {
-    const appendLinkInThePast = (graph: Graph<any, any>, user: UserWithSecrets) => {
-      const IN_THE_PAST = new Date('2020-01-01').getTime()
-      const now = Date.now()
-      setSystemTime(IN_THE_PAST)
-      const updatedGraph = append({
-        graph,
-        action: { type: 'FOO', payload: 'pizza' },
-        user,
-        keys,
-      })
-      setSystemTime(now)
-      return updatedGraph
-    }
-
     it('single failure', () => {
       const {
         userRecords: { alice, eve },
