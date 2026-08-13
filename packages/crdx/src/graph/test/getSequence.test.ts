@@ -75,6 +75,19 @@ describe('graphs', () => {
       expect(payloads).toEqual('abc')
     })
 
+    test('re-evaluates links previously marked valid when resolver context changes', () => {
+      const graph = buildGraph('a ─ b ─ c')
+      const b = Object.values(graph.links).find(link => link.body.payload === 'b')!
+      b.isInvalid = false
+      const updatedResolver: Resolver<XAction, any> = () => ({
+        filter: link => link.body.payload !== 'b',
+      })
+
+      const sequence = getSequence(graph, updatedResolver)
+
+      expect(sequence.find(link => link.body.payload === 'b')?.isInvalid).toBe(true)
+    })
+
     test('complex graph', () => {
       const graph = buildGraph(`
                           ┌─ e ─ g ─┐
