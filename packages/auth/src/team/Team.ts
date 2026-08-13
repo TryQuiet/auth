@@ -1080,7 +1080,7 @@ export class Team extends EventEmitter<TeamEvents> {
         })
         _addUpdatedUserKeys(updatedRecipientKeys)
         return newLockbox
-      }).filter(l => l != null)
+      }).filter((lockbox): lockbox is lockbox.Lockbox => lockbox != null)
     })
 
     return {
