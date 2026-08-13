@@ -261,12 +261,17 @@ export class Connection extends EventEmitter<ConnectionEvents> {
               logger: this.logger.extend('getDeviceUser'),
             })
 
+          // A first-use device does not know its canonical userId until its invitation is accepted.
+          // Use the user recovered from the team graph before creating the device lockbox and
+          // recording the device on the team.
+          const memberDevice = { ...device, userId: user.userId }
+
           // When admitting us, our peer added our user to the team graph. We've been given the
           // serialized and encrypted graph, and the team keyring. We can now decrypt the graph and
           // reconstruct the team in order to join it.
           const team = new Team({
             source: serializedGraph,
-            context: { user, device },
+            context: { user, device: memberDevice },
             teamKeyring,
             sharedLogger: this.logger.sharedLogger,
           })
@@ -274,7 +279,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           // We join the team, which adds our device to the team graph.
           team.join(teamKeyring)
           this.emit('joined', { team, user, teamKeyring })
-          return { user, team }
+          return { user, device: memberDevice, team }
         }),
 
         // AUTHENTICATION
