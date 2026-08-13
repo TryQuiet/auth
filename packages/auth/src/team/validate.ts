@@ -67,6 +67,7 @@ const validateLockboxesOnChangeKeysOrRotateKeys = (actionType: 'CHANGE_MEMBER_KE
       return fail(`${actionType} requires an updated team lockbox for all servers`, previousState, link, logger)
     }
   }
+  return VALID
 }
 
 export const canUserAddMemberToRole = (roleName: string, assigningUserId: string, previousState: TeamState): boolean => {
@@ -421,7 +422,7 @@ const validators: TeamStateValidatorSet = {
     const logger = extendableLogger.extend('correctLockboxesPresentOnChangeMemberKeys')
     if (link.body.type === 'CHANGE_MEMBER_KEYS') {
       const { lockboxes, keys } = link.body.payload
-      validateLockboxesOnChangeKeysOrRotateKeys('CHANGE_MEMBER_KEYS', previousState, keys.name, lockboxes, link, logger)
+      return validateLockboxesOnChangeKeysOrRotateKeys('CHANGE_MEMBER_KEYS', previousState, keys.name, lockboxes, link, logger)
     }
     return VALID
   },
@@ -431,7 +432,7 @@ const validators: TeamStateValidatorSet = {
     const logger = extendableLogger.extend('correctLockboxesPresentOnRotateKeys')
     if (link.body.type === 'ROTATE_KEYS') {
       const { lockboxes, userId } = link.body.payload
-      validateLockboxesOnChangeKeysOrRotateKeys('ROTATE_KEYS', previousState, userId, lockboxes, link, logger)
+      return validateLockboxesOnChangeKeysOrRotateKeys('ROTATE_KEYS', previousState, userId, lockboxes, link, logger)
     }
     return VALID
   },
