@@ -79,7 +79,6 @@ export const setup = (..._config: SetupConfig) => {
   const randomSeed = teamName
   const team = teams.createTeam(teamName, founderContext, randomSeed, { selfAssignableRoles: [MEMBER] })
   const teamKeys = team.teamKeys()
-  team.addRole({ roleName: MEMBER, permissions: undefined })
 
   // Add members
   for (const { user: userName, admin = true, addToTeam = true, member = true, rolesWithoutLockboxes = [] } of config) {
