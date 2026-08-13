@@ -20,7 +20,7 @@ export const decryptLink = <A extends Action, C>(
   encryptedLink: EncryptedLink,
   keys: Keyring | KeysetWithSecrets | KeysetWithSecrets[]
 ): Link<A, C> => {
-  const { senderPublicKey, recipientPublicKey, encryptedBody } = encryptedLink
+  const { senderPublicKey, recipientPublicKey, encryptedBody, signature } = encryptedLink
 
   const keyring = createKeyring(keys)
   const keyset = keyring[recipientPublicKey]
@@ -36,6 +36,7 @@ export const decryptLink = <A extends Action, C>(
 
   return {
     hash: hashEncryptedLink(encryptedBody),
+    signature,
     body: decryptedLinkBody,
   }
 }
@@ -51,7 +52,6 @@ export const decryptGraph: DecryptFn = <A extends Action, C>({
   keys: KeysetWithSecrets | KeysetWithSecrets[] | Keyring
 }): Graph<A, C> => {
   const { encryptedLinks, root, childMap = {} } = encryptedGraph
-  const links = encryptedGraph.links ?? {}
   const toVisit = [root]
   const visited: Set<Hash> = new Set()
   const decryptedLinks: Record<Hash, Link<A, C>> = {}
@@ -64,9 +64,11 @@ export const decryptGraph: DecryptFn = <A extends Action, C>({
     }
 
     const encryptedLink = encryptedLinks[current]
-    const decryptedLink =
-      links[current] ?? // if it's already decrypted, don't bother decrypting it again
-      decryptLink(encryptedLink, keys)
+
+    // Never reuse a caller-supplied plaintext `links` entry. The hash authenticates the encrypted
+    // bytes, so the body that validation and reduction consume has to come from those same bytes
+    // rather than from an object handed to us alongside them.
+    const decryptedLink = decryptLink<A, C>(encryptedLink, keys)
 
     decryptedLinks[current] = decryptedLink
 

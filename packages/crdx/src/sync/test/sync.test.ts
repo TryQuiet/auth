@@ -1,14 +1,13 @@
 import { assert } from '@localfirst/shared'
 import { append, createGraph, headsAreEqual, type Graph } from 'graph/index.js'
 import { generateMessage, initSyncState, receiveMessage } from 'sync/index.js'
-import { createUser, type UserWithSecrets } from 'user/index.js'
 import {
   expectNotToBeSynced,
   expectToBeSynced,
   setupWithNetwork,
   type Network,
 } from 'util/testing/Network.js'
-import { TEST_GRAPH_KEYS as keys } from 'util/testing/setup.js'
+import { createTestSigner, type TestSigner, TEST_GRAPH_KEYS as keys } from 'util/testing/setup.js'
 import { describe, expect, it, vitest } from 'vitest'
 
 const { setSystemTime } = vitest.useFakeTimers()
@@ -19,12 +18,12 @@ describe('sync', () => {
   describe('manual walkthrough', () => {
     it('Alice and Bob are already synced up', () => {
       // 👩🏾 Alice creates a graph
-      const alice = createUser('alice')
-      const graph = createGraph<any>({ user: alice, name: 'test graph', keys })
+      const alice = createTestSigner('alice')
+      const graph = createGraph<any>({ signer: alice, name: 'test graph', keys })
       let aliceGraph = append({
         graph,
         action: { type: 'FOO' },
-        user: alice,
+        signer: alice,
         keys,
       })
       let aliceSyncState = initSyncState()
@@ -58,8 +57,8 @@ describe('sync', () => {
 
     it('Alice is ahead of Bob', () => {
       // 👩🏾 Alice creates a graph
-      const alice = createUser('alice')
-      const graph = createGraph<any>({ user: alice, name: 'test graph', keys })
+      const alice = createTestSigner('alice')
+      const graph = createGraph<any>({ signer: alice, name: 'test graph', keys })
 
       // 👨🏻‍🦲 Bob has a copy of the original graph
       let bobGraph = { ...graph }
@@ -69,7 +68,7 @@ describe('sync', () => {
       let aliceGraph = append({
         graph,
         action: { type: 'FOO' },
-        user: alice,
+        signer: alice,
         keys,
       })
       let aliceSyncState = initSyncState()
@@ -104,12 +103,12 @@ describe('sync', () => {
     })
 
     it('Alice and Bob have diverged', () => {
-      const alice = createUser('alice')
-      const bob = createUser('bob')
+      const alice = createTestSigner('alice')
+      const bob = createTestSigner('bob')
 
       // 👩🏾 Alice creates a graph
       let aliceGraph = createGraph<any>({
-        user: alice,
+        signer: alice,
         name: 'test graph',
         keys,
       })
@@ -123,7 +122,7 @@ describe('sync', () => {
       aliceGraph = append({
         graph: aliceGraph,
         action: { type: 'FOO' },
-        user: alice,
+        signer: alice,
         keys,
       })
 
@@ -131,7 +130,7 @@ describe('sync', () => {
       bobGraph = append({
         graph: bobGraph,
         action: { type: 'BAR' },
-        user: bob,
+        signer: bob,
         keys,
       })
 
@@ -184,7 +183,7 @@ describe('sync', () => {
         alice.peer.graph = append({
           graph: alice.peer.graph,
           action: { type: 'FOO' },
-          user: alice.user,
+          signer: alice.signer,
           keys,
         })
         expectNotToBeSynced(alice, bob)
@@ -210,7 +209,7 @@ describe('sync', () => {
           alice.peer.graph = append({
             graph: alice.peer.graph,
             action: { type: 'FOO', payload: i },
-            user: alice.user,
+            signer: alice.signer,
             keys,
           })
         }
@@ -236,7 +235,7 @@ describe('sync', () => {
           alice.peer.graph = append({
             graph: alice.peer.graph,
             action: { type: 'FOO', payload: i },
-            user: alice.user,
+            signer: alice.signer,
             keys,
           })
         }
@@ -251,7 +250,7 @@ describe('sync', () => {
         alice.peer.graph = append({
           graph: alice.peer.graph,
           action: { type: 'FOO', payload: 999 },
-          user: alice.user,
+          signer: alice.signer,
           keys,
         })
         alice.peer.sync()
@@ -278,13 +277,13 @@ describe('sync', () => {
         alice.peer.graph = append({
           graph: alice.peer.graph,
           action: { type: 'FOO', payload: 999 },
-          user: alice.user,
+          signer: alice.signer,
           keys,
         })
         bob.peer.graph = append({
           graph: bob.peer.graph,
           action: { type: 'PIZZA', payload: 42 },
-          user: bob.user,
+          signer: bob.signer,
           keys,
         })
         expectNotToBeSynced(alice, bob)
@@ -309,7 +308,7 @@ describe('sync', () => {
           alice.peer.graph = append({
             graph: alice.peer.graph,
             action: { type: 'FOO', payload: i },
-            user: alice.user,
+            signer: alice.signer,
             keys,
           })
         }
@@ -325,13 +324,13 @@ describe('sync', () => {
           alice.peer.graph = append({
             graph: alice.peer.graph,
             action: { type: 'BOO', payload: i },
-            user: alice.user,
+            signer: alice.signer,
             keys,
           })
           bob.peer.graph = append({
             graph: bob.peer.graph,
             action: { type: 'PIZZA', payload: i },
-            user: bob.user,
+            signer: bob.signer,
             keys,
           })
         }
@@ -364,13 +363,13 @@ describe('sync', () => {
             alice.peer.graph = append({
               graph: alice.peer.graph,
               action: { type: 'BOO', payload: j * 10 + i },
-              user: alice.user,
+              signer: alice.signer,
               keys,
             })
             bob.peer.graph = append({
               graph: bob.peer.graph,
               action: { type: 'PIZZA', payload: j * 10 + i },
-              user: bob.user,
+              signer: bob.signer,
               keys,
             })
           }
@@ -398,7 +397,7 @@ describe('sync', () => {
         alice.peer.graph = append({
           graph: alice.peer.graph,
           action: { type: 'FOO' },
-          user: alice.user,
+          signer: alice.signer,
           keys,
         })
 
@@ -414,19 +413,19 @@ describe('sync', () => {
         alice.peer.graph = append({
           graph: alice.peer.graph,
           action: { type: 'A' },
-          user: alice.user,
+          signer: alice.signer,
           keys,
         })
         bob.peer.graph = append({
           graph: bob.peer.graph,
           action: { type: 'B' },
-          user: bob.user,
+          signer: bob.signer,
           keys,
         })
         charlie.peer.graph = append({
           graph: charlie.peer.graph,
           action: { type: 'C' },
-          user: charlie.user,
+          signer: charlie.signer,
           keys,
         })
         expectNotToBeSynced(alice, bob)
@@ -498,7 +497,7 @@ describe('sync', () => {
           founder.peer.graph = append({
             graph: founder.peer.graph,
             action: { type: 'FOO' },
-            user: founder.user,
+            signer: founder.signer,
             keys,
           })
 
@@ -520,7 +519,7 @@ describe('sync', () => {
           founder.peer.graph = append({
             graph: founder.peer.graph,
             action: { type: 'FOO' },
-            user: founder.user,
+            signer: founder.signer,
             keys,
           })
 
@@ -538,11 +537,11 @@ describe('sync', () => {
 
           // each user makes a change
           for (const userName in userRecords) {
-            const { user, peer } = userRecords[userName]
+            const { signer, peer } = userRecords[userName]
             peer.graph = append({
               graph: peer.graph,
               action: { type: userName.toUpperCase() },
-              user,
+              signer,
               keys,
             })
           }
@@ -563,11 +562,11 @@ describe('sync', () => {
 
           // each user makes a change
           for (const userName in userRecords) {
-            const { user, peer } = userRecords[userName]
+            const { signer, peer } = userRecords[userName]
             peer.graph = append({
               graph: peer.graph,
               action: { type: userName.toUpperCase() },
-              user,
+              signer,
               keys,
             })
           }
@@ -588,11 +587,11 @@ describe('sync', () => {
 
           // each user makes a change
           for (const userName in userRecords) {
-            const { user, peer } = userRecords[userName]
+            const { signer, peer } = userRecords[userName]
             peer.graph = append({
               graph: peer.graph,
               action: { type: userName.toUpperCase() },
-              user,
+              signer,
               keys,
             })
           }
@@ -616,11 +615,11 @@ describe('sync', () => {
 
           // each user makes a change
           for (const userName in userRecords) {
-            const { user, peer } = userRecords[userName]
+            const { signer, peer } = userRecords[userName]
             peer.graph = append({
               graph: peer.graph,
               action: { type: userName.toUpperCase() },
-              user,
+              signer,
               keys,
             })
           }
@@ -641,14 +640,14 @@ describe('sync', () => {
   })
 
   describe('failure handling', () => {
-    const appendLinkInThePast = (graph: Graph<any, any>, user: UserWithSecrets) => {
+    const appendLinkInThePast = (graph: Graph<any, any>, signer: TestSigner) => {
       const IN_THE_PAST = new Date('2020-01-01').getTime()
       const now = Date.now()
       setSystemTime(IN_THE_PAST)
       const updatedGraph = append({
         graph,
         action: { type: 'FOO', payload: 'pizza' },
-        user,
+        signer,
         keys,
       })
       setSystemTime(now)
@@ -666,7 +665,7 @@ describe('sync', () => {
       expectToBeSynced(alice, eve)
 
       // 🦹‍♀️ Eve sets her system clock back when appending a link
-      eve.peer.graph = appendLinkInThePast(eve.peer.graph, eve.user)
+      eve.peer.graph = appendLinkInThePast(eve.peer.graph, eve.signer)
       const badHash = eve.peer.graph.head[0]
 
       eve.peer.sync()
@@ -696,7 +695,7 @@ describe('sync', () => {
       const TRIES = 10
       for (let i = 0; i < TRIES; i++) {
         // 🦹‍♀️ Eve sets her system clock back when appending a link
-        eve.peer.graph = appendLinkInThePast(originalGraph, eve.user)
+        eve.peer.graph = appendLinkInThePast(originalGraph, eve.signer)
         const badHash = eve.peer.graph.head[0]
 
         eve.peer.sync()

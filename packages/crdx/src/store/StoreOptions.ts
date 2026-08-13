@@ -1,13 +1,12 @@
 import { Logger } from '@localfirst/shared'
 import { type Reducer } from './types.js'
-import { type Action, type Graph, type Resolver } from 'graph/index.js'
+import { type Action, type Graph, type Resolver, type Signer } from 'graph/index.js'
 import { type Keyring, type KeysetWithSecrets } from 'keyset/index.js'
-import { type UserWithSecrets } from 'user/index.js'
 import { type ValidatorSet } from 'validator/index.js'
 
 export type StoreOptions<S, A extends Action, C> = {
-  /** The user local user, along with their secret keys for signing, encrypting, etc.  */
-  user: UserWithSecrets
+  /** The identity authoring this store's links, along with its secret keys for signing, encrypting, etc.  */
+  signer: Signer
 
   /** Additional context information to be added to each link (e.g. device, client, etc.) */
   context?: C

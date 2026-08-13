@@ -11,10 +11,10 @@ import {
   type Action,
   type Graph,
   type Resolver,
+  type Signer,
 } from 'graph/index.js'
 import { createKeyring } from 'keyset/createKeyring.js'
 import { isKeyset, type Keyring, type KeysetWithSecrets } from 'keyset/index.js'
-import { type UserWithSecrets } from 'user/index.js'
 import { type Hash, type Optional } from 'util/index.js'
 import { validate, type ValidatorSet } from 'validator/index.js'
 import { type StoreOptions } from './StoreOptions.js'
@@ -33,7 +33,7 @@ export class Store<
   A extends Action,
   C = Record<string, unknown>,
 > extends EventEmitter<StoreEvents> {
-  private readonly user: UserWithSecrets
+  private readonly signer: Signer
   private readonly context: C
 
   private readonly initialState: S
@@ -48,7 +48,7 @@ export class Store<
   private state: S
 
   constructor({
-    user,
+    signer,
     context = {} as C,
     graph,
     rootPayload,
@@ -64,7 +64,7 @@ export class Store<
     if (graph === undefined) {
       // no graph provided, so we'll create a new one
       assert(isKeyset(keys), 'If no graph is provided, only pass a single keyset, not a keyring.')
-      this.graph = createGraph({ user, rootPayload, keys })
+      this.graph = createGraph({ signer, rootPayload, keys })
     } else if (isGraph(graph)) {
       // graph provided
       this.graph = graph
@@ -80,7 +80,7 @@ export class Store<
     this.reducer = reducer
     this.validators = validators
     this.resolver = resolver
-    this.user = user
+    this.signer = signer
 
     // if a single keyset was provided, wrap it in a keyring
     this.keyring = createKeyring(keys)
@@ -146,20 +146,25 @@ export class Store<
       this.keyring[keys.encryption.publicKey] = keys
     }
 
-    // append this action as a new link to the graph
-    this.graph = append({
+    // build the next graph without installing it yet
+    const nextGraph = append({
       graph: this.graph,
       action: actionWithPayload,
-      user: this.user,
+      signer: this.signer,
       keys,
       context: this.context,
     })
 
     // get the newly appended link (at this point we're guaranteed a single head, which is the one we appended)
-    const [head] = getHead(this.graph)
+    const [head] = getHead(nextGraph)
 
     // we don't need to pass the whole graph through the reducer, just the current state + the new head
-    this.state = this.reducer(this.state, head, this.logger)
+    const nextState = this.reducer(this.state, head, this.logger, nextGraph)
+
+    // Install the graph and its derived state together. If the reducer rejects the action, both the
+    // existing graph and the existing state are left untouched.
+    this.graph = nextGraph
+    this.state = nextState
 
     // notify listeners
     this.emit('updated', { head: this.graph.head })
@@ -173,8 +178,16 @@ export class Store<
    * @returns this `Store` instance
    */
   public merge(theirGraph: Graph<A, C>) {
-    this.graph = merge(this.graph, theirGraph)
-    this.updateState()
+    const mergedGraph = merge(this.graph, theirGraph)
+
+    // Derive the state before installing anything: a merged graph that fails validation must leave
+    // this store exactly as it was, so a rejected peer can't poison later merges.
+    const mergedState = this.deriveState(mergedGraph)
+
+    this.graph = mergedGraph
+    this.state = mergedState
+
+    this.emit('updated', { head: this.graph.head })
   }
 
   /**
@@ -188,16 +201,20 @@ export class Store<
   // PRIVATE
 
   private updateState() {
+    this.state = this.deriveState(this.graph)
+
+    // notify listeners
+    this.emit('updated', { head: this.graph.head })
+  }
+
+  private deriveState(graph: Graph<A, C>) {
     const machine = makeMachine({
       initialState: this.initialState,
       reducer: this.reducer,
       resolver: this.resolver,
       validators: this.validators,
     })
-    this.state = machine(this.graph, this.logger)
-
-    // notify listeners
-    this.emit('updated', { head: this.graph.head })
+    return machine(graph, this.logger)
   }
 }
 

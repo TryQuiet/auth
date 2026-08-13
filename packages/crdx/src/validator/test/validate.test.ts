@@ -1,10 +1,10 @@
 ﻿/* eslint-disable @typescript-eslint/ban-ts-comment */
-import { asymmetric } from '@localfirst/crypto'
+import { asymmetric, signatures } from '@localfirst/crypto'
 import { buildGraph } from 'util/testing/graph.js'
 import { TEST_GRAPH_KEYS as keys, setup } from 'util/testing/setup.js'
 import { describe, expect, test, vitest } from 'vitest'
 import { hashEncryptedLink } from 'graph/hashLink.js'
-import { append, createGraph, getHead, getLink, getRoot } from 'graph/index.js'
+import { append, createGraph, type EncryptedLink, getHead, getLink, getRoot } from 'graph/index.js'
 import { type Hash } from 'util/index.js'
 import { validate } from 'validator/validate.js'
 import 'util/testing/expect/toBeValid'
@@ -13,18 +13,37 @@ const { setSystemTime } = vitest.useFakeTimers()
 
 const { alice, eve } = setup('alice', 'eve')
 
+/**
+ * 🦹‍♀️ Eve rebuilds a link around a body she has edited. She holds the graph keys, so she can always
+ * produce a well-formed box, and she can always sign her own work — what she can't do is make the
+ * result hash to the value the graph already records for that link.
+ */
+const reencryptAs = (body: unknown): EncryptedLink => {
+  const encryptedBody = asymmetric.encryptBytes({
+    secret: body,
+    recipientPublicKey: keys.encryption.publicKey,
+    senderSecretKey: eve.keys.encryption.secretKey,
+  })
+  return {
+    encryptedBody,
+    signature: signatures.sign(hashEncryptedLink(encryptedBody), eve.keys.signature.secretKey),
+    recipientPublicKey: keys.encryption.publicKey,
+    senderPublicKey: eve.keys.encryption.publicKey,
+  }
+}
+
 describe('graphs', () => {
   describe('validation', () => {
     describe('valid graphs', () => {
       test(`new graph`, () => {
-        const graph = createGraph({ user: alice, name: 'Spies Я Us', keys })
+        const graph = createGraph({ signer: alice, name: 'Spies Я Us', keys })
         expect(validate(graph)).toBeValid()
       })
 
       test(`new graph with one additional link`, () => {
-        const graph = createGraph({ user: alice, name: 'Spies Я Us', keys })
+        const graph = createGraph({ signer: alice, name: 'Spies Я Us', keys })
         const newLink = { type: 'FOO', payload: { name: 'charlie' } }
-        const newGraph = append({ graph, action: newLink, user: alice, keys })
+        const newGraph = append({ graph, action: newLink, signer: alice, keys })
         expect(validate(newGraph)).toBeValid()
       })
     })
@@ -77,18 +96,10 @@ describe('graphs', () => {
 
         // 🦹‍♀️ Eve tampers with the root
         const rootLink = getRoot(graph)
-        rootLink.body.userId = eve.userId
+        rootLink.body.signer = eve.info
 
-        // 🦹‍♀️ She reencrypts the link with her private key
-        graph.encryptedLinks[graph.root] = {
-          encryptedBody: asymmetric.encryptBytes({
-            secret: rootLink.body,
-            recipientPublicKey: keys.encryption.publicKey,
-            senderSecretKey: eve.keys.encryption.secretKey,
-          }),
-          recipientPublicKey: keys.encryption.publicKey,
-          senderPublicKey: eve.keys.encryption.publicKey,
-        }
+        // 🦹‍♀️ She reencrypts and re-signs the link with her own keys
+        graph.encryptedLinks[graph.root] = reencryptAs(rootLink.body)
 
         // 👩🏾 Alice is not fooled, because the root hash no longer matches the computed hash of the root link
         expect(validate(graph)).not.toBeValid()
@@ -99,7 +110,7 @@ describe('graphs', () => {
 
         // 🦹‍♀️ Eve tampers with the root
         const rootLink = getRoot(graph)
-        rootLink.body.user = eve
+        rootLink.body.signer = eve.info
 
         const oldRootHash = graph.root
 
@@ -122,6 +133,7 @@ describe('graphs', () => {
         // 🦹‍♀️  She adds the tampered root
         graph.encryptedLinks[newRootHash] = {
           encryptedBody,
+          signature: signatures.sign(newRootHash, eve.keys.signature.secretKey),
           senderPublicKey: eve.keys.encryption.publicKey,
           recipientPublicKey: keys.encryption.publicKey,
         }
@@ -137,18 +149,10 @@ describe('graphs', () => {
         // 🦹‍♀️ Eve tampers with the head
         const headHash = graph.head[0]
         const headLink = getLink(graph, headHash)
-        headLink.body.userId = eve.userId
+        headLink.body.signer = eve.info
 
-        // 🦹‍♀️ She reencrypts the link with her private key
-        graph.encryptedLinks[headHash] = {
-          encryptedBody: asymmetric.encryptBytes({
-            secret: headLink.body,
-            recipientPublicKey: keys.encryption.publicKey,
-            senderSecretKey: eve.keys.encryption.secretKey,
-          }),
-          recipientPublicKey: keys.encryption.publicKey,
-          senderPublicKey: eve.keys.encryption.publicKey,
-        }
+        // 🦹‍♀️ She reencrypts and re-signs the link with her own keys
+        graph.encryptedLinks[headHash] = reencryptAs(headLink.body)
 
         // 👩🏾 Alice is not fooled, because the head hash no longer matches the computed hash of the head link
         expect(validate(graph)).not.toBeValid()
@@ -163,16 +167,8 @@ describe('graphs', () => {
 
         link.body.payload = 'foo'
 
-        // 🦹‍♀️ She reencrypts the link with her private key
-        graph.encryptedLinks[linkHash] = {
-          encryptedBody: asymmetric.encryptBytes({
-            secret: link.body,
-            recipientPublicKey: keys.encryption.publicKey,
-            senderSecretKey: eve.keys.encryption.secretKey,
-          }),
-          recipientPublicKey: keys.encryption.publicKey,
-          senderPublicKey: eve.keys.encryption.publicKey,
-        }
+        // 🦹‍♀️ She reencrypts and re-signs the link with her own keys
+        graph.encryptedLinks[linkHash] = reencryptAs(link.body)
 
         // 👩🏾 Alice is not fooled, because the link's hash no longer matches the computed hash of the head link
         expect(validate(graph)).not.toBeValid()
@@ -204,7 +200,7 @@ describe('graphs', () => {
         const graph2 = append({
           graph,
           action: { type: 'FOO', payload: 'pizza' },
-          user: eve,
+          signer: eve,
           keys,
         })
         setSystemTime(now)
@@ -222,7 +218,7 @@ describe('graphs', () => {
         const graph2 = append({
           graph,
           action: { type: 'FOO', payload: 'pizza' },
-          user: eve,
+          signer: eve,
           keys,
         })
         setSystemTime(now)
@@ -240,7 +236,7 @@ describe('graphs', () => {
         const graph2 = append({
           graph,
           action: { type: 'FOO', payload: 'pizza' },
-          user: eve,
+          signer: eve,
           keys,
         })
         setSystemTime(now)

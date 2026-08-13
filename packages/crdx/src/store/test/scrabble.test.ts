@@ -1,10 +1,9 @@
 import { makeRandom } from '@herbcaudill/random'
-import { TEST_GRAPH_KEYS as keys } from 'util/testing/setup.js'
+import { createTestSigner, TEST_GRAPH_KEYS as keys } from 'util/testing/setup.js'
 import { describe, expect, test } from 'vitest'
 import { type RootAction, createGraph } from 'graph/index.js'
 import { type Store, createStore } from 'store/index.js'
 import { type Reducer } from 'store/types.js'
-import { createUser } from 'user/index.js'
 import { arrayToMap } from 'util/index.js'
 
 /*
@@ -15,24 +14,24 @@ This store doesn't have a custom resolver; any conflicting actions (e.g. concurr
 the same letter) are ordered arbitrarily and dealt with in the reducer. 
 */
 
-const alice = createUser('alice', 'alice')
-const bob = createUser('bob', 'bob')
+const alice = createTestSigner('alice')
+const bob = createTestSigner('bob')
 
 const setupScrabbleAttacks = () => {
   const graph = createGraph<ScrabbleAttacksAction>({
-    user: alice,
+    signer: alice,
     name: 'scrabble',
     keys,
   })
   const reducer = scrabbleAttacksReducer
 
   // Alice starts a game and adds Bob as a player
-  const aliceStore = createStore({ user: alice, graph, reducer, keys })
-  aliceStore.dispatch({ type: 'ADD_PLAYER', payload: { userId: 'bob' } })
+  const aliceStore = createStore({ signer: alice, graph, reducer, keys })
+  aliceStore.dispatch({ type: 'ADD_PLAYER', payload: { userId: bob.info.id } })
 
   // Bob starts with a copy of Alice's graph
   const bobStore = createStore({
-    user: bob,
+    signer: bob,
     graph: aliceStore.getGraph(),
     reducer,
     keys,
@@ -53,8 +52,8 @@ describe('scrabble attacks', () => {
       const { aliceStore } = setupScrabbleAttacks()
       const { players, tiles } = aliceStore.getState()
       expect(players).toEqual([
-        { userId: 'alice', words: [] },
-        { userId: 'bob', words: [] },
+        { userId: alice.info.id, words: [] },
+        { userId: bob.info.id, words: [] },
       ])
       expect(Object.keys(tiles)).toHaveLength(100)
     })
@@ -295,7 +294,8 @@ const scrabbleAttacksReducer: Reducer<ScrabbleAttacksState, ScrabbleAttacksActio
 
   switch (action.type) {
     case 'ROOT': {
-      const { userId } = link.body
+      // the player who founded the game is whoever signed the ROOT link
+      const { id: userId } = link.body.signer
       const rootPlayer = { userId, words: [] }
       return {
         players: [rootPlayer],
@@ -329,7 +329,7 @@ const scrabbleAttacksReducer: Reducer<ScrabbleAttacksState, ScrabbleAttacksActio
     }
 
     case 'CLAIM_WORD': {
-      const { userId } = action
+      const { id: userId } = link.body.signer
       const { word } = action.payload
 
       let availableTiles = Object.values(tiles).filter(t => isAvailable(t))
