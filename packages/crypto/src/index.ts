@@ -3,6 +3,7 @@ import sodium from 'libsodium-wrappers-sumo'
 await sodium.ready
 
 export * from './asymmetric.js'
+export * from './fingerprint.js'
 export * from './hash.js'
 export * from './randomKey.js'
 export * from './signatures.js'
