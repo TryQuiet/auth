@@ -69,13 +69,16 @@ describe('forged signer identity', () => {
       message: /is not registered on this team/,
     })
 
-    // Once she also has the branch that registers it, the same link is a normal concurrent action
-    // and stands or falls on the ordinary rules — an unknown signer is a statement about the graph
-    // in hand, not a permanent verdict on the device.
+    // Once she also has the branch that registers it, the graph loads cleanly and the device is
+    // known — but the link the phone signed *before* its own admission is not in that registration's
+    // causal future, so it was never causally authorized. The resolver drops it deterministically
+    // (rather than accepting it only when the topo-sort tiebreak happens to place the registration
+    // first, and throwing when it doesn't). So the device is registered while the role it tried to
+    // add is dropped, and every replica agrees regardless of merge order.
     const complete = merge(registrationBranch, phoneBranch) as TeamGraph
     const merged = teams.load(complete, alice.localContext, alice.team.teamKeyring())
     expect(merged.hasDevice(bob.phone!.deviceId)).toBe(true)
-    expect(merged.hasRole('managers')).toBe(true)
+    expect(merged.hasRole('managers')).toBe(false)
   })
 
   it('rejects a device whose id is not the fingerprint of its own key', () => {

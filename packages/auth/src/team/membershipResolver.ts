@@ -1,4 +1,11 @@
-import { ROOT, getConcurrentBubbles, type Link, type Resolver } from '@localfirst/crdx'
+import {
+  ROOT,
+  getConcurrentBubbles,
+  isPredecessorHash,
+  type Hash,
+  type Link,
+  type Resolver,
+} from '@localfirst/crdx'
 import { type Invitation } from 'invitation/index.js'
 import { ADMIN } from 'role/index.js'
 import { bySeniority, byDeviceSeniority } from 'team/bySeniority.js'
@@ -119,6 +126,55 @@ export const getSignerUserMap = (graph: TeamGraph): SignerUserMap => {
 }
 
 /**
+ * Maps each signer id in the graph to the hash of the link that *registered* it: the ROOT for the
+ * founding device, an ADD_MEMBER for a member's devices, an ADMIT_MEMBER/ADMIT_DEVICE for an
+ * invited member's or device's registration, or an ADD_SERVER for a server.
+ *
+ * A signer's registration is the causal anchor that introduces its id into the graph. Every link a
+ * signer produces must have that registration in its causal past — you can't sign as an identity
+ * before the graph knew that identity existed. Unlike `getSignerUserMap` (which answers "who does
+ * this id act for"), this answers "where was this id introduced", which is what lets us check
+ * causal ancestry order-independently.
+ */
+export const getSignerRegistrationMap = (graph: TeamGraph): Record<string, Hash> => {
+  const map: Record<string, Hash> = {}
+  for (const link of Object.values(graph.links)) {
+    const { type, payload } = link.body
+    switch (type) {
+      case ROOT: {
+        map[payload.rootDevice.deviceId] = link.hash
+        break
+      }
+
+      case 'ADD_MEMBER': {
+        for (const device of payload.member.devices ?? []) {
+          map[device.deviceId] = link.hash
+        }
+
+        break
+      }
+
+      case 'ADMIT_MEMBER':
+      case 'ADMIT_DEVICE': {
+        map[payload.claim.device.deviceId] = link.hash
+        break
+      }
+
+      case 'ADD_SERVER': {
+        map[payload.server.serverId] = link.hash
+        break
+      }
+
+      default: {
+        break
+      }
+    }
+  }
+
+  return map
+}
+
+/**
  * If we invalidate a link, we need to invalidate all links that depend on it. For example, if
  * someone joins the group but their invitation turns out to be invalid, then anything they do needs
  * to be invalidated, including if _they_ invited someone else — and so on recursively.
@@ -162,6 +218,33 @@ const findDependentLinks = (bubble: TeamLink[], invalidLink: TeamLink): TeamLink
 }
 
 const membershipRules: Record<string, MembershipRuleEnforcer> = {
+  /**
+   * RULE: a link may only be signed by an identity whose registration is in the link's causal past.
+   *
+   * A signer registered *concurrently* with (or after) a link it signed isn't yet known along that
+   * link's own history, so the link was never causally authorized. Whether such a registration
+   * happens to sort before or after the link is a topo-sort tiebreak, so resolving the signer
+   * against `previousState` in `validate` would accept or reject the same link depending on the
+   * order — and reject there means an uncaught throw that fails the *entire* graph load
+   * (non-deterministic DoS). We settle it here instead, deterministically: every replica agrees on
+   * causal ancestry, so every replica drops exactly the same links. A signer with no registration
+   * anywhere in the graph is left alone — that's a genuine unknown signer, rejected downstream by
+   * `resolveAuthor`.
+   */
+  requireSignerRegisteredInCausalPast(links, graph) {
+    const registrations = getSignerRegistrationMap(graph)
+    return links.filter(link => {
+      const registrationHash = registrations[signerId(link)]
+      // No registration in the graph at all: not our case (unknown signer, handled by resolveAuthor).
+      if (registrationHash === undefined) return false
+      // The founding device is registered by the very link it signs (the root); nothing precedes
+      // the root, and a link isn't its own predecessor, so exempt that self-registration case.
+      if (registrationHash === link.hash) return false
+      // Otherwise the registration must be a causal ancestor of the link it authorizes.
+      return !isPredecessorHash(graph, registrationHash, link.hash)
+    })
+  },
+
   // RULE: mutual and circular removals are resolved by seniority
   resolveMutualRemovals(links, graph, authors) {
     const removed = getRemovedAndDemotedMembers(links)
