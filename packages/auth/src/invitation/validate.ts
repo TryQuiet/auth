@@ -13,13 +13,12 @@ import { invitationProofPayload } from './invitationProofPayload.js'
 const KEYSET_FIELDS = ['type', 'name', 'generation', 'encryption', 'signature']
 
 export const invitationCanBeUsed = (invitation: InvitationState, timeOfUse: number) => {
-  const { revoked, maxUses, uses, expiration } = invitation
+  const { revoked, expiration } = invitation
+  // No use-count check: a use-counter is a consensus value that concurrency can't enforce (two
+  // branches each see it below the limit and both admit), so invitations are multi-use, bounded
+  // only by revocation and expiration — both of which are per-link, consensus-free facts.
   if (revoked) {
     return fail('The invitation has been revoked')
-  }
-
-  if (maxUses > 0 && uses >= maxUses) {
-    return fail('The invitation cannot be used again')
   }
 
   if (expiration > 0 && expiration < timeOfUse) {

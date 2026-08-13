@@ -566,22 +566,18 @@ export class Team extends EventEmitter<TeamEvents> {
   public inviteMember({
     seed = invitations.randomSeed(),
     expiration,
-    maxUses,
   }: {
     /** A secret to be passed to the invitee via a side channel. If not provided, one will be randomly generated. */
     seed?: string
 
     /** Time when the invitation expires. If not provided, the invitation does not expire. */
     expiration?: UnixTimestamp
-
-    /** Number of times the invitation can be used. If not provided, the invitation can be used any number of times. */
-    maxUses?: number
   } = {}): InviteResult {
     // Normalize the seed (all lower case, strip spaces & punctuation)
     seed = normalize(seed)
 
     // Generate invitation
-    const invitation = invitations.create({ seed, expiration, maxUses })
+    const invitation = invitations.create({ seed, expiration })
     const { id } = invitation
 
     // Post invitation to graph
@@ -621,9 +617,10 @@ export class Team extends EventEmitter<TeamEvents> {
 
     seed = normalize(seed)
 
-    // Generate invitation
-    const maxUses = 1 // Can't invite multiple devices with the same invitation
-    const invitation = invitations.create({ seed, expiration, maxUses, userId: this.userId })
+    // Generate invitation. Like every invitation it is multi-use (bounded by expiration): a
+    // use-counter can't be enforced under concurrency, so a device invitation relies on its short
+    // default expiration rather than a single-use guarantee.
+    const invitation = invitations.create({ seed, expiration, userId: this.userId })
 
     // In order for the invited device to be able to access the user's keys, we put the user keys in
     // a lockbox that can be opened by an ephemeral keyset generated from the secret invitation

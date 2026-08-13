@@ -134,7 +134,9 @@ describe('Team', () => {
           { user: 'charlie', member: false }
         )
 
-        const { seed } = alice.team.inviteMember({ maxUses: 2 })
+        // Every invitation is multi-use: a use-count can't be enforced under concurrency, so an
+        // invitation is bounded by expiration and revocation, not by a number of uses.
+        const { seed } = alice.team.inviteMember()
 
         // 👨🏻‍🦲 Bob and 👳🏽‍♂️ Charlie each prove the same invitation, for their own identities
 
@@ -147,11 +149,11 @@ describe('Team', () => {
         expect(alice.team.has(charlie.userId)).toBe(true)
       })
 
-      it('can use an invitation infinite uses when maxUses is zero', () => {
+      it('can use an invitation any number of times', () => {
         const { alice } = setup('alice')
 
         // 👩🏾 Alice makes an invitation that anyone can use
-        const { seed } = alice.team.inviteMember({ maxUses: 0 }) // No limit
+        const { seed } = alice.team.inviteMember()
         const invitationId = deriveId(seed)
 
         // A bunch of people use the same invitation and 👩🏾 Alice admits them all
@@ -180,36 +182,6 @@ describe('Team', () => {
         for (const { user } of users) {
           expect(alice.team.has(user.userId)).toBe(true)
         }
-      })
-
-      it("won't use an invitation more than the maximum uses defined", () => {
-        const { alice, bob, charlie } = setup(
-          'alice',
-          { user: 'bob', member: false },
-          { user: 'charlie', member: false }
-        )
-
-        const { seed } = alice.team.inviteMember({ maxUses: 1 })
-
-        const tryToAdmitBob = () => {
-          alice.team.admitMember(...memberAdmission(seed, bob))
-        }
-
-        const tryToAdmitCharlie = () => {
-          alice.team.admitMember(...memberAdmission(seed, charlie))
-        }
-
-        // 👍 👨🏻‍🦲 Bob uses the invitation first and he gets in
-        expect(tryToAdmitBob).not.toThrow()
-
-        // 👎 👳🏽‍♂️ Charlie also tries to use the invitation, but it can only be used once
-        expect(tryToAdmitCharlie).toThrow(/used/)
-
-        // ✅ 👨🏻‍🦲 Bob is on the team
-        expect(alice.team.has(bob.userId)).toBe(true)
-
-        // ❌ 👳🏽‍♂️ Charlie is not on the team
-        expect(alice.team.has(charlie.userId)).toBe(false)
       })
 
       it("won't use a revoked invitation", () => {

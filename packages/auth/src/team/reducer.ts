@@ -24,7 +24,6 @@ import {
   revokeInvitation,
   rotateKeys,
   setTeamName,
-  useInvitation,
 } from './transforms/index.js'
 import { setMetadata } from './transforms/setMetadata.js'
 import {
@@ -186,7 +185,6 @@ const getTransforms = (link: TeamLink): Transform[] => {
       }
 
       return [
-        useInvitation(id), // Mark the invitation as used
         addMember(member, [claim.device], timestamp), // Add the member and the device they'll use
       ]
     }
@@ -194,7 +192,6 @@ const getTransforms = (link: TeamLink): Transform[] => {
     case 'ADMIT_DEVICE': {
       const { id, claim } = action.payload
       return [
-        useInvitation(id), // Mark the invitation as used
         addInvitedDevice(id, claim.device, timestamp), // Add the device to the invitation's owner
       ]
     }

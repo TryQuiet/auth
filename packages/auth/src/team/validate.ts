@@ -375,7 +375,7 @@ const validators: AuthorizedValidatorSet = {
     return VALID
   },
 
-  /** Check for ADMIT with invitations that are revoked OR have been used more than maxUses OR are expired */
+  /** Check for ADMIT with invitations that are revoked OR expired. */
   cantAdmitWithInvalidInvitation(previousState, link, _author, extendableLogger) {
     const logger = extendableLogger.extend('cantAdmitWithInvalidInvitation')
     const { type, payload } = link.body

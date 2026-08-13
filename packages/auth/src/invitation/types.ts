@@ -18,9 +18,6 @@ export type Invitation = {
   /** Time when the invitation expires. If 0, the invitation does not expire. */
   expiration: UnixTimestamp
 
-  /** Number of times the invitation can be used. If 0, the invitation can be used any number of times. */
-  maxUses: number
-
   /** (Device invitations only) The user the invited device will belong to. This is the *only*
    * source of a new device's owner — an invitee never supplies its own. */
   userId?: string
@@ -34,9 +31,6 @@ export type InvitationState = {
   /** Whether this invitation admits a member or a device. Derived from the graph action that
    * posted it, not from anything the invitee claims. */
   kind: InvitationKind
-
-  /** Number of times the invitation has been used */
-  uses: number
 
   /** If true, this invitation was revoked at some point after it was created (but before it was used) */
   revoked: boolean

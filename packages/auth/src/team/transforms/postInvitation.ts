@@ -14,6 +14,6 @@ export const postInvitation =
     ...state,
     invitations: {
       ...state.invitations,
-      [invitation.id]: { ...invitation, kind, uses: 0, revoked: false },
+      [invitation.id]: { ...invitation, kind, revoked: false },
     },
   })
