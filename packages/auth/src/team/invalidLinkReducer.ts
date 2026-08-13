@@ -27,6 +27,12 @@ export const invalidLinkReducer = (state: TeamState, link: TeamLink): TeamState 
       const keys = claim.memberKeys
       const userId = keys.name
 
+      // Exception: a *duplicate* admission of someone who was validly admitted on another branch is
+      // not a reversal — the resolver collapsed two registrations of one identity to converge, and
+      // the surviving admission already registered this member. Treating the dropped duplicate as a
+      // removal would tombstone the live member (and their device), so we no-op instead.
+      if (isValidlyRegisteredMember(state, userId)) return state
+
       const member: Member = {
         userName: claim.userName,
         userId,
@@ -51,6 +57,11 @@ export const invalidLinkReducer = (state: TeamState, link: TeamLink): TeamState 
       // The member is unaffected — only this device's admission was reversed — but the device had
       // access to whatever its owner could see, so the owner's keys need rotating.
       const { claim, id } = payload
+
+      // As with ADMIT_MEMBER: a duplicate admission of a device already registered on another branch
+      // is convergence, not a reversal, so it must not tombstone the live device.
+      if (isValidlyRegisteredDevice(state, claim.device.deviceId)) return state
+
       const userId = state.invitations[id]?.userId
       const device = toOwnedDevice(claim.device, userId ?? '')
 
@@ -67,6 +78,14 @@ export const invalidLinkReducer = (state: TeamState, link: TeamLink): TeamState 
     }
   }
 }
+
+/** True if this member is a live (non-removed) member of the team. */
+const isValidlyRegisteredMember = (state: TeamState, userId: string) =>
+  state.members.some(member => member.userId === userId)
+
+/** True if this device is a live (non-tombstoned) device of some current member. */
+const isValidlyRegisteredDevice = (state: TeamState, deviceId: string) =>
+  state.members.some(member => (member.devices ?? []).some(device => device.deviceId === deviceId))
 
 const tombstone = (state: TeamState, device: DeviceRecord) =>
   state.removedDevices.some(d => d.deviceId === device.deviceId)

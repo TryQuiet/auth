@@ -245,6 +245,39 @@ const membershipRules: Record<string, MembershipRuleEnforcer> = {
     })
   },
 
+  /**
+   * RULE: within a bubble, two or more links that register the SAME id are duplicate registrations
+   * of one identity — keep the lowest-hash one, drop the rest.
+   *
+   * A deviceId (or serverId) is the fingerprint of its own keys and a userId is derived from its
+   * founding device, so two concurrent registrations of the same id are necessarily the *same*
+   * identity with the *same* keys: dropping a duplicate loses nothing. This is convergence, not a
+   * security choice — it's what lets two admins concurrently admit the same invitee (or a member and
+   * the syncserver both accept) without the second registration hitting `registeredIdsAreUnique` and
+   * throwing "id already in use" when the branches merge. The dependent-link cascade (applied by the
+   * caller) drops anything the dropped registrations signed.
+   */
+  collapseDuplicateRegistrations(links) {
+    const registrantsById = new Map<string, TeamLink[]>()
+    for (const link of links) {
+      for (const id of registeredSignerIds(link)) {
+        const group = registrantsById.get(id)
+        if (group) group.push(link)
+        else registrantsById.set(id, [link])
+      }
+    }
+
+    const duplicates = new Set<TeamLink>()
+    for (const group of registrantsById.values()) {
+      if (group.length < 2) continue
+      // Keep the lowest hash; every other registration of this id is a duplicate to drop.
+      const [, ...rest] = [...group].sort(byLinkHash)
+      for (const link of rest) duplicates.add(link)
+    }
+
+    return [...duplicates]
+  },
+
   // RULE: mutual and circular removals are resolved by seniority
   resolveMutualRemovals(links, graph, authors) {
     const removed = getRemovedAndDemotedMembers(links)
@@ -349,6 +382,32 @@ const getDeviceRemovals = (links: TeamLink[]) =>
   links.filter(link => link.body.type === 'REMOVE_DEVICE' && !isSelfRemoval(link)) as RemoveDeviceLink[]
 
 const signerId = (link: TeamLink): string => link.body.signer.id
+
+const byLinkHash = (a: TeamLink, b: TeamLink) =>
+  a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0
+
+/**
+ * The signer ids a link registers — the same ids `getSignerRegistrationMap` keys on: the founding
+ * device (ROOT), a member's registered devices (ADD_MEMBER), the admitted device (ADMIT_MEMBER /
+ * ADMIT_DEVICE), or a server (ADD_SERVER). These are exactly the ids other links are signed by, so
+ * a collision on one is a duplicate registration of one identity.
+ */
+const registeredSignerIds = (link: TeamLink): string[] => {
+  const { type, payload } = link.body
+  switch (type) {
+    case ROOT:
+      return [payload.rootDevice.deviceId]
+    case 'ADD_MEMBER':
+      return (payload.member.devices ?? []).map(device => device.deviceId)
+    case 'ADMIT_MEMBER':
+    case 'ADMIT_DEVICE':
+      return [payload.claim.device.deviceId]
+    case 'ADD_SERVER':
+      return [payload.server.serverId]
+    default:
+      return []
+  }
+}
 
 /** The member a link is attributed to: whoever registered the signer that signed it. */
 const getAuthor = (authors: SignerUserMap) => (link: TeamLink) => authors[signerId(link)]
