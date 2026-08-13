@@ -92,10 +92,11 @@ describe('auth provider for automerge-repo', () => {
     const channel = new MessageChannel()
     const { port1: laptopToPhone, port2: phoneToLaptop } = channel
 
-    const alice = Auth.createUser('alice')
-
     const laptopStorage = new NodeFSStorageAdapter(getStorageDirectory('alice-laptop'))
-    const laptop = Auth.createDevice({ userId: alice.userId, deviceName: "Alice's laptop" })
+    // The founding device comes first; Alice's id is derived from it.
+    const laptopDevice = Auth.device.createFirstUseDevice({ deviceName: "Alice's laptop" })
+    const alice = Auth.createUser('alice', Auth.deriveUserId(laptopDevice.deviceId))
+    const laptop = { ...laptopDevice, userId: alice.userId }
     const laptopContext = { user: alice, device: laptop }
     const laptopAuth = new AuthProvider({ ...laptopContext, storage: laptopStorage })
 

@@ -4,7 +4,7 @@ import { deviceIdentityIsValid } from 'device/index.js'
 import * as invitations from 'invitation/index.js'
 import { invitationCanBeUsed } from 'invitation/index.js'
 import { castServer, serverIdentityIsValid } from 'server/index.js'
-import { KeyType, VALID, ValidationError, actionFingerprint, type ValidationResult } from 'util/index.js'
+import { KeyType, VALID, ValidationError, actionFingerprint, deriveUserId, type ValidationResult } from 'util/index.js'
 import { isAdminOnlyAction } from './isAdminOnlyAction.js'
 import * as select from './selectors/index.js'
 import {
@@ -112,9 +112,13 @@ const validateRoot = (previousState: TeamState, link: TeamLink, logger: Logger) 
     )
   }
 
-  if (rootDevice.deviceId === rootMember.userId) {
+  // The founder's id must be the one derived from their founding device — same rule as for any
+  // member. This is what makes a userId recomputable rather than chosen, so no global uniqueness
+  // scan is needed to keep it distinct; domain separation also guarantees it can never equal the
+  // deviceId it's derived from.
+  if (rootMember.userId !== deriveUserId(rootDevice.deviceId)) {
     return fail(
-      'The founding member and device cannot share an id',
+      "The founding member's id must be derived from the founding device",
       previousState,
       link,
       logger
@@ -478,6 +482,38 @@ const validators: AuthorizedValidatorSet = {
     if (!possessionValidation.isValid) {
       return fail(
         `Admission does not prove possession of the device being registered: ${possessionValidation.error.message}`,
+        previousState,
+        link,
+        logger
+      )
+    }
+
+    return VALID
+  },
+
+  /**
+   * An admitted member's userId isn't a label they chose — it's the hash of the device that founded
+   * their identity (the device carried in this same admission). Re-deriving it here makes the id
+   * self-certifying: every replica computes the same userId from the same device, so two distinct
+   * members can never collide on one, and no global uniqueness scan is needed to keep them apart.
+   *
+   * Runs after the proof/possession check, so the claim's shape is already validated; the guard is
+   * belt-and-suspenders against a malformed payload reaching this far.
+   */
+  admittedMemberIdIsDerivedFromDevice(previousState, link, _author, extendableLogger) {
+    const logger = extendableLogger.extend('admittedMemberIdIsDerivedFromDevice')
+    if (link.body.type !== 'ADMIT_MEMBER') return VALID
+
+    const { claim } = link.body.payload
+    const deviceId = claim?.device?.deviceId
+    const userId = claim?.memberKeys?.name
+    if (typeof deviceId !== 'string' || typeof userId !== 'string') {
+      return fail('Admission claim is missing the fields its member id derives from', previousState, link, logger)
+    }
+
+    if (userId !== deriveUserId(deviceId)) {
+      return fail(
+        "The admitted member's id must be derived from the device it registers",
         previousState,
         link,
         logger

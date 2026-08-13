@@ -1,5 +1,5 @@
-import { createUser, type UnixTimestamp } from '@localfirst/crdx'
-import { createDevice, createFirstUseDevice, redactFirstUseDevice } from 'device/index.js'
+import { type UnixTimestamp } from '@localfirst/crdx'
+import { createFirstUseDevice, redactFirstUseDevice } from 'device/index.js'
 import {
   createPossessionProof,
   deriveId,
@@ -11,6 +11,7 @@ import { getTeamState } from 'team/getTeamState.js'
 import * as select from 'team/selectors/index.js'
 import { KeyType } from 'util/index.js'
 import {
+  createTestUser,
   invitationNonces,
   memberClaim,
   memberInvitationProof,
@@ -163,11 +164,7 @@ describe('Team', () => {
             rainbow, steve, thad, uriah, vanessa, wade, xerxes, yazmin, zelda`
           .replaceAll(/\s/g, '')
           .split(',')
-        const users = invitees.map(userName => {
-          const user = createUser(userName, userName, userName)
-          const device = createDevice({ userId: user.userId, deviceName: 'laptop', seed: userName })
-          return { user, device }
-        })
+        const users = invitees.map(userName => createTestUser(userName))
 
         for (const { user, device } of users) {
           const claim = memberClaim(user, device)

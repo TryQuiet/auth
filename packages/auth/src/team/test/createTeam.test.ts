@@ -2,14 +2,13 @@ import { createUser } from '@localfirst/crdx'
 import { describe, expect, it } from 'vitest'
 import { createTeam } from '../createTeam.js'
 import { createDevice } from 'device/index.js'
-import { setup } from 'util/testing/index.js'
+import { createTestUser, setup } from 'util/testing/index.js'
 import { load } from '../load.js'
 
 describe('Team', () => {
   describe('createTeam', () => {
     it('returns a new team', () => {
-      const user = createUser('alice')
-      const device = createDevice({ userId: user.userId, deviceName: 'laptop' })
+      const { user, device } = createTestUser('alice')
       const team = createTeam('Spies Я Us', { user, device })
       expect(team.teamName).toBe('Spies Я Us')
       expect(team.id).toBeDefined()
@@ -59,12 +58,7 @@ describe('Team', () => {
     })
 
     it('the team preserves device metadata if provided', () => {
-      const user = createUser('alice')
-      const device = createDevice({
-        userId: user.userId,
-        deviceName: 'laptop',
-        deviceInfo: { foo: 'bar' },
-      })
+      const { user, device } = createTestUser('alice', { deviceInfo: { foo: 'bar' } })
       const team = createTeam('Spies Я Us', { user, device })
       expect(team.device(device.deviceId).deviceInfo.foo).toBe('bar')
     })

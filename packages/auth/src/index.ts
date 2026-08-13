@@ -31,6 +31,9 @@ export type * from './team/types.js'
 
 export { graphSummary } from './util/graphSummary.js'
 
+/** Derives a user's id from their founding device — the id an app must mint for a new identity. */
+export { deriveUserId } from './util/userId.js'
+
 export {
   createKeyset,
   createUser,
