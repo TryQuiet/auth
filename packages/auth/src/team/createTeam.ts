@@ -16,6 +16,5 @@ export function createTeam(teamName: string, context: LocalContext, seed?: strin
     teamKeys,
     metadata: metadata ?? defaultMetadata,
     sharedLogger,
-    initializeMemberRole: true,
   })
 }

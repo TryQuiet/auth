@@ -90,17 +90,13 @@ const getTransforms = (action: TeamAction): Transform[] => {
   switch (action.type) {
     case ROOT: {
       const { name, rootMember, rootDevice } = action.payload
-      const memberRole = action.payload.initializeMemberRole
-        ? [addRole({ roleName: MEMBER, createdBy: rootMember.userId })]
-        : []
-      const founderRoles = action.payload.initializeMemberRole ? [ADMIN, MEMBER] : [ADMIN]
       return [
         setTeamName(name),
         addRole({ roleName: ADMIN, createdBy: action.payload.rootMember.userId }), // Create the admin role
-        ...memberRole,
+        addRole({ roleName: MEMBER, createdBy: rootMember.userId }),
         addMember(rootMember), // Add the founding member
         addDevice(rootDevice), // Add the founding member's device
-        ...addMemberRoles(rootMember.userId, founderRoles), // Make the founding member an admin and member
+        ...addMemberRoles(rootMember.userId, [ADMIN, MEMBER]), // Make the founding member an admin and member
       ]
     }
 

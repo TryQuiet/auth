@@ -111,15 +111,11 @@ export class Team extends EventEmitter<TeamEvents> {
       const lockboxTeamKeysForMember = lockbox.create(options.teamKeys, user.keys)
       const adminKeys = createKeyset(ADMIN_SCOPE, this.seed)
       const lockboxAdminKeysForMember = lockbox.create(adminKeys, user.keys)
-      const memberKeys = options.initializeMemberRole
-        ? createKeyset({ type: KeyType.ROLE, name: MEMBER }, this.seed)
-        : undefined
-      const memberRoleLockboxes = memberKeys == null
-        ? []
-        : [
-            lockbox.create(memberKeys, adminKeys),
-            lockbox.create(memberKeys, user.keys),
-          ]
+      const memberKeys = createKeyset({ type: KeyType.ROLE, name: MEMBER }, this.seed)
+      const memberRoleLockboxes = [
+        lockbox.create(memberKeys, adminKeys),
+        lockbox.create(memberKeys, user.keys),
+      ]
 
       // We also store the founding user's keys in a lockbox for the user's device
       const lockboxUserKeysForDevice = lockbox.create(user.keys, this.context.device.keys)
@@ -135,7 +131,6 @@ export class Team extends EventEmitter<TeamEvents> {
           ...memberRoleLockboxes,
           lockboxUserKeysForDevice,
         ],
-        initializeMemberRole: options.initializeMemberRole,
       }
 
       // Create CRDX store

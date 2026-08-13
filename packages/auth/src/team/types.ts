@@ -58,8 +58,6 @@ export type NewTeamOptions = {
   /** Team metadata (e.g. roles that can be self-assigned by a member on the chain) */
   metadata?: TeamMetadata
 
-  /** Initialize the default member role on the root link. */
-  initializeMemberRole?: boolean
 }
 
 /** Properties required when rehydrating from an existing graph  */
@@ -108,7 +106,6 @@ export type RootAction = {
     name: string
     rootMember: Member
     rootDevice: Device
-    initializeMemberRole?: boolean
   }
 }
 
