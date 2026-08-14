@@ -1,4 +1,4 @@
-import { asymmetric, signatures } from '@localfirst/crypto'
+import { asymmetric, signatures, LINK_AUTHORSHIP } from '@localfirst/crypto'
 import { type EMPTY_GRAPH } from './createGraph.js'
 import { hashEncryptedLink } from './hashLink.js'
 import type { Action, EncryptedLink, Graph, Link, LinkBody, Signer } from './types.js'
@@ -38,7 +38,7 @@ export const append = <A extends Action, C>({
   const hash = hashEncryptedLink(encryptedBody)
 
   // sign the hash, so that readers can prove this link was authored by `body.signer`
-  const signature = signatures.sign(hash, signer.keys.signature.secretKey)
+  const signature = signatures.sign(hash, signer.keys.signature.secretKey, LINK_AUTHORSHIP)
 
   // create the encrypted and unencrypted links
   const link: Link<A, C> = {

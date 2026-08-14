@@ -1,4 +1,4 @@
-import { signatures, type Base58 } from '@localfirst/crypto'
+import { signatures, INVITATION_PROOF, type Base58 } from '@localfirst/crypto'
 import { deriveId } from 'invitation/deriveId.js'
 import type { InvitationClaim, ProofOfInvitation } from 'invitation/types.js'
 import { generateStarterKeys } from './generateStarterKeys.js'
@@ -32,7 +32,8 @@ export const generateProof = ({
   const proofFields = { id, acceptorNonce, inviteeNonce }
   const signature = signatures.sign(
     invitationProofPayload(proofFields, claim),
-    starterKeys.signature.secretKey
+    starterKeys.signature.secretKey,
+    INVITATION_PROOF
   )
 
   return { ...proofFields, signature }

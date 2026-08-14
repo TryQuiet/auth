@@ -1,4 +1,4 @@
-import { signatures, type Base58 } from '@localfirst/crypto'
+import { signatures, INVITATION_PROOF, type Base58 } from '@localfirst/crypto'
 import { deviceIdentityIsValid } from 'device/index.js'
 import {
   type Invitation,
@@ -62,6 +62,7 @@ export const validate = (
     payload: invitationProofPayload(proof, claim),
     signature: proof.signature,
     publicKey: invitation.publicKey,
+    context: INVITATION_PROOF,
   })
   if (!signatureIsValid) {
     return fail('Signature provided is not valid', { proof, invitation })

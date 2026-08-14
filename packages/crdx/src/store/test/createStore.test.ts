@@ -1,4 +1,4 @@
-import { asymmetric, signatures } from '@localfirst/crypto'
+import { asymmetric, signatures, LINK_AUTHORSHIP } from '@localfirst/crypto'
 import { createGraph, getRoot, hashEncryptedLink, serialize } from 'graph/index.js'
 import { createStore } from 'store/index.js'
 import 'util/testing/expect/toBeValid'
@@ -81,7 +81,7 @@ describe('createStore', () => {
     })
     graph.encryptedLinks[tamperedGraph.root] = {
       encryptedBody,
-      signature: signatures.sign(hashEncryptedLink(encryptedBody), eve.keys.signature.secretKey),
+      signature: signatures.sign(hashEncryptedLink(encryptedBody), eve.keys.signature.secretKey, LINK_AUTHORSHIP),
       recipientPublicKey: keys.encryption.publicKey,
       senderPublicKey: eve.keys.encryption.publicKey,
     }

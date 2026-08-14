@@ -1,5 +1,5 @@
 import { redactKeys } from '@localfirst/crdx'
-import { signatures, type Base58, type Payload } from '@localfirst/crypto'
+import { signatures, DEVICE_POSSESSION, type Base58, type Payload } from '@localfirst/crypto'
 import { assert } from '@localfirst/shared'
 import type { DeviceWithSecrets, FirstUseDeviceWithSecrets } from 'device/index.js'
 import { VALID, type ValidationResult } from 'util/index.js'
@@ -42,7 +42,8 @@ export const createPossessionProof = ({
   )
   return signatures.sign(
     possessionProofPayload(invitationId, claim),
-    device.keys.signature.secretKey
+    device.keys.signature.secretKey,
+    DEVICE_POSSESSION
   ) as Base58
 }
 
@@ -70,6 +71,7 @@ export const validatePossessionProof = ({
     payload: possessionProofPayload(invitationId, claim),
     signature: proof,
     publicKey: claim.device.keys.signature,
+    context: DEVICE_POSSESSION,
   })
   if (!signatureIsValid) {
     return fail('The device did not prove possession of its own keys', { invitationId, claim })

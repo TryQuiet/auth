@@ -5,7 +5,7 @@ import {
   type Keyset,
   type UnixTimestamp,
 } from '@localfirst/crdx'
-import { signatures, randomKey } from '@localfirst/crypto'
+import { signatures, randomKey, IDENTITY_CHALLENGE } from '@localfirst/crypto'
 import { type Challenge } from 'connection/types.js'
 import { VALID, type ValidationResult } from 'util/index.js'
 
@@ -16,7 +16,7 @@ export const challenge = (identityClaim: KeyScope): Challenge => ({
 })
 
 export const prove = (challenge: Challenge, keys: KeysetWithSecrets): Base58 =>
-  signatures.sign(challenge, keys.signature.secretKey)
+  signatures.sign(challenge, keys.signature.secretKey, IDENTITY_CHALLENGE)
 
 export const verify = (
   challenge: Challenge,
@@ -29,6 +29,7 @@ export const verify = (
     payload: challenge,
     signature,
     publicKey: publicKeys.signature,
+    context: IDENTITY_CHALLENGE,
   })
   if (!signatureIsValid) {
     return fail('Signature is not valid', details)

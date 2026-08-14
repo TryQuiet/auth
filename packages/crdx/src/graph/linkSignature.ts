@@ -1,4 +1,4 @@
-import { signatures } from '@localfirst/crypto'
+import { signatures, LINK_AUTHORSHIP } from '@localfirst/crypto'
 import type { Base58, Hash } from 'util/types.js'
 
 /**
@@ -25,7 +25,7 @@ export const verifyLinkSignature = ({
 }): boolean => {
   if (!signature || !publicKey) return false
   try {
-    return signatures.verify({ payload: hash, signature, publicKey })
+    return signatures.verify({ payload: hash, signature, publicKey, context: LINK_AUTHORSHIP })
   } catch {
     // malformed base58 in either the signature or the key throws rather than returning false
     return false

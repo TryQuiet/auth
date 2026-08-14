@@ -20,7 +20,7 @@ import {
   isKeyset,
   redactKeys,
 } from '@localfirst/crdx'
-import { randomKey, signatures, symmetric, type Base58 } from '@localfirst/crypto'
+import { randomKey, signatures, symmetric, type Base58, TEAM_MESSAGE } from '@localfirst/crypto'
 import { assert, Logger } from '@localfirst/shared'
 import * as identity from 'connection/identity.js'
 import { type Challenge } from 'connection/types.js'
@@ -925,7 +925,7 @@ export class Team extends EventEmitter<TeamEvents> {
 
     return {
       contents,
-      signature: signatures.sign(contents, secretKey),
+      signature: signatures.sign(contents, secretKey, TEAM_MESSAGE),
       author: { type, name, generation },
     }
   }
@@ -936,6 +936,7 @@ export class Team extends EventEmitter<TeamEvents> {
       payload: message.contents,
       signature: message.signature,
       publicKey: this.members(message.author.name).keys.signature,
+      context: TEAM_MESSAGE,
     })
 
   /** ************** KEYS

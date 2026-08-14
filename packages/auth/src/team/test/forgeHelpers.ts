@@ -9,7 +9,7 @@ import {
   type KeysetWithSecrets,
   type Signer,
 } from '@localfirst/crdx'
-import { asymmetric, signatures, type Base58 } from '@localfirst/crypto'
+import { asymmetric, signatures, LINK_AUTHORSHIP, type Base58 } from '@localfirst/crypto'
 import * as teams from 'team/index.js'
 import { serializeTeamGraph } from 'team/serialize.js'
 import {
@@ -92,7 +92,7 @@ export const buildEncryptedLink = ({
   const hash = hashEncryptedLink(encryptedBody)
   const encryptedLink: EncryptedLink = {
     encryptedBody,
-    signature: signatures.sign(hash, signWith.signature.secretKey),
+    signature: signatures.sign(hash, signWith.signature.secretKey, LINK_AUTHORSHIP),
     senderPublicKey: senderKeys.encryption.publicKey,
     recipientPublicKey: teamKeys.encryption.publicKey,
   }

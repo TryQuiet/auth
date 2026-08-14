@@ -1,5 +1,5 @@
 import { createKeyring, hashEncryptedLink } from '@localfirst/crdx'
-import { asymmetric, signatures } from '@localfirst/crypto'
+import { asymmetric, signatures, LINK_AUTHORSHIP } from '@localfirst/crypto'
 import * as teams from 'team/index.js'
 import { serializeTeamGraph } from 'team/serialize.js'
 import type { TeamAction, TeamGraph } from 'team/types.js'
@@ -91,7 +91,7 @@ describe('forged link integrity', () => {
     // and putting your own on gets you nothing, because the key it's checked against is Alice's.
     const tampered = inFlight(alice, ADD_MANAGERS)
     const [head] = tampered.head
-    const signature = signatures.sign(head, eve.device.keys.signature.secretKey)
+    const signature = signatures.sign(head, eve.device.keys.signature.secretKey, LINK_AUTHORSHIP)
     tampered.encryptedLinks[head].signature = signature
     tampered.links[head].signature = signature
 
@@ -196,7 +196,7 @@ describe('forged link integrity', () => {
       body,
       encryptedLink: {
         encryptedBody,
-        signature: signatures.sign(hash, eve.device.keys.signature.secretKey),
+        signature: signatures.sign(hash, eve.device.keys.signature.secretKey, LINK_AUTHORSHIP),
         senderPublicKey: alice.device.keys.encryption.publicKey,
         recipientPublicKey: teamKeys.encryption.publicKey,
       },

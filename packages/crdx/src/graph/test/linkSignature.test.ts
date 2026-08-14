@@ -1,4 +1,4 @@
-import { asymmetric, signatures } from '@localfirst/crypto'
+import { asymmetric, signatures, LINK_AUTHORSHIP } from '@localfirst/crypto'
 import { describe, expect, it } from 'vitest'
 import {
   append,
@@ -133,7 +133,7 @@ describe('link signatures', () => {
     const hash = hashEncryptedLink(encryptedBody)
     const forged: EncryptedLink = {
       encryptedBody,
-      signature: signatures.sign(hash, eve.keys.signature.secretKey),
+      signature: signatures.sign(hash, eve.keys.signature.secretKey, LINK_AUTHORSHIP),
       recipientPublicKey: keys.encryption.publicKey,
       senderPublicKey: eve.keys.encryption.publicKey,
     }

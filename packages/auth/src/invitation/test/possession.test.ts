@@ -1,5 +1,5 @@
 import { createKeyset, redactKeys, type UserWithSecrets } from '@localfirst/crdx'
-import { randomKey, signatures } from '@localfirst/crypto'
+import { randomKey, signatures, DEVICE_POSSESSION } from '@localfirst/crypto'
 import { describe, expect, test } from 'vitest'
 import { createDevice, createFirstUseDevice, redactDevice } from 'device/index.js'
 import {
@@ -52,7 +52,8 @@ describe('possession proofs', () => {
     const claim = memberClaim(bob, bobsLaptop)
     const forged = signatures.sign(
       possessionProofPayload(invitationId, claim),
-      evesLaptop.keys.signature.secretKey
+      evesLaptop.keys.signature.secretKey,
+      DEVICE_POSSESSION
     )
     expect(validatePossessionProof({ invitationId, claim, proof: forged })).not.toBeValid()
   })
@@ -107,7 +108,8 @@ describe('possession proofs', () => {
     }
     const proof = signatures.sign(
       possessionProofPayload(invitationId, substituted),
-      evesLaptop.keys.signature.secretKey
+      evesLaptop.keys.signature.secretKey,
+      DEVICE_POSSESSION
     )
     expect(validatePossessionProof({ invitationId, claim: substituted, proof })).not.toBeValid()
   })

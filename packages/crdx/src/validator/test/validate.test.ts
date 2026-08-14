@@ -1,5 +1,5 @@
 ﻿/* eslint-disable @typescript-eslint/ban-ts-comment */
-import { asymmetric, signatures } from '@localfirst/crypto'
+import { asymmetric, signatures, LINK_AUTHORSHIP } from '@localfirst/crypto'
 import { buildGraph } from 'util/testing/graph.js'
 import { TEST_GRAPH_KEYS as keys, setup } from 'util/testing/setup.js'
 import { describe, expect, test, vitest } from 'vitest'
@@ -26,7 +26,7 @@ const reencryptAs = (body: unknown): EncryptedLink => {
   })
   return {
     encryptedBody,
-    signature: signatures.sign(hashEncryptedLink(encryptedBody), eve.keys.signature.secretKey),
+    signature: signatures.sign(hashEncryptedLink(encryptedBody), eve.keys.signature.secretKey, LINK_AUTHORSHIP),
     recipientPublicKey: keys.encryption.publicKey,
     senderPublicKey: eve.keys.encryption.publicKey,
   }
@@ -133,7 +133,7 @@ describe('graphs', () => {
         // 🦹‍♀️  She adds the tampered root
         graph.encryptedLinks[newRootHash] = {
           encryptedBody,
-          signature: signatures.sign(newRootHash, eve.keys.signature.secretKey),
+          signature: signatures.sign(newRootHash, eve.keys.signature.secretKey, LINK_AUTHORSHIP),
           senderPublicKey: eve.keys.encryption.publicKey,
           recipientPublicKey: keys.encryption.publicKey,
         }

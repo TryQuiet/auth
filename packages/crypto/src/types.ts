@@ -21,6 +21,12 @@ export type SignedMessage = {
   signature: Base58
   /** The signer's public key, encoded as a base58 string */
   publicKey: Base58
+  /**
+   * The domain-separation tag the signature was produced under (see `domains.ts`). Verification
+   * fails unless this matches the context passed to `signatures.sign`. Not part of the wire format:
+   * the verifier knows the expected context from the call site, it is not carried with the message.
+   */
+  context: string
 }
 
 export type Cipher = {
