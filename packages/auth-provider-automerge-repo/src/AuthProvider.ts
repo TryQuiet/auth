@@ -420,6 +420,13 @@ export class AuthProvider extends EventEmitter<AuthProviderEvents> {
     return this.#storedMessages.get([shareId, peerId]) ?? []
   }
 
+  /** Once a connection has taken over its buffered messages, the buffer must not linger: it's a
+   * one-shot handoff for a single handshake, and leftover messages would be replayed into the next
+   * connection we make to the same peer. */
+  #clearStoredMessages(shareId: ShareId, peerId: PeerId) {
+    this.#storedMessages.delete([shareId, peerId])
+  }
+
   /**
    * TODO: note that this can also be an anonymous share
    * An Auth.Connection executes the localfirst/auth protocol to authenticate a peer, negotiate a
@@ -540,8 +547,22 @@ export class AuthProvider extends EventEmitter<AuthProviderEvents> {
 
     connection.start()
 
-    // If we already had messages for this peer, pass them to the connection
-    for (const message of this.#getStoredMessages(shareId, peerId)) connection.deliver(message)
+    // Hand over any messages that arrived before this connection object existed. That buffer only
+    // ever holds the opening messages of a *single* handshake, whose queue numbering starts at 0.
+    //
+    // A previous connection to this same peer may have been torn down (e.g. the peer was removed
+    // from the team), and its in-flight messages can still land on the same ordered transport
+    // afterwards. Those carry mid-session indices, so delivering them into the fresh queue would
+    // open a phantom gap and make it demand resends of messages the peer's new session never sent —
+    // a request the peer answers by throwing. So we only replay the contiguous run starting at 0
+    // that genuinely belongs to this handshake, and drop anything left over from an earlier session.
+    let expectedIndex = 0
+    for (const message of this.#getStoredMessages(shareId, peerId)) {
+      if ((unpack(message) as { index: number }).index !== expectedIndex) continue
+      expectedIndex++
+      connection.deliver(message)
+    }
+    this.#clearStoredMessages(shareId, peerId)
 
     // Track the connection
     this.#connections.set([shareId, peerId], connection)

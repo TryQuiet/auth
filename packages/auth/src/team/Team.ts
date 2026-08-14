@@ -708,8 +708,15 @@ export class Team extends EventEmitter<TeamEvents> {
 
     const { id } = proof
 
-    // we know the team keys, so we can put them in a lockbox for the new member now (even if we're not an admin)
-    const lockboxTeamKeysForMember = lockbox.create(this.teamKeys(), claim.memberKeys)
+    // We know the team keys, so we can put them in a lockbox for the new member now (even if we're
+    // not an admin). We lockbox *every* generation, not just the latest: links written before a key
+    // rotation — the root, always — can only be opened with the generation they were written under,
+    // and a member admitted after a rotation would otherwise have no way to reach those keys (the
+    // admission already hands them the full keyring over the wire; this persists it on the graph so
+    // `teamKeyring()` can rebuild it). This mirrors how role keys are lockboxed for a new role member.
+    const lockboxTeamKeysForMember = this.keysAllGenerations(TEAM_SCOPE).map(keys =>
+      lockbox.create(keys, claim.memberKeys)
+    )
 
     // Post admission to the graph
     this.dispatch({
@@ -719,7 +726,7 @@ export class Team extends EventEmitter<TeamEvents> {
         proof,
         claim,
         possessionProof,
-        lockboxes: [lockboxTeamKeysForMember],
+        lockboxes: lockboxTeamKeysForMember,
       },
     })
   }

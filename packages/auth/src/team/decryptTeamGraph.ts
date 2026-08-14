@@ -64,8 +64,16 @@ export const decryptTeamGraph = ({
   ): Record<Hash, TeamLink> => {
     // Decrypt this link. A graph from a peer can carry attacker-chosen plaintext alongside its
     // ciphertext, so we always reconstruct the body from the bytes the hash commits to.
+    //
+    // We decrypt against the whole keyring rather than just this path's `previousKeys`. Each link
+    // names the exact generation it was sealed to (`recipientPublicKey`), so the keyring picks the
+    // right one — but this walk visits links in graph order, not causal order, and a link authored
+    // on a concurrent branch can be reached before this path has reduced the rotation that produced
+    // its generation. Threading a single generation would then fail to open a link we hold the key
+    // for; the keyring (seeded with every generation we can access, and grown as we discover more)
+    // does not.
     const encryptedLink = encryptedLinks[hash]
-    const decryptedLink = decryptLink<TeamAction, TeamContext>(encryptedLink, previousKeys)
+    const decryptedLink = decryptLink<TeamAction, TeamContext>(encryptedLink, keyring)
     let decryptedLinks = {
       [hash]: decryptedLink,
     }
