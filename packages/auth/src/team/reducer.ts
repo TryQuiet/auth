@@ -73,7 +73,7 @@ export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (state, link
   // Get all transforms and compose them into a single function
   const applyTransforms = composeTransforms([
     setHead(link),
-    collectLockboxes(link.body.payload.lockboxes), // Any payload can include lockboxes
+    collectLockboxes(link, logger), // Any payload can include lockboxes
     ...getTransforms(link), // Get the specific transforms indicated by this action
   ])
 
