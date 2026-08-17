@@ -190,7 +190,10 @@ describe('graphs', () => {
         expect(validate(graph)).not.toBeValid()
       })
 
-      test(`timestamp out of order`, () => {
+      // Skipped: the timestamp validator was removed on auth main in #27 ("Remove timestamp
+      // validator due to server issues"), so out-of-order timestamps no longer make a graph
+      // invalid. Re-enable alongside the validator if it ever returns.
+      test.skip(`timestamp out of order`, () => {
         const IN_THE_PAST = new Date('2020-01-01').getTime()
         const graph = setupGraph()
 
@@ -208,7 +211,10 @@ describe('graphs', () => {
         expect(validate(graph2)).not.toBeValid()
       })
 
-      test(`timestamp in the future`, () => {
+      // Skipped: the timestamp validator was removed on auth main in #27 ("Remove timestamp
+      // validator due to server issues"), so future timestamps no longer make a graph invalid.
+      // Re-enable alongside the validator if it ever returns.
+      test.skip(`timestamp in the future`, () => {
         const IN_THE_FUTURE = new Date(`10000-01-01`).getTime() // NOTE: test will begin to fail 7,978 years from now
         const graph = setupGraph()
 

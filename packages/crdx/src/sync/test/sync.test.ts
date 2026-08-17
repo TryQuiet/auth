@@ -654,7 +654,11 @@ describe('sync', () => {
       return updatedGraph
     }
 
-    it('single failure', () => {
+    // Skipped: induces a sync failure via an out-of-order timestamp, which only fails because of
+    // the timestamp validator removed on auth main in #27 ("Remove timestamp validator due to
+    // server issues"). With no such validator, the bad link now syncs cleanly. Re-enable alongside
+    // the validator if it ever returns.
+    it.skip('single failure', () => {
       const {
         userRecords: { alice, eve },
         network,
@@ -680,7 +684,9 @@ describe('sync', () => {
       expect(alice.peer.graph.links).not.toHaveProperty(badHash)
     })
 
-    it('repeated failures', () => {
+    // Skipped: same reason as 'single failure' above — depends on the timestamp validator removed
+    // on auth main in #27.
+    it.skip('repeated failures', () => {
       const {
         userRecords: { alice, eve },
         network,
