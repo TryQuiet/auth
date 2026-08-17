@@ -556,10 +556,16 @@ export class AuthProvider extends EventEmitter<AuthProviderEvents> {
     // open a phantom gap and make it demand resends of messages the peer's new session never sent —
     // a request the peer answers by throwing. So we only replay the contiguous run starting at 0
     // that genuinely belongs to this handshake, and drop anything left over from an earlier session.
+    //
+    // Only `Auth.Connection` numbers its messages. An `AnonymousConnection` — what a public share
+    // gets — sends bare `JOIN`/`WELCOME` objects through no queue at all, so there is no ordering
+    // to reconstruct and nothing to be confused by: those replay verbatim. Gating them on an
+    // `index` they never carry silently dropped the opening `JOIN` of every public share.
     let expectedIndex = 0
     for (const message of this.#getStoredMessages(shareId, peerId)) {
-      if ((unpack(message) as { index: number }).index !== expectedIndex) continue
-      expectedIndex++
+      const { index } = unpack(message) as { index?: number }
+      if (index !== undefined && index !== expectedIndex) continue
+      if (index !== undefined) expectedIndex++
       connection.deliver(message)
     }
     this.#clearStoredMessages(shareId, peerId)
