@@ -100,6 +100,14 @@ export class Store<
   }
 
   /**
+   * Returns the encryption keys retained for this graph — every generation the store was given or
+   * has learned. A copy, so callers can't mutate ours.
+   */
+  public getKeyring(): Keyring {
+    return { ...this.keyring }
+  }
+
+  /**
    * Returns the current hash graph in serialized form; this can be used to rehydrate this
    * store from storage.
    * */

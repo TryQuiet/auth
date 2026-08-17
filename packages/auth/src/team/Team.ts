@@ -970,7 +970,16 @@ export class Team extends EventEmitter<TeamEvents> {
   /** Returns the current team keys or a specific generation of team keys */
   public teamKeys = (generation?: number) => this.keys({ ...TEAM_SCOPE, generation })
 
-  public teamKeyring = () => select.teamKeyring(this.state, this.lockboxKeys)
+  /**
+   * Every generation of team keys we can get to. Lockboxes are the authoritative source, but the
+   * store also retains generations it was handed or learned while decrypting — after a rotation
+   * that reached us by sync, that can be a generation whose lockbox we haven't reduced yet. Losing
+   * it means being unable to open links we hold the key for, so take the union.
+   */
+  public teamKeyring = () => ({
+    ...this.store.getKeyring(),
+    ...select.teamKeyring(this.state, this.lockboxKeys),
+  })
 
   /** Returns the admin keyset. */
   public adminKeys = (generation?: number) => this.roleKeys(ADMIN, generation)
