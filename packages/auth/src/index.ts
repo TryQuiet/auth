@@ -1,5 +1,12 @@
 export { Connection } from './connection/index.js'
-export { createDevice, redactDevice, type Device } from './device/index.js'
+export {
+  createDevice,
+  createFirstUseDevice,
+  redactDevice,
+  redactFirstUseDevice,
+  type Device,
+  type FirstUseDevice,
+} from './device/index.js'
 export { generateProof } from './invitation/index.js'
 export { Team, createTeam, deviceSigner, load as loadTeam } from './team/index.js'
 
