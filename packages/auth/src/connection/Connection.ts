@@ -347,7 +347,11 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           // device, so we can rehydrate the team on our own later. This has to happen before we
           // merge anything, since merging re-decrypts the incoming graph with our device keys.
           team.join(teamKeyring)
-          this.emit('joined', { team, user, teamKeyring })
+
+          // Note that we do *not* emit `joined` here. The peer that handed us this graph hasn't
+          // proved anything yet — it has only claimed an identity. `joined` is what tells the
+          // application to persist the graph and our user keys, so it waits until the session key
+          // exists, i.e. until that peer has proved it holds the device keys the graph names.
           return { user, device, team }
         }),
 
@@ -521,8 +525,9 @@ export class Connection extends EventEmitter<ConnectionEvents> {
             return this.#fail(ENCRYPTION_FAILURE)
           }
 
-          this.emit('connectionSecured')
-          // With the two keys, we derive a shared key
+          // With the two keys, we derive a shared key. `connectionSecured` (and `joined`) are
+          // emitted from the machine subscriber once this assignment has been committed to context
+          // — see below.
           return { sessionKey: deriveSharedKey(seed, theirSeed as Uint8Array) }
         }),
 
@@ -1011,6 +1016,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
     // Instantiate the state machine
     this.#machine = createActor(machine)
+    let sessionEventsEmitted = false
 
     // emit and log all transitions
     this.#machine.subscribe({
@@ -1018,6 +1024,25 @@ export class Connection extends EventEmitter<ConnectionEvents> {
         const summary = stateSummary(state.value as string)
         this.emit('change', summary)
         this.logger.debug(`⏩ ${JSON.stringify(state.value, null, 2)} `)
+
+        // XState commits assigned context *before* notifying subscribers, so emitting from here —
+        // rather than from inside `deriveSharedKey` — guarantees that a listener can immediately
+        // use the public encrypted-channel API (`send`, `_sessionKey`) without racing the assign.
+        //
+        // This is also the earliest point at which `joined` is safe to emit: the session key only
+        // exists once the peer that admitted us proved it holds the device keys the team graph
+        // names, so the graph we're telling the application to persist came from an authenticated
+        // peer. `acceptance` is only ever set on the invitee side.
+        if (!sessionEventsEmitted && state.context.sessionKey !== undefined) {
+          sessionEventsEmitted = true
+          this.emit('connectionSecured')
+          if (state.context.acceptance !== undefined) {
+            const { team, user } = state.context
+            assert(team)
+            assert(user)
+            this.emit('joined', { team, user, teamKeyring: state.context.acceptance.teamKeyring })
+          }
+        }
       },
       error: error => {
         // Errors don't survive the logger's formatting, so spell them out
