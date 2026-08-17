@@ -1,3 +1,4 @@
+import { base58 } from '@localfirst/crypto'
 import type { Base58, Hash, Keyring, SyncMessage as SyncPayload } from '@localfirst/crdx'
 import type { Challenge, IdentityClaim } from 'connection/types.js'
 import type { ErrorMessage, LocalErrorMessage } from './errors.js'
@@ -12,6 +13,22 @@ export type ReadyMessage = {
      */
     acceptorNonce: Base58
   }
+}
+
+/**
+ * Runtime validation for the first protocol message, which arrives as untyped wire data.
+ *
+ * Everything downstream — an invitee's proof of invitation above all — is bound to the nonce this
+ * message carries, so a peer that omits or malforms it can't be answered. Rather than crash on the
+ * missing field (or, worse, sign over `undefined`), we treat it as a protocol error and disconnect.
+ */
+export const isReadyMessage = (message: unknown): message is ReadyMessage => {
+  if (!isRecord(message) || message.type !== 'REQUEST_IDENTITY' || !isRecord(message.payload)) {
+    return false
+  }
+
+  const { acceptorNonce } = message.payload
+  return typeof acceptorNonce === 'string' && base58.detect(acceptorNonce)
 }
 
 export type DisconnectMessage = {
@@ -112,3 +129,6 @@ export type ConnectionMessage =
   | SeedMessage
   | SyncMessage
   | RequestResendMessage
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)

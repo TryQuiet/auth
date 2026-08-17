@@ -7,6 +7,7 @@ export const JOINED_WRONG_TEAM = 'JOINED_WRONG_TEAM' as const
 export const ADMIT_MEMBER_LINK_MISSING = 'ADMIT_MEMBER_LINK_MISSING' as const
 export const MEMBER_REMOVED = 'MEMBER_REMOVED' as const
 export const NEITHER_IS_MEMBER = 'NEITHER_IS_MEMBER' as const
+export const PROTOCOL_VERSION_UNSUPPORTED = 'PROTOCOL_VERSION_UNSUPPORTED' as const
 export const SERVER_REMOVED = 'SERVER_REMOVED' as const
 export const SERVER_UNKNOWN = 'SERVER_UNKNOWN' as const
 export const TIMEOUT = 'TIMEOUT' as const
@@ -46,6 +47,10 @@ export const connectionErrors: Record<string, ErrorDefinition> = {
   },
   [NEITHER_IS_MEMBER]: {
     localMessage: 'The peer is also holding an invitation and cannot admit you to the team',
+  },
+  [PROTOCOL_VERSION_UNSUPPORTED]: {
+    localMessage: 'The peer sent an unsupported connection protocol message',
+    remoteMessage: 'Your connection protocol version is not supported',
   },
   [SERVER_REMOVED]: {
     localMessage: 'The server was removed from this team',
