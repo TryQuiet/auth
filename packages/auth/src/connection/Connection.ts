@@ -1169,11 +1169,17 @@ export class Connection extends EventEmitter<ConnectionEvents> {
    * Servers are excluded on both sides — a server isn't a member and holds no role keys.
    */
   #maybeGrantMemberRole(context: ConnectionContext, userId: string) {
-    const { team, server } = context
+    const { team, server, user } = context
     assert(team)
     if (server !== undefined) return
     if (!team.hasRole(MEMBER_ROLE)) return
     if (team.hasServer(userId)) return
+
+    // Never grant the role to ourselves. When the peer is another device of our own user, this is
+    // a self-assignment, and `canOnlySelfAddCertainRoles` rejects `member` — a throw that escapes
+    // into the state machine and kills the connection. Nobody is being admitted here anyway: our
+    // user is already on the team, whatever roles it does or doesn't hold.
+    if (user !== undefined && user.userId === userId) return
     if (team.members(userId).roles?.includes(MEMBER_ROLE)) return
 
     this.logger.debug(`granting the ${MEMBER_ROLE} role to ${userId}`)
