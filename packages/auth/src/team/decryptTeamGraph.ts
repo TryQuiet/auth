@@ -16,7 +16,7 @@ import {
   type TeamLink,
   type TeamState,
 } from './types.js'
-import { Logger } from '@localfirst/shared'
+import { assert, Logger } from '@localfirst/shared'
 
 /**
  * Decrypts a graph.
@@ -33,6 +33,7 @@ export const decryptTeamGraph = ({
   teamKeys,
   deviceKeys,
   extendableLogger,
+  maxTraversalSteps = 50_000,
 }: {
   encryptedGraph: MaybePartlyDecryptedGraph<TeamAction, TeamContext>
 
@@ -49,19 +50,63 @@ export const decryptTeamGraph = ({
   deviceKeys: KeysetWithSecrets
 
   extendableLogger?: Logger
+
+  /**
+   * Ceiling on how many links the walk will visit. The child map comes from a peer, and a link
+   * reachable by many paths is visited once per path, so a crafted graph can blow this up. Well
+   * past anything a real team produces.
+   */
+  maxTraversalSteps?: number
 }): TeamGraph => {
   const logger = extendableLogger != null ? extendableLogger.extend('decryptTeamGraph') : new Logger({ moduleName: 'auth:decryptTeamGraph' })
   const keyring = createKeyring(teamKeys)
 
   const { encryptedLinks, childMap, root } = encryptedGraph
+  const decryptedLinks: Record<Hash, TeamLink> = {}
 
-  /** Recursively decrypts a link and its children. */
-  const decrypt = (
-    hash: Hash,
-    previousKeys: KeysetWithSecrets,
-    previousDecryptedLinks: Record<Hash, TeamLink> = {},
-    previousState: TeamState = initialState
-  ): Record<Hash, TeamLink> => {
+  /**
+   * A frame of the traversal. `exit` frames are how we know we've finished with a link's whole
+   * subtree, so it can leave the active path again.
+   */
+  type TraversalFrame =
+    | { phase: 'enter'; hash: Hash; previousKeys: KeysetWithSecrets; previousState: TeamState }
+    | { phase: 'exit'; hash: Hash }
+
+  const rootLink = encryptedLinks[root]
+  assert(rootLink, `Can't decrypt team graph: the root link is missing`)
+  const rootKeys = keyring[rootLink.recipientPublicKey]
+
+  // This walk is iterative rather than recursive. The graph and its child map come from a peer, so
+  // its depth is the peer's choice; recursion made a deep chain a stack overflow rather than an
+  // error we could handle.
+  const activePath = new Set<Hash>()
+  const stack: TraversalFrame[] = [
+    { phase: 'enter', hash: root, previousKeys: rootKeys, previousState: initialState },
+  ]
+  let traversalSteps = 0
+
+  while (stack.length > 0) {
+    const frame = stack.pop()!
+    if (frame.phase === 'exit') {
+      activePath.delete(frame.hash)
+      continue
+    }
+
+    if (++traversalSteps > maxTraversalSteps) {
+      throw new Error('Team graph decryption exceeded its traversal limit')
+    }
+
+    const { hash, previousKeys, previousState } = frame
+
+    // A child map that leads back to a link already on our path is a cycle, and would keep us
+    // walking forever. A real graph is acyclic; every link commits to its parents by hash.
+    if (activePath.has(hash)) {
+      throw new Error(`Team graph decryption encountered a cycle at '${hash}'`)
+    }
+
+    activePath.add(hash)
+    stack.push({ phase: 'exit', hash })
+
     // Decrypt this link. A graph from a peer can carry attacker-chosen plaintext alongside its
     // ciphertext, so we always reconstruct the body from the bytes the hash commits to.
     //
@@ -73,10 +118,12 @@ export const decryptTeamGraph = ({
     // for; the keyring (seeded with every generation we can access, and grown as we discover more)
     // does not.
     const encryptedLink = encryptedLinks[hash]
-    const decryptedLink = decryptLink<TeamAction, TeamContext>(encryptedLink, keyring)
-    let decryptedLinks = {
-      [hash]: decryptedLink,
+    if (encryptedLink === undefined) {
+      throw new Error(`Team graph decryption is missing link '${hash}'`)
     }
+
+    const decryptedLink = decryptLink<TeamAction, TeamContext>(encryptedLink, keyring)
+    decryptedLinks[hash] = decryptedLink
 
     // Reduce & see if there are new team keys.
     //
@@ -103,22 +150,20 @@ export const decryptTeamGraph = ({
 
     // Decrypt its children
     const children = childMap![hash]
-
     if (children) {
-      for (const hash of children) {
-        decryptedLinks = {
-          ...decryptedLinks,
-          ...decrypt(hash, newKeys, decryptedLinks, newState),
-        }
+      // Reversed so that popping off the stack visits them in their original order
+      for (const childHash of [...children].reverse()) {
+        // A child map may name links we haven't been sent; that's a gap, not a fault
+        if (encryptedLinks[childHash] === undefined) continue
+        stack.push({
+          phase: 'enter',
+          hash: childHash,
+          previousKeys: newKeys,
+          previousState: newState,
+        })
       }
     }
-
-    return { ...previousDecryptedLinks, ...decryptedLinks }
   }
-
-  const rootPublicKey = encryptedLinks[root].recipientPublicKey
-  const rootKeys = keyring[rootPublicKey]
-  const decryptedLinks = decrypt(root, rootKeys)
 
   return {
     ...encryptedGraph,

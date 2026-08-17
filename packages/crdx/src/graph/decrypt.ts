@@ -47,16 +47,25 @@ export const decryptLink = <A extends Action, C>(
 export const decryptGraph: DecryptFn = <A extends Action, C>({
   encryptedGraph,
   keys,
+  maxTraversalSteps = 50_000,
 }: {
   encryptedGraph: MaybePartlyDecryptedGraph<A, C>
   keys: KeysetWithSecrets | KeysetWithSecrets[] | Keyring
+  maxTraversalSteps?: number
 }): Graph<A, C> => {
   const { encryptedLinks, root, childMap = {} } = encryptedGraph
   const toVisit = [root]
   const visited: Set<Hash> = new Set()
   const decryptedLinks: Record<Hash, Link<A, C>> = {}
+  let traversalSteps = 0
 
   while (toVisit.length > 0) {
+    // The child map comes from a peer, so its size and shape are the peer's choice, not ours. Cap
+    // the walk rather than letting a crafted map keep us here indefinitely.
+    if (++traversalSteps > maxTraversalSteps) {
+      throw new Error('Graph decryption exceeded its traversal limit')
+    }
+
     const current = toVisit.pop() as Hash
 
     if (visited.has(current)) {
@@ -88,11 +97,13 @@ export const decryptGraph: DecryptFn = <A extends Action, C>({
 export type DecryptFnParams<A extends Action, C> = {
   encryptedGraph: MaybePartlyDecryptedGraph<A, C>
   keys: KeysetWithSecrets | KeysetWithSecrets[] | Keyring
+  maxTraversalSteps?: number
 }
 
 export type DecryptFn = <A extends Action, C>({
   encryptedGraph,
   keys,
+  maxTraversalSteps,
 }: DecryptFnParams<A, C>) => Graph<A, C>
 
 // ignore coverage

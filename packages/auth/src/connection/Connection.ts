@@ -462,8 +462,12 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           const deviceKeys = ourLockboxKeys(context)
 
           // handle errors here
-          const decrypt = ({ encryptedGraph, keys }: DecryptFnParams<TeamAction, TeamContext>) =>
-            decryptTeamGraph({ encryptedGraph, teamKeys: keys, deviceKeys })
+          const decrypt = ({
+            encryptedGraph,
+            keys,
+            maxTraversalSteps,
+          }: DecryptFnParams<TeamAction, TeamContext>) =>
+            decryptTeamGraph({ encryptedGraph, teamKeys: keys, deviceKeys, maxTraversalSteps })
 
           const [newChain, syncState] = receiveMessage(
             team.graph,
