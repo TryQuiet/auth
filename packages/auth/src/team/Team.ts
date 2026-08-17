@@ -372,15 +372,18 @@ export class Team extends EventEmitter<TeamEvents> {
       lockboxes.push(lockbox.create(roleKeys, this.adminKeys()))
     }
 
-    // Post the role to the graph
+    // Post the role to the graph. Creating a role does NOT make the creator a member of it: an
+    // admin can already open the role's keys through the admin lockbox above, and adding oneself as
+    // a member is a separate, explicit act (addMemberRole). #26's own roles.test.ts asserts exactly
+    // this ("adds a role" expects the role to have only the members later assigned to it; "admins
+    // have access to all role keys" expects the admin NOT to be a member) — the auto-membership its
+    // addRole grew fails those tests on pristine auth main, and it also breaks A's on-admission
+    // `member`-role grant (the founder would already hold `member`, turning the grant into a
+    // rejected self-assignment that kills the connection). Aligning with #26's tests + A's design.
     this.dispatch({
       type: 'ADD_ROLE',
       payload: { ...(role as Role), lockboxes: lockboxes },
     })
-
-    // if we choose to add ourselves to the role we need to create our own lockbox and then dispatch
-    // the event to add the role to our member record
-    this._dispatchAddMemberRole(this.userId, role.roleName, [lockbox.create(roleKeys, this.user.keys)])
   }
 
   /** Remove a role from the team */
