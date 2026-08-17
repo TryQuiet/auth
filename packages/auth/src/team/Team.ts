@@ -380,7 +380,7 @@ export class Team extends EventEmitter<TeamEvents> {
 
     // if we choose to add ourselves to the role we need to create our own lockbox and then dispatch
     // the event to add the role to our member record
-    this._dispatchAddMemberRole(this.userId, role.roleName, [lockbox.create(roleKeys, this.context.user.keys)])
+    this._dispatchAddMemberRole(this.userId, role.roleName, [lockbox.create(roleKeys, this.user.keys)])
   }
 
   /** Remove a role from the team */
