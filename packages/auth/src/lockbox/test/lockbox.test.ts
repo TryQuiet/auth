@@ -31,6 +31,15 @@ describe('lockbox', () => {
     expect(eveTriesToOpen).toThrow()
   })
 
+  it('rejects encrypted contents that do not match the public manifest', () => {
+    const adminKeys = createKeyset({ type: KeyType.ROLE, name: ADMIN })
+    const forgedManifestKeys = createKeyset({ type: KeyType.ROLE, name: ADMIN })
+    const box = create(adminKeys, bob.user.keys)
+    box.contents.publicKey = forgedManifestKeys.encryption.publicKey
+
+    expect(() => open(box, bob.user.keys)).toThrow('The lockbox contents do not match its manifest')
+  })
+
   it('can only be rotated with a keyset of the same type', () => {
     const adminKeys = createKeyset({ type: KeyType.ROLE, name: ADMIN })
 

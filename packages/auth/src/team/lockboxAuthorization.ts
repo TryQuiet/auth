@@ -83,6 +83,20 @@ export const authorizedLockboxes = (
 
     const currentGeneration = prior[0].contents.generation
     const inScope = lockboxes.filter(({ contents }) => scopeId(contents) === scopeId(scope))
+
+    // A generation identifies one keyset, not merely a position in the key history. Distributing
+    // the established generation to a new recipient is legitimate, but introducing a different key
+    // at that generation would let the later lockbox replace the established key in `keyMap`.
+    const currentPublicKeys = new Set(prior.map(({ contents }) => contents.publicKey))
+    drop(
+      inScope.filter(
+        ({ contents }) =>
+          contents.generation === currentGeneration && !currentPublicKeys.has(contents.publicKey)
+      ),
+      scope,
+      `generation ${currentGeneration} is already bound to another key`
+    )
+
     const rekey = inScope.filter(({ contents }) => contents.generation > currentGeneration)
 
     // Not a re-key. Handing out a generation the team already has — a role key to a new role member,
