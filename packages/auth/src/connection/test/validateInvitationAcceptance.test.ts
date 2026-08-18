@@ -1,425 +1,346 @@
-import {
-  getSequence,
-  merge,
-  redactKeys,
-  type Base58,
-  type UserWithSecrets,
-} from '@localfirst/crdx'
-import { asymmetric, randomKey } from '@localfirst/crypto'
-import { redactDevice, type DeviceWithSecrets } from 'device/index.js'
-import {
-  generateProof,
-  type InvitationClaim,
-  type InvitationV2,
-  type ProofOfInvitationV2,
-} from 'invitation/index.js'
-import { ADMIN } from 'role/index.js'
-import { membershipResolver } from 'team/membershipResolver.js'
+import { merge } from '@localfirst/crdx'
+import { randomKey } from '@localfirst/crypto'
+import { eventPromise } from '@localfirst/shared'
+import type { ConnectionMessage } from 'connection/message.js'
+import type {
+  Context,
+  InviteeDeviceContext,
+  InviteeMemberContext,
+  MemberContext,
+} from 'connection/types.js'
+import { redactDevice, redactFirstUseDevice } from 'device/index.js'
+import { createPossessionProof, generateProof } from 'invitation/index.js'
+import { pack, unpack } from 'msgpackr'
+import * as teams from 'team/index.js'
 import { serializeTeamGraph } from 'team/serialize.js'
 import type { Team } from 'team/Team.js'
 import type { TeamGraph } from 'team/types.js'
-import { redactFirstUseDevice, setup } from 'util/testing/index.js'
-import { describe, expect, it, vi } from 'vitest'
-import { createInvitationAcceptance } from '../invitationAcceptance.js'
-import { processInvitationAcceptance } from '../validateInvitationAcceptance.js'
+import { deriveUserId } from 'util/userId.js'
+import {
+  invitationNonces,
+  joinTestChannel,
+  memberClaim,
+  setup,
+  TestChannel,
+} from 'util/testing/index.js'
+import { describe, expect, it } from 'vitest'
+import type { NumberedMessage } from '../MessageQueue.js'
+import { deviceAdmission, memberAdmission } from '../../team/test/helpers.js'
 
+type AcceptanceMessage = Extract<ConnectionMessage, { type: 'ACCEPT_INVITATION' }>
+type AcceptancePayload = AcceptanceMessage['payload']
+type Rewrite = (payload: AcceptancePayload) => AcceptancePayload
+
+// Exercise Path A end to end. Rewriting only ACCEPT_INVITATION lets each test present the same
+// adversarial graph as the source suite without importing the source branch's validator.
 describe('exact effective invitation admission validation', () => {
-  it('accepts exact member and device admissions', () => {
-    const member = admittedMemberFixture()
-    expect(validateFixture(member).isValid).toBe(true)
+  it('accepts exact member and device admissions', async () => {
+    const { alice, bob } = setup('alice', { user: 'bob', member: false })
+    const memberInvite = alice.team.inviteMember()
+    const member = await connectInvitee({
+      acceptor: alice.connectionContext,
+      invitee: { user: bob.user, device: bob.device, invitationSeed: memberInvite.seed },
+    })
+    expect(member.outcome.kind).toBe('joined')
 
-    const { bob } = setup('bob')
-    const { seed } = bob.team.inviteDevice()
-    const claim: InvitationClaim = {
-      invitationKind: 'device',
-      userName: bob.userName,
-      device: redactFirstUseDevice(bob.phone!),
-    }
-    const proof = proofFor(seed, claim)
-    const invitation = v2Invitation(bob.team, proof)
-    bob.team.admitDevice(proof, claim.device, bob.userName, proof.acceptorNonce)
-
-    expect(
-      validateFixture({
-        team: bob.team,
-        senderDevice: bob.device,
-        seed,
-        invitation,
-        proof,
-        claim,
-      }).isValid
-    ).toBe(true)
+    const { bob: laptop } = setup('bob')
+    const deviceInvite = laptop.team.inviteDevice()
+    const device = await connectInvitee({
+      acceptor: laptop.connectionContext,
+      invitee: {
+        userName: laptop.userName,
+        device: laptop.phone!,
+        invitationSeed: deviceInvite.seed,
+      },
+    })
+    expect(device.outcome.kind).toBe('joined')
   })
 
-  it('opens and validates an acceptance payload exactly once', () => {
-    const fixture = admittedMemberFixture()
-    const payload = createInvitationAcceptance({
-      invitation: fixture.invitation,
-      proof: fixture.proof,
-      claim: fixture.claim,
-      senderDevice: fixture.senderDevice,
-      serializedGraph: fixture.team.save(),
-      teamKeyring: fixture.team.teamKeyring(),
-    })
-    const decrypt = vi.spyOn(asymmetric, 'decryptBytes')
-
-    try {
-      const result = processInvitationAcceptance({
-        payload,
-        invitationSeed: fixture.seed,
-        expectedTeamId: fixture.team.id,
-        proof: fixture.proof,
-        claim: fixture.claim,
-      })
-      expect(result.isValid).toBe(true)
-      const acceptanceDecryptions = decrypt.mock.calls.filter(
-        ([options]) => options.cipher === payload.encryptedAcceptance
-      )
-      expect(acceptanceDecryptions).toHaveLength(1)
-    } finally {
-      decrypt.mockRestore()
-    }
-  })
-
-  it('classifies an unauthenticated acceptance before graph validation', () => {
-    const fixture = admittedMemberFixture()
-    const payload = createInvitationAcceptance({
-      invitation: fixture.invitation,
-      proof: fixture.proof,
-      claim: fixture.claim,
-      senderDevice: fixture.senderDevice,
-      serializedGraph: fixture.team.save(),
-      teamKeyring: fixture.team.teamKeyring(),
-    })
-    const encryptedAcceptance = payload.encryptedAcceptance.slice()
-    encryptedAcceptance[0] = encryptedAcceptance[0] === 0 ? 1 : 0
-
-    const result = processInvitationAcceptance({
-      payload: { ...payload, encryptedAcceptance },
-      invitationSeed: fixture.seed,
-      expectedTeamId: fixture.team.id,
-      proof: fixture.proof,
-      claim: fixture.claim,
-    })
-
-    expect(result).toMatchObject({ isValid: false, reason: 'ACCEPTANCE_INVALID' })
-  })
-
-  it('rejects an identity that exists without an ADMIT action', () => {
+  it('opens and validates an acceptance payload exactly once', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
     const { seed } = alice.team.inviteMember()
-    const claim = memberClaim(bob)
-    const proof = proofFor(seed, claim)
-    const invitation = v2Invitation(alice.team, proof)
-    alice.team.addForTesting(bob.user, [], redactDevice(bob.device))
+    const result = await connectInvitee({
+      acceptor: alice.connectionContext,
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed },
+    })
 
-    expect(
-      validateFixture({
-        team: alice.team,
-        senderDevice: alice.device,
-        seed,
-        invitation,
-        proof,
-        claim,
-      }).isValid
-    ).toBe(false)
+    expect(result.channel.acceptanceCount).toBe(1)
+    expect(result.channel.acceptance).toHaveProperty('version', 2)
+    expect(result.channel.acceptance).toHaveProperty('encryptedAcceptance', expect.any(Uint8Array))
   })
 
-  it('rejects a self-consistent replacement team with the wrong root', () => {
+  it('classifies an unauthenticated acceptance before graph validation', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
+    const { seed } = alice.team.inviteMember()
+    const result = await connectInvitee({
+      acceptor: alice.connectionContext,
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed },
+      rewrite: payload => {
+        const serializedGraph = payload.serializedGraph.slice()
+        serializedGraph[Math.floor(serializedGraph.length / 2)] ^= 1
+        return { ...payload, serializedGraph }
+      },
+    })
+
+    expect(result.outcome).toMatchObject({
+      kind: 'rejected',
+      error: { type: 'ACCEPTANCE_INVALID' },
+    })
+  })
+
+  it('rejects an identity that exists without an ADMIT action', async () => {
+    const { alice, bob } = setup('alice', { user: 'bob', member: false })
+    const { seed } = alice.team.inviteMember()
+    const spoof = cloneTeam(alice.team, alice.connectionContext)
+    spoof.addForTesting(bob.user, [], redactDevice(bob.device))
+
+    const result = await connectInvitee({
+      acceptor: alice.connectionContext,
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed },
+      rewrite: acceptanceFrom(spoof),
+    })
+
+    expect(result.outcome.kind).toBe('rejected')
+  })
+
+  it('rejects a self-consistent replacement team with the wrong root', async () => {
+    const { alice, bob } = setup('alice', { user: 'bob', member: false })
+    const { seed } = alice.team.inviteMember()
     const { mallory } = setup('mallory')
-    const { seed } = alice.team.inviteMember()
-    const claim = memberClaim(bob)
-    const proof = proofFor(seed, claim)
-    const invitation = v2Invitation(alice.team, proof)
+    mallory.team.inviteMember({ seed })
 
-    mallory.team.dispatch({
-      type: 'INVITE_MEMBER',
-      payload: { invitation },
+    const result = await connectInvitee({
+      acceptor: mallory.connectionContext,
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed },
     })
-    mallory.team.admitMember(
-      proof,
-      claim.userKeys,
-      claim.userName,
-      claim.device,
-      proof.acceptorNonce
-    )
 
-    expect(
-      validateFixture({
-        team: mallory.team,
-        senderDevice: mallory.device,
-        seed,
-        invitation,
-        proof,
-        claim,
-        expectedTeamId: alice.team.id,
-      })
-    ).toMatchObject({ isValid: false, reason: 'WRONG_TEAM' })
+    expect(result.outcome.kind).toBe('rejected')
   })
 
-  it('rejects an identity admitted by another invitation ID', () => {
+  it('rejects an identity admitted by another invitation ID', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
     const first = alice.team.inviteMember()
     const second = alice.team.inviteMember()
-    const claim = memberClaim(bob)
-    const firstProof = proofFor(first.seed, claim)
-    const secondProof = proofFor(second.seed, claim)
-    const secondInvitation = v2Invitation(alice.team, secondProof)
-    alice.team.admitMember(
-      firstProof,
-      claim.userKeys,
-      claim.userName,
-      claim.device,
-      firstProof.acceptorNonce
-    )
+    const acceptorTeam = cloneTeam(alice.team, alice.connectionContext)
+    const spoof = cloneTeam(alice.team, alice.connectionContext)
+    spoof.admitMember(...memberAdmission(first.seed, bob))
 
-    expect(
-      validateFixture({
-        team: alice.team,
-        senderDevice: alice.device,
-        seed: second.seed,
-        invitation: secondInvitation,
-        proof: secondProof,
-        claim,
-      }).isValid
-    ).toBe(false)
+    const result = await connectInvitee({
+      acceptor: withTeam(alice.connectionContext, acceptorTeam),
+      invitee: { user: bob.user, device: bob.device, invitationSeed: second.seed },
+      rewrite: acceptanceFrom(spoof),
+    })
+
+    expect(result.outcome.kind).toBe('rejected')
   })
 
-  it('rejects an admission made with a different handshake proof', () => {
-    const fixture = admittedMemberFixture()
-    const differentHandshakeProof = proofFor(fixture.seed, fixture.claim)
+  it('rejects an admission made with a different handshake proof', async () => {
+    const { alice, bob } = setup('alice', { user: 'bob', member: false })
+    const { seed } = alice.team.inviteMember()
+    const acceptorTeam = cloneTeam(alice.team, alice.connectionContext)
+    const spoof = cloneTeam(alice.team, alice.connectionContext)
+    spoof.admitMember(...memberAdmission(seed, bob))
 
-    expect(
-      validateFixture({ ...fixture, proof: differentHandshakeProof }).isValid
-    ).toBe(false)
+    const result = await connectInvitee({
+      acceptor: withTeam(alice.connectionContext, acceptorTeam),
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed },
+      rewrite: acceptanceFrom(spoof),
+    })
+
+    expect(result.outcome.kind).toBe('rejected')
   })
 
-  it('rejects a matching invitation ID with different public keys', () => {
-    const fixture = admittedMemberFixture()
-    const changedClaim: InvitationClaim = {
-      ...fixture.claim,
-      userKeys: {
-        ...fixture.claim.userKeys,
+  it('rejects a matching invitation ID with different public keys', async () => {
+    const { alice, bob } = setup('alice', { user: 'bob', member: false })
+    const { seed } = alice.team.inviteMember()
+    const acceptorTeam = cloneTeam(alice.team, alice.connectionContext)
+    const spoof = cloneTeam(alice.team, alice.connectionContext)
+    const claim = memberClaim(bob.user, bob.device)
+    const changedClaim = {
+      ...claim,
+      memberKeys: {
+        ...claim.memberKeys,
         signature: randomKey(),
       },
     }
+    const proof = generateProof({ seed, claim: changedClaim, ...invitationNonces() })
+    const possessionProof = createPossessionProof({
+      invitationId: proof.id,
+      claim: changedClaim,
+      device: bob.device,
+    })
+    spoof.admitMember(proof, changedClaim, possessionProof)
 
-    expect(validateFixture({ ...fixture, claim: changedClaim }).isValid).toBe(false)
+    const result = await connectInvitee({
+      acceptor: withTeam(alice.connectionContext, acceptorTeam),
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed },
+      rewrite: acceptanceFrom(spoof),
+    })
+
+    expect(result.outcome.kind).toBe('rejected')
   })
 
-  it('rejects a matching device found under the wrong member', () => {
-    const { alice, bob } = setup('alice', 'bob')
+  it('rejects a matching device found under the wrong member', async () => {
+    const { alice, bob, eve } = setup('alice', 'bob', { user: 'eve', member: false })
     const { seed } = bob.team.inviteDevice()
-    const claim: InvitationClaim = {
-      invitationKind: 'device',
-      userName: bob.userName,
-      device: redactFirstUseDevice(bob.phone!),
+    alice.team.merge(bob.team.graph)
+    const acceptorTeam = cloneTeam(alice.team, alice.connectionContext)
+    const spoof = cloneTeam(alice.team, alice.connectionContext)
+    const phone = redactFirstUseDevice(bob.phone!)
+    const wrongOwnerId = deriveUserId(phone.deviceId)
+    const wrongOwner = {
+      ...eve.user,
+      userId: wrongOwnerId,
+      keys: { ...eve.user.keys, name: wrongOwnerId },
     }
-    const proof = proofFor(seed, claim)
-    const invitation = v2Invitation(bob.team, proof)
-    const wrongOwnerDevice = {
-      ...redactDevice(bob.phone!),
-      userId: alice.userId,
-    }
-    bob.team.addForTesting(alice.user, [], wrongOwnerDevice)
+    spoof.addForTesting(wrongOwner, [], { ...phone, userId: wrongOwnerId })
 
-    expect(
-      validateFixture({
-        team: bob.team,
-        senderDevice: bob.device,
-        seed,
-        invitation,
-        proof,
-        claim,
-      }).isValid
-    ).toBe(false)
+    const result = await connectInvitee({
+      acceptor: withTeam(alice.connectionContext, acceptorTeam),
+      invitee: { userName: bob.userName, device: bob.phone!, invitationSeed: seed },
+      rewrite: acceptanceFrom(spoof),
+    })
+
+    expect(result.outcome.kind).toBe('rejected')
   })
 
-  it('rejects a raw matching admission invalidated by the membership resolver', () => {
+  it('rejects a raw matching admission invalidated by the membership resolver', async () => {
     const { alice, bob, charlie } = setup('alice', 'bob', {
       user: 'charlie',
       member: false,
     })
-    alice.team.removeMemberRole(bob.userId, ADMIN)
-
+    alice.team.removeMemberRole(bob.userId, 'admin')
     const { seed } = bob.team.inviteMember()
-    const claim = memberClaim(charlie)
-    const proof = proofFor(seed, claim)
-    const invitation = v2Invitation(bob.team, proof)
-    bob.team.admitMember(proof, claim.userKeys, claim.userName, claim.device, proof.acceptorNonce)
+    bob.team.admitMember(...memberAdmission(seed, charlie))
+    const invalidGraph = serializeTeamGraph(merge(alice.team.graph, bob.team.graph) as TeamGraph)
+    const invalidKeyring = {
+      ...alice.team.teamKeyring(),
+      ...bob.team.teamKeyring(),
+    }
+    const result = await connectInvitee({
+      acceptor: bob.connectionContext,
+      invitee: { user: charlie.user, device: charlie.device, invitationSeed: seed },
+      rewrite: () => ({ serializedGraph: invalidGraph, teamKeyring: invalidKeyring }),
+    })
 
-    const graph = merge(alice.team.graph, bob.team.graph) as TeamGraph
-    const sequence = getSequence(graph, membershipResolver)
-    expect(
-      sequence.some(
-        link =>
-          link.body.type === 'ADMIT_MEMBER' && link.body.payload.id === proof.id && link.isInvalid
-      )
-    ).toBe(true)
-
-    expect(
-      validateFixture({
-        team: bob.team,
-        senderDevice: bob.device,
-        seed,
-        invitation,
-        proof,
-        claim,
-        serializedGraph: serializeTeamGraph(graph),
-        teamKeyring: {
-          ...alice.team.teamKeyring(),
-          ...bob.team.teamKeyring(),
-        },
-      }).isValid
-    ).toBe(false)
+    expect(result.outcome.kind).toBe('rejected')
   })
 
-  it('rejects an admission followed by removal', () => {
-    const fixture = admittedMemberFixture()
-    fixture.team.remove(fixture.claim.userKeys.name)
+  it('rejects an admission followed by removal', async () => {
+    const { alice, bob } = setup('alice', { user: 'bob', member: false })
+    const { seed } = alice.team.inviteMember()
+    const acceptorTeam = cloneTeam(alice.team, alice.connectionContext)
+    const spoof = cloneTeam(alice.team, alice.connectionContext)
+    spoof.admitMember(...memberAdmission(seed, bob))
+    spoof.remove(bob.userId)
 
-    expect(validateFixture(fixture).isValid).toBe(false)
+    const result = await connectInvitee({
+      acceptor: withTeam(alice.connectionContext, acceptorTeam),
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed },
+      rewrite: acceptanceFrom(spoof),
+    })
+
+    expect(result.outcome.kind).toBe('rejected')
   })
 
-  it('accepts only the matching admission from a multi-use member invitation', () => {
+  it('accepts only the matching admission from a multi-use member invitation', async () => {
     const { alice, bob, eve } = setup(
       'alice',
       { user: 'bob', member: false },
       { user: 'eve', member: false }
     )
-    const { seed } = alice.team.inviteMember({ maxUses: 0 })
-    const invitationId = alice.team.getInvitation(proofFor(seed, memberClaim(bob)).id)
-    if (invitationId.version !== 2) {
-      throw new Error('Expected a version 2 invitation')
-    }
+    const { seed } = alice.team.inviteMember()
+    const acceptorTeam = cloneTeam(alice.team, alice.connectionContext)
+    acceptorTeam.admitMember(...memberAdmission(seed, eve))
 
-    const bobClaim = memberClaim(bob)
-    const bobProof = proofFor(seed, bobClaim)
-    alice.team.admitMember(
-      bobProof,
-      bobClaim.userKeys,
-      bobClaim.userName,
-      bobClaim.device,
-      bobProof.acceptorNonce
-    )
-    const eveClaim = memberClaim(eve)
-    const eveProof = proofFor(seed, eveClaim)
-    alice.team.admitMember(
-      eveProof,
-      eveClaim.userKeys,
-      eveClaim.userName,
-      eveClaim.device,
-      eveProof.acceptorNonce
-    )
+    const result = await connectInvitee({
+      acceptor: withTeam(alice.connectionContext, acceptorTeam),
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed },
+    })
 
-    for (const fixture of [
-      {
-        team: alice.team,
-        senderDevice: alice.device,
-        seed,
-        invitation: invitationId,
-        proof: bobProof,
-        claim: bobClaim,
-      },
-      {
-        team: alice.team,
-        senderDevice: alice.device,
-        seed,
-        invitation: invitationId,
-        proof: eveProof,
-        claim: eveClaim,
-      },
-    ]) {
-      expect(validateFixture(fixture).isValid).toBe(true)
-    }
+    expect(result.outcome.kind).toBe('joined')
+    expect(result.invitee.team?.has(bob.userId)).toBe(true)
+    expect(result.invitee.team?.has(eve.userId)).toBe(true)
   })
 })
 
-type Fixture = {
-  team: Team
-  senderDevice: DeviceWithSecrets
-  seed: string
-  invitation: InvitationV2
-  proof: ProofOfInvitationV2
-  claim: InvitationClaim
-  expectedTeamId?: Base58
-  serializedGraph?: Uint8Array
-  teamKeyring?: ReturnType<Team['teamKeyring']>
+class RewriteAcceptanceChannel extends TestChannel {
+  acceptance?: AcceptancePayload
+  acceptanceCount = 0
+
+  constructor(private readonly rewrite?: Rewrite) {
+    super()
+  }
+
+  override write(senderId: string, message: Uint8Array) {
+    const numbered = unpack(message) as NumberedMessage<ConnectionMessage>
+    if (numbered.type !== 'ACCEPT_INVITATION') {
+      super.write(senderId, message)
+      return
+    }
+
+    this.acceptanceCount += 1
+    this.acceptance = numbered.payload
+    const rewritten = pack({
+      ...numbered,
+      payload: this.rewrite?.(numbered.payload) ?? numbered.payload,
+    })
+    super.write(
+      senderId,
+      new Uint8Array(rewritten.buffer, rewritten.byteOffset, rewritten.byteLength)
+    )
+  }
 }
 
-const validateFixture = ({
+type ConnectOptions = {
+  acceptor: Context
+  invitee: InviteeMemberContext | InviteeDeviceContext
+  rewrite?: Rewrite
+}
+
+const connectInvitee = async ({
+  acceptor: acceptorContext,
+  invitee: inviteeContext,
+  rewrite,
+}: ConnectOptions) => {
+  const channel = new RewriteAcceptanceChannel(rewrite)
+  const join = joinTestChannel(channel)
+  const acceptor = join(acceptorContext)
+  const invitee = join(inviteeContext)
+  const outcome = Promise.race([
+    eventPromise(invitee, 'joined').then(() => ({ kind: 'joined' as const })),
+    eventPromise(invitee, 'localError').then(error => ({
+      kind: 'rejected' as const,
+      error,
+    })),
+    eventPromise(invitee, 'remoteError').then(error => ({
+      kind: 'rejected' as const,
+      error,
+    })),
+  ])
+
+  acceptor.start()
+  invitee.start()
+  const settled = await outcome
+  acceptor.stop(false)
+  invitee.stop(false)
+  return { outcome: settled, channel, acceptor, invitee }
+}
+
+const cloneTeam = (team: Team, context: Context) =>
+  teams.load(team.save(), asMemberContext(context), team.teamKeyring())
+
+const withTeam = (context: Context, team: Team): MemberContext => ({
+  user: asMemberContext(context).user,
+  device: asMemberContext(context).device,
   team,
-  senderDevice,
-  seed,
-  invitation,
-  proof,
-  claim,
-  expectedTeamId = team.id,
-  serializedGraph = team.save(),
-  teamKeyring = team.teamKeyring(),
-}: Fixture) => {
-  const payload = createInvitationAcceptance({
-    invitation,
-    proof,
-    claim,
-    senderDevice,
-    serializedGraph,
-    teamKeyring,
-  })
-  return processInvitationAcceptance({
-    payload,
-    invitationSeed: seed,
-    expectedTeamId,
-    proof,
-    claim,
-  })
-}
-
-const admittedMemberFixture = (): Fixture & {
-  claim: Extract<InvitationClaim, { invitationKind: 'member' }>
-} => {
-  const { alice, bob } = setup('alice', { user: 'bob', member: false })
-  const { seed } = alice.team.inviteMember()
-  const claim = memberClaim(bob)
-  const proof = proofFor(seed, claim)
-  const invitation = v2Invitation(alice.team, proof)
-  alice.team.admitMember(proof, claim.userKeys, claim.userName, claim.device, proof.acceptorNonce)
-  return {
-    team: alice.team,
-    senderDevice: alice.device,
-    seed,
-    invitation,
-    proof,
-    claim,
-  }
-}
-
-const memberClaim = ({
-  user,
-  device,
-}: {
-  user: Pick<UserWithSecrets, 'userName' | 'keys'>
-  device: DeviceWithSecrets
-}): Extract<InvitationClaim, { invitationKind: 'member' }> => ({
-  invitationKind: 'member',
-  userName: user.userName,
-  userKeys: redactKeys(user.keys),
-  device: redactDevice(device),
 })
 
-const proofFor = (seed: string, claim: InvitationClaim) =>
-  generateProof({
-    seed,
-    claim,
-    acceptorNonce: randomKey(),
-    inviteeNonce: randomKey(),
-  })
+const asMemberContext = (context: Context): MemberContext => context as MemberContext
 
-const v2Invitation = (team: Team, proof: ProofOfInvitationV2) => {
-  const invitation = team.getInvitation(proof.id)
-  if (invitation.version !== 2) {
-    throw new Error('Expected a version 2 invitation')
-  }
-  return invitation
-}
+const acceptanceFrom =
+  (team: Team): Rewrite =>
+  () => ({
+    serializedGraph: team.save(),
+    teamKeyring: team.teamKeyring(),
+  })
