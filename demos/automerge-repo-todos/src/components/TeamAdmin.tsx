@@ -1,5 +1,4 @@
 import { UnixTimestamp } from '@localfirst/auth'
-import { getShareId } from '@localfirst/auth-provider-automerge-repo'
 import ClipboardJS from 'clipboard'
 import { MutableRefObject, useEffect, useRef, useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
@@ -29,8 +28,7 @@ export const TeamAdmin = () => {
   }, [copyInvitationCodeButton, invitationCode])
 
   const createInvitationCode = (seed: string) => {
-    const shareId = getShareId(team)
-    setInvitationCode(`${shareId}${seed}`)
+    setInvitationCode(`${team.id}:${seed}`)
   }
 
   const inviteMembers = () => {

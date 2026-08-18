@@ -177,6 +177,7 @@ const captureAcceptance = async (): Promise<AcceptanceFixture> => {
     user: bob.user,
     device: bob.device,
     invitationSeed,
+    expectedTeamId: alice.team.id,
   }
   const channel = new CaptureAcceptanceChannel()
   const join = joinTestChannel(channel)

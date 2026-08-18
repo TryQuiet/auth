@@ -218,13 +218,14 @@ describe('connection', () => {
         expect(bob.team.members(bob.userId).devices).toHaveLength(1)
 
         // 👨🏻‍🦲💻📧->📱 on his laptop, Bob creates an invitation and gets it to his phone
-        const { seed } = bob.team.inviteDevice()
+        const { seed, teamId } = bob.team.inviteDevice()
 
         // 💻<->📱📧 Bob's phone and laptop connect and the phone joins
         const phoneContext: InviteeDeviceContext = {
           userName: bob.userName,
           device: bob.phone!,
           invitationSeed: seed,
+          expectedTeamId: teamId,
         }
         const join = joinTestChannel(new TestChannel())
 
@@ -246,11 +247,12 @@ describe('connection', () => {
         const { bob } = setup('bob')
         bob.team.addRole('member')
         const { userId: _userId, ...phone } = bob.phone!
-        const { seed } = bob.team.inviteDevice()
+        const { seed, teamId } = bob.team.inviteDevice()
         const phoneContext: InviteeDeviceContext = {
           userName: bob.userName,
           device: phone,
           invitationSeed: seed,
+          expectedTeamId: teamId,
         }
         const join = joinTestChannel(new TestChannel())
         const laptopConnection = join(bob.connectionContext)
@@ -273,11 +275,12 @@ describe('connection', () => {
         const phone = bob.phone!
 
         {
-          const { seed } = bob.team.inviteDevice()
+          const { seed, teamId } = bob.team.inviteDevice()
           const phoneContext: InviteeDeviceContext = {
             userName: bob.userName,
             device: phone,
             invitationSeed: seed,
+            expectedTeamId: teamId,
           }
           const join = joinTestChannel(new TestChannel())
           const laptopConnection = join(bob.connectionContext).start()
@@ -303,11 +306,12 @@ describe('connection', () => {
           // of keys the team has already retired, and it can never be registered again — otherwise
           // whoever took the device could talk their way back onto the team.
 
-          const { seed } = bob.team.inviteDevice()
+          const { seed, teamId } = bob.team.inviteDevice()
           const phoneContext: InviteeDeviceContext = {
             userName: bob.userName,
             device: phone,
             invitationSeed: seed,
+            expectedTeamId: teamId,
           }
           const join = joinTestChannel(new TestChannel())
           const laptopConnection = join(bob.connectionContext).start()
@@ -329,13 +333,14 @@ describe('connection', () => {
         expect(bob.team.members(bob.userId).devices).toHaveLength(1)
 
         // 👨🏻‍🦲💻📧->📱 on his laptop, Bob creates an invitation and gets it to his phone
-        const { seed } = bob.team.inviteDevice()
+        const { seed, teamId } = bob.team.inviteDevice()
 
         // 💻<->📱📧 Bob's phone and Alice's laptop connect and the phone joins
         const phoneContext: InviteeDeviceContext = {
           userName: bob.userName,
           device: bob.phone!,
           invitationSeed: seed,
+          expectedTeamId: teamId,
         }
         const join = joinTestChannel(new TestChannel())
         const aliceConnection = join(alice.connectionContext).start()
@@ -357,12 +362,13 @@ describe('connection', () => {
 
         // 👩🏾📧👨🏻‍🦲 Alice invites Bob
         const seed = 'passw0rd'
-        alice.team.inviteMember({ seed })
+        const { teamId } = alice.team.inviteMember({ seed })
 
         // 👨🏻‍🦲📧<->👩🏾 Bob tries to connect, but mistypes his code
         bob.connectionContext = {
           ...bob.connectionContext,
           invitationSeed: 'password',
+          expectedTeamId: teamId,
         }
 
         void connect(bob, alice)
@@ -375,12 +381,13 @@ describe('connection', () => {
 
         // 👩🏾📧👨🏻‍🦲 Alice invites Bob
         const seed = 'passw0rd'
-        alice.team.inviteMember({ seed })
+        const { teamId } = alice.team.inviteMember({ seed })
 
         // 👨🏻‍🦲📧<->👩🏾 Bob tries to connect, but mistypes his code
         bob.connectionContext = {
           ...bob.connectionContext,
           invitationSeed: 'password',
+          expectedTeamId: teamId,
         }
 
         {
@@ -393,6 +400,7 @@ describe('connection', () => {
         bob.connectionContext = {
           ...bob.connectionContext,
           invitationSeed: 'passw0rd',
+          expectedTeamId: teamId,
         }
 
         {

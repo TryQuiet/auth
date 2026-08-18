@@ -39,7 +39,6 @@ export const Invite = () => {
 
   const inviteMembers = () => {
     const seed = `${team.teamName}-${randomSeed()}`
-    setSeed(seed)
 
     const maxUses = Number(maxUsesSelect.current.value)
     const now = Date.now()
@@ -48,16 +47,17 @@ export const Invite = () => {
 
     // TODO we're storing id so we can revoke - wire that up
     const { id } = team.inviteMember({ seed, maxUses, expiration })
+    setSeed(`${team.id}:${seed}`)
 
     setState('showing_member_invite')
   }
 
   const inviteDevice = () => {
     const seed = `${team.teamName}-${randomSeed()}`
-    setSeed(seed)
 
     // TODO we're storing id so we can revoke - wire that up
     const { id } = team.inviteDevice({ seed })
+    setSeed(`${team.id}:${seed}`)
 
     setState('adding_device')
   }

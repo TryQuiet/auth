@@ -39,11 +39,12 @@ describe('connection session events', () => {
 
   it('emits joined only after the invitation connection is secured', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
-    const { seed } = alice.team.inviteMember()
+    const { seed, teamId } = alice.team.inviteMember()
     const inviteeContext: InviteeMemberContext = {
       user: bob.user,
       device: bob.device,
       invitationSeed: seed,
+      expectedTeamId: teamId,
     }
     const join = joinTestChannel(new TestChannel())
     const aliceConnection = join(alice.connectionContext)
@@ -71,11 +72,12 @@ describe('connection session events', () => {
 
   it('does not emit joined when session negotiation fails after admission', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
-    const { seed } = alice.team.inviteMember()
+    const { seed, teamId } = alice.team.inviteMember()
     const inviteeContext: InviteeMemberContext = {
       user: bob.user,
       device: bob.device,
       invitationSeed: seed,
+      expectedTeamId: teamId,
     }
     const join = joinTestChannel(new TamperedSeedChannel(alice.device.deviceId))
     const aliceConnection = join(alice.connectionContext)

@@ -51,8 +51,9 @@ const invitesList = async (storage: LocalStorage) => {
         if (seed == null) {
           console.warn(`No seed found for invite with ID ${invite.id}`)
         } else {
-          await clipboard.write(seed)
-          if (await clipboard.read() === seed) {
+          const invitationCode = `${storage.getSigChain()!.team.id}:${seed}`
+          await clipboard.write(invitationCode)
+          if (await clipboard.read() === invitationCode) {
             console.log('Copied!')
           } else {
             console.warn('Copy failed!')

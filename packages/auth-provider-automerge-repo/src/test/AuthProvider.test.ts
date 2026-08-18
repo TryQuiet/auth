@@ -76,6 +76,7 @@ describe('auth provider for automerge-repo', () => {
 
     // Bob uses the invitation to join
     void bob.authProvider.addInvitation({
+      expectedTeamId: aliceTeam.id,
       shareId: getShareId(aliceTeam),
       invitationSeed: bobInviteCode,
     })
@@ -128,6 +129,7 @@ describe('auth provider for automerge-repo', () => {
     const { seed: phoneInviteCode } = team.inviteDevice()
 
     await phoneAuth.addInvitation({
+      expectedTeamId: team.id,
       shareId: getShareId(team),
       userName: alice.userName,
       invitationSeed: phoneInviteCode,
@@ -157,6 +159,7 @@ describe('auth provider for automerge-repo', () => {
 
     // Eve knows Bob has been invited but doesn't know the code
     await eve.authProvider.addInvitation({
+      expectedTeamId: aliceTeam.id,
       shareId: getShareId(aliceTeam),
       invitationSeed: 'passw0rd',
     })
@@ -275,6 +278,7 @@ describe('auth provider for automerge-repo', () => {
 
     // Charlie uses the invitation to join
     await charlie.authProvider.addInvitation({
+      expectedTeamId: aliceTeam.id,
       shareId: getShareId(aliceTeam),
       invitationSeed: charlieInvite,
     })
@@ -291,6 +295,7 @@ describe('auth provider for automerge-repo', () => {
 
     // Bob uses the invitation to join
     await bob.authProvider.addInvitation({
+      expectedTeamId: aliceTeam.id,
       shareId: getShareId(aliceTeam),
       invitationSeed: bobInvite,
     })
@@ -327,6 +332,7 @@ describe('auth provider for automerge-repo', () => {
     await alice.authProvider.addTeam(aliceTeam)
     const { seed: bobInvite } = aliceTeam.inviteMember()
     await bob.authProvider.addInvitation({
+      expectedTeamId: aliceTeam.id,
       shareId: getShareId(aliceTeam),
       invitationSeed: bobInvite,
     })

@@ -455,6 +455,9 @@ export type InviteResult = {
 
   /** The secret invitation key. (Returned in case it was generated randomly.) */
   seed: string
+
+  /** Immutable root hash identifying the team this invitation belongs to. */
+  teamId: Base58
 }
 export type LookupIdentityResult =
   | 'VALID_DEVICE'

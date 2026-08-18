@@ -19,6 +19,7 @@ import type { ServerWithSecrets } from 'server/index.js'
 import type { Member, Team, TeamState } from 'team/index.js'
 import type { ConnectionErrorPayload } from './errors.js'
 import type { ConnectionMessage } from './message.js'
+import type { InvitationAcceptanceValidationResult } from './validateInvitationAcceptance.js'
 
 export type ConnectionEvents = {
   /** state change in the connection */
@@ -100,12 +101,14 @@ export type InviteeMemberContext = {
   user: UserWithSecrets
   device: DeviceWithSecrets
   invitationSeed: string
+  expectedTeamId: Base58
 }
 
 export type InviteeDeviceContext = {
   userName: string
   device: FirstUseDeviceWithSecrets
   invitationSeed: string
+  expectedTeamId: Base58
 }
 
 export type InviteeContext = InviteeMemberContext | InviteeDeviceContext
@@ -152,6 +155,9 @@ export type ConnectionContext = {
 
   invitationSeed?: string
 
+  /** Independently supplied immutable root of the team an invitation is expected to join. */
+  expectedTeamId?: Base58
+
   /** Nonce we sent with `REQUEST_IDENTITY`; an invitee's proof to us must be bound to it. */
   acceptorNonce: Base58
 
@@ -168,6 +174,9 @@ export type ConnectionContext = {
 
   /** The invitation acceptance we received, and the team state we derived from it. */
   acceptance?: InvitationAcceptance
+
+  /** Authentication and exact-admission result computed once for the received acceptance. */
+  invitationAcceptanceResult?: InvitationAcceptanceValidationResult
 
   seed?: Uint8Array
   sessionKey?: Uint8Array

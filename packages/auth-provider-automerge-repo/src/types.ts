@@ -68,6 +68,8 @@ export type SerializedPrivateShare = SerializedPublicShare & {
 export type Invitation = DeviceInvitation | MemberInvitation
 
 export type MemberInvitation = {
+  /** Full immutable team root; unlike shareId, this value is security-sensitive and untruncated. */
+  expectedTeamId: Auth.Base58
   shareId: ShareId
   invitationSeed: string
 }

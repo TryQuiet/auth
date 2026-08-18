@@ -1,5 +1,5 @@
 import type { Keyset } from '@localfirst/crdx'
-import type { Payload } from '@localfirst/crypto'
+import { hash, type Base58, type Payload } from '@localfirst/crypto'
 import type { Device, FirstUseDevice } from 'device/index.js'
 import type { InvitationClaim, ProofOfInvitation } from './types.js'
 
@@ -23,6 +23,12 @@ export const invitationProofPayload = (
     proof.inviteeNonce,
     identityClaimPayload(claim),
   ] as Payload
+
+/** Returns a stable digest of the exact invitation proof transcript and identity claim. */
+export const invitationClaimDigest = (
+  proof: Pick<ProofOfInvitation, 'id' | 'acceptorNonce' | 'inviteeNonce'>,
+  claim: InvitationClaim
+): Base58 => hash('localfirst-auth/invitation-claim-digest', invitationProofPayload(proof, claim))
 
 /**
  * Returns the canonical encoding of the identity an invitation admits. Kept separate from the

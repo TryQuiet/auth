@@ -15,6 +15,11 @@ export type Invitation = {
   /** The public signing key derived from the secret invitation key */
   publicKey: Base58
 
+  /** The public encryption key derived from the same secret invitation seed. Acceptance payloads
+   * are encrypted to this key, so only an invitee holding the seed can read the team graph and
+   * keyring. */
+  encryptionPublicKey: Base58
+
   /** Time when the invitation expires. If 0, the invitation does not expire. */
   expiration: UnixTimestamp
 

@@ -25,8 +25,8 @@ export const JoinTeam = ({ joinAs, userName, onSetup }: Props) => {
     const { user, device } = getUserAndDevice()
     const { auth, repo } = await initializeAuthRepo({ user, device })
 
-    const { shareId, invitationSeed } = parseInvitationCode(invitationCode)
-    auth.addInvitation({ shareId, invitationSeed, userName })
+    const { expectedTeamId, shareId, invitationSeed } = parseInvitationCode(invitationCode)
+    auth.addInvitation({ expectedTeamId, shareId, invitationSeed, userName })
 
     // Once we're admitted, we'll get the Team data and our User object
     auth.once('joined', ({ team, user }) => {

@@ -1,9 +1,11 @@
 import { merge } from '@localfirst/crdx'
 import { randomKey } from '@localfirst/crypto'
-import { eventPromise } from '@localfirst/shared'
+import { assert, eventPromise } from '@localfirst/shared'
 import type { ConnectionMessage } from 'connection/message.js'
+import { createInvitationAcceptance } from 'connection/invitationAcceptance.js'
 import type {
   Context,
+  InviteeIdentityClaim,
   InviteeDeviceContext,
   InviteeMemberContext,
   MemberContext,
@@ -25,11 +27,11 @@ import {
 } from 'util/testing/index.js'
 import { describe, expect, it } from 'vitest'
 import type { NumberedMessage } from '../MessageQueue.js'
-import { deviceAdmission, memberAdmission } from '../../team/test/helpers.js'
+import { memberAdmission } from '../../team/test/helpers.js'
 
 type AcceptanceMessage = Extract<ConnectionMessage, { type: 'ACCEPT_INVITATION' }>
 type AcceptancePayload = AcceptanceMessage['payload']
-type Rewrite = (payload: AcceptancePayload) => AcceptancePayload
+type Rewrite = (payload: AcceptancePayload, inviteeClaim: InviteeIdentityClaim) => AcceptancePayload
 
 // Exercise Path A end to end. Rewriting only ACCEPT_INVITATION lets each test present the same
 // adversarial graph as the source suite without importing the source branch's validator.
@@ -39,7 +41,12 @@ describe('exact effective invitation admission validation', () => {
     const memberInvite = alice.team.inviteMember()
     const member = await connectInvitee({
       acceptor: alice.connectionContext,
-      invitee: { user: bob.user, device: bob.device, invitationSeed: memberInvite.seed },
+      invitee: {
+        user: bob.user,
+        device: bob.device,
+        invitationSeed: memberInvite.seed,
+        expectedTeamId: memberInvite.teamId,
+      },
     })
     expect(member.outcome.kind).toBe('joined')
 
@@ -51,6 +58,7 @@ describe('exact effective invitation admission validation', () => {
         userName: laptop.userName,
         device: laptop.phone!,
         invitationSeed: deviceInvite.seed,
+        expectedTeamId: deviceInvite.teamId,
       },
     })
     expect(device.outcome.kind).toBe('joined')
@@ -58,10 +66,10 @@ describe('exact effective invitation admission validation', () => {
 
   it('opens and validates an acceptance payload exactly once', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
-    const { seed } = alice.team.inviteMember()
+    const { seed, teamId } = alice.team.inviteMember()
     const result = await connectInvitee({
       acceptor: alice.connectionContext,
-      invitee: { user: bob.user, device: bob.device, invitationSeed: seed },
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed, expectedTeamId: teamId },
     })
 
     expect(result.channel.acceptanceCount).toBe(1)
@@ -71,14 +79,14 @@ describe('exact effective invitation admission validation', () => {
 
   it('classifies an unauthenticated acceptance before graph validation', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
-    const { seed } = alice.team.inviteMember()
+    const { seed, teamId } = alice.team.inviteMember()
     const result = await connectInvitee({
       acceptor: alice.connectionContext,
-      invitee: { user: bob.user, device: bob.device, invitationSeed: seed },
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed, expectedTeamId: teamId },
       rewrite: payload => {
-        const serializedGraph = payload.serializedGraph.slice()
-        serializedGraph[Math.floor(serializedGraph.length / 2)] ^= 1
-        return { ...payload, serializedGraph }
+        const encryptedAcceptance = payload.encryptedAcceptance.slice()
+        encryptedAcceptance[Math.floor(encryptedAcceptance.length / 2)] ^= 1
+        return { ...payload, encryptedAcceptance }
       },
     })
 
@@ -90,14 +98,14 @@ describe('exact effective invitation admission validation', () => {
 
   it('rejects an identity that exists without an ADMIT action', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
-    const { seed } = alice.team.inviteMember()
+    const { seed, teamId } = alice.team.inviteMember()
     const spoof = cloneTeam(alice.team, alice.connectionContext)
     spoof.addForTesting(bob.user, [], redactDevice(bob.device))
 
     const result = await connectInvitee({
       acceptor: alice.connectionContext,
-      invitee: { user: bob.user, device: bob.device, invitationSeed: seed },
-      rewrite: acceptanceFrom(spoof),
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed, expectedTeamId: teamId },
+      rewrite: acceptanceFrom(spoof, alice.connectionContext),
     })
 
     expect(result.outcome.kind).toBe('rejected')
@@ -105,13 +113,13 @@ describe('exact effective invitation admission validation', () => {
 
   it('rejects a self-consistent replacement team with the wrong root', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
-    const { seed } = alice.team.inviteMember()
+    const { seed, teamId } = alice.team.inviteMember()
     const { mallory } = setup('mallory')
     mallory.team.inviteMember({ seed })
 
     const result = await connectInvitee({
       acceptor: mallory.connectionContext,
-      invitee: { user: bob.user, device: bob.device, invitationSeed: seed },
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed, expectedTeamId: teamId },
     })
 
     expect(result.outcome.kind).toBe('rejected')
@@ -127,8 +135,13 @@ describe('exact effective invitation admission validation', () => {
 
     const result = await connectInvitee({
       acceptor: withTeam(alice.connectionContext, acceptorTeam),
-      invitee: { user: bob.user, device: bob.device, invitationSeed: second.seed },
-      rewrite: acceptanceFrom(spoof),
+      invitee: {
+        user: bob.user,
+        device: bob.device,
+        invitationSeed: second.seed,
+        expectedTeamId: second.teamId,
+      },
+      rewrite: acceptanceFrom(spoof, alice.connectionContext),
     })
 
     expect(result.outcome.kind).toBe('rejected')
@@ -136,15 +149,15 @@ describe('exact effective invitation admission validation', () => {
 
   it('rejects an admission made with a different handshake proof', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
-    const { seed } = alice.team.inviteMember()
+    const { seed, teamId } = alice.team.inviteMember()
     const acceptorTeam = cloneTeam(alice.team, alice.connectionContext)
     const spoof = cloneTeam(alice.team, alice.connectionContext)
     spoof.admitMember(...memberAdmission(seed, bob))
 
     const result = await connectInvitee({
       acceptor: withTeam(alice.connectionContext, acceptorTeam),
-      invitee: { user: bob.user, device: bob.device, invitationSeed: seed },
-      rewrite: acceptanceFrom(spoof),
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed, expectedTeamId: teamId },
+      rewrite: acceptanceFrom(spoof, alice.connectionContext),
     })
 
     expect(result.outcome.kind).toBe('rejected')
@@ -152,7 +165,7 @@ describe('exact effective invitation admission validation', () => {
 
   it('rejects a matching invitation ID with different public keys', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
-    const { seed } = alice.team.inviteMember()
+    const { seed, teamId } = alice.team.inviteMember()
     const acceptorTeam = cloneTeam(alice.team, alice.connectionContext)
     const spoof = cloneTeam(alice.team, alice.connectionContext)
     const claim = memberClaim(bob.user, bob.device)
@@ -173,8 +186,8 @@ describe('exact effective invitation admission validation', () => {
 
     const result = await connectInvitee({
       acceptor: withTeam(alice.connectionContext, acceptorTeam),
-      invitee: { user: bob.user, device: bob.device, invitationSeed: seed },
-      rewrite: acceptanceFrom(spoof),
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed, expectedTeamId: teamId },
+      rewrite: acceptanceFrom(spoof, alice.connectionContext),
     })
 
     expect(result.outcome.kind).toBe('rejected')
@@ -182,7 +195,7 @@ describe('exact effective invitation admission validation', () => {
 
   it('rejects a matching device found under the wrong member', async () => {
     const { alice, bob, eve } = setup('alice', 'bob', { user: 'eve', member: false })
-    const { seed } = bob.team.inviteDevice()
+    const { seed, teamId } = bob.team.inviteDevice()
     alice.team.merge(bob.team.graph)
     const acceptorTeam = cloneTeam(alice.team, alice.connectionContext)
     const spoof = cloneTeam(alice.team, alice.connectionContext)
@@ -197,8 +210,13 @@ describe('exact effective invitation admission validation', () => {
 
     const result = await connectInvitee({
       acceptor: withTeam(alice.connectionContext, acceptorTeam),
-      invitee: { userName: bob.userName, device: bob.phone!, invitationSeed: seed },
-      rewrite: acceptanceFrom(spoof),
+      invitee: {
+        userName: bob.userName,
+        device: bob.phone!,
+        invitationSeed: seed,
+        expectedTeamId: teamId,
+      },
+      rewrite: acceptanceFrom(spoof, alice.connectionContext),
     })
 
     expect(result.outcome.kind).toBe('rejected')
@@ -210,7 +228,7 @@ describe('exact effective invitation admission validation', () => {
       member: false,
     })
     alice.team.removeMemberRole(bob.userId, 'admin')
-    const { seed } = bob.team.inviteMember()
+    const { seed, teamId } = bob.team.inviteMember()
     bob.team.admitMember(...memberAdmission(seed, charlie))
     const invalidGraph = serializeTeamGraph(merge(alice.team.graph, bob.team.graph) as TeamGraph)
     const invalidKeyring = {
@@ -219,8 +237,13 @@ describe('exact effective invitation admission validation', () => {
     }
     const result = await connectInvitee({
       acceptor: bob.connectionContext,
-      invitee: { user: charlie.user, device: charlie.device, invitationSeed: seed },
-      rewrite: () => ({ serializedGraph: invalidGraph, teamKeyring: invalidKeyring }),
+      invitee: {
+        user: charlie.user,
+        device: charlie.device,
+        invitationSeed: seed,
+        expectedTeamId: teamId,
+      },
+      rewrite: acceptanceFromGraph(invalidGraph, invalidKeyring, bob.team, bob.connectionContext),
     })
 
     expect(result.outcome.kind).toBe('rejected')
@@ -228,7 +251,7 @@ describe('exact effective invitation admission validation', () => {
 
   it('rejects an admission followed by removal', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
-    const { seed } = alice.team.inviteMember()
+    const { seed, teamId } = alice.team.inviteMember()
     const acceptorTeam = cloneTeam(alice.team, alice.connectionContext)
     const spoof = cloneTeam(alice.team, alice.connectionContext)
     spoof.admitMember(...memberAdmission(seed, bob))
@@ -236,8 +259,8 @@ describe('exact effective invitation admission validation', () => {
 
     const result = await connectInvitee({
       acceptor: withTeam(alice.connectionContext, acceptorTeam),
-      invitee: { user: bob.user, device: bob.device, invitationSeed: seed },
-      rewrite: acceptanceFrom(spoof),
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed, expectedTeamId: teamId },
+      rewrite: acceptanceFrom(spoof, alice.connectionContext),
     })
 
     expect(result.outcome.kind).toBe('rejected')
@@ -249,13 +272,13 @@ describe('exact effective invitation admission validation', () => {
       { user: 'bob', member: false },
       { user: 'eve', member: false }
     )
-    const { seed } = alice.team.inviteMember()
+    const { seed, teamId } = alice.team.inviteMember()
     const acceptorTeam = cloneTeam(alice.team, alice.connectionContext)
     acceptorTeam.admitMember(...memberAdmission(seed, eve))
 
     const result = await connectInvitee({
       acceptor: withTeam(alice.connectionContext, acceptorTeam),
-      invitee: { user: bob.user, device: bob.device, invitationSeed: seed },
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed, expectedTeamId: teamId },
     })
 
     expect(result.outcome.kind).toBe('joined')
@@ -267,6 +290,7 @@ describe('exact effective invitation admission validation', () => {
 class RewriteAcceptanceChannel extends TestChannel {
   acceptance?: AcceptancePayload
   acceptanceCount = 0
+  inviteeClaim?: InviteeIdentityClaim
 
   constructor(private readonly rewrite?: Rewrite) {
     super()
@@ -274,6 +298,9 @@ class RewriteAcceptanceChannel extends TestChannel {
 
   override write(senderId: string, message: Uint8Array) {
     const numbered = unpack(message) as NumberedMessage<ConnectionMessage>
+    if (numbered.type === 'CLAIM_IDENTITY' && 'proofOfInvitation' in numbered.payload) {
+      this.inviteeClaim = numbered.payload
+    }
     if (numbered.type !== 'ACCEPT_INVITATION') {
       super.write(senderId, message)
       return
@@ -281,9 +308,10 @@ class RewriteAcceptanceChannel extends TestChannel {
 
     this.acceptanceCount += 1
     this.acceptance = numbered.payload
+    assert(this.inviteeClaim, 'Expected invitee claim before invitation acceptance')
     const rewritten = pack({
       ...numbered,
-      payload: this.rewrite?.(numbered.payload) ?? numbered.payload,
+      payload: this.rewrite?.(numbered.payload, this.inviteeClaim) ?? numbered.payload,
     })
     super.write(
       senderId,
@@ -338,9 +366,25 @@ const withTeam = (context: Context, team: Team): MemberContext => ({
 
 const asMemberContext = (context: Context): MemberContext => context as MemberContext
 
-const acceptanceFrom =
-  (team: Team): Rewrite =>
-  () => ({
-    serializedGraph: team.save(),
-    teamKeyring: team.teamKeyring(),
-  })
+const acceptanceFrom = (team: Team, senderContext: Context): Rewrite =>
+  acceptanceFromGraph(team.save(), team.teamKeyring(), team, senderContext)
+
+const acceptanceFromGraph =
+  (
+    serializedGraph: Uint8Array,
+    teamKeyring: ReturnType<Team['teamKeyring']>,
+    invitationTeam: Team,
+    senderContext: Context
+  ): Rewrite =>
+  (_payload, inviteeClaim) => {
+    const sender = asMemberContext(senderContext).device
+    const { proofOfInvitation: proof, claim } = inviteeClaim
+    return createInvitationAcceptance({
+      invitation: invitationTeam.getInvitation(proof.id),
+      proof,
+      claim,
+      sender,
+      serializedGraph,
+      teamKeyring,
+    })
+  }
