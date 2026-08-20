@@ -18,8 +18,19 @@ import type { AcceptInvitationPayload, InvitationAcceptanceEnvelope } from './me
  * The invitation acceptance is the ACCEPT_INVITATION message an acceptor sends an invitee after
  * verifying their proof of invitation. It delivers the two things the invitee cannot have yet —
  * the serialized team graph and the team keyring — and it is the moment the invitee decides
- * whether to trust a team. The invitation seed is a bearer secret (the inviter knows it, and it
- * can leak), so this message is built to prove more than "someone knows the seed":
+ * whether to trust a team.
+ *
+ * No other protocol protection covers this message, and its payload is the team's whole security
+ * perimeter. The connection's session encryption only begins after both peers authenticate, which
+ * an invitee cannot yet do, so the invitation seed is the only secret the two sides share. The
+ * keyring decrypts the graph's link payloads and everything else encrypted at team scope — the
+ * team's past, and its future until a rotation — and the graph itself is the complete roster of
+ * members, devices, and roles. Before v2 both crossed the wire in plaintext, so wherever transport
+ * security ends (the untrusted relay a standard local-first-auth deployment syncs through, or a
+ * logged transcript), one observed join yielded permanent read access to the team. And transport
+ * encryption, where the application adds it, authenticates a pipe — not who minted the welcome, or
+ * for which handshake. The seed itself is a bearer secret (the inviter knows it, and it can leak),
+ * so this message is built to prove more than "someone knows the seed":
  *
  * - Confidentiality: the graph and keyring travel only inside a ciphertext encrypted to an
  *   ephemeral key derived from the seed; an eavesdropper on the transport learns nothing but the
