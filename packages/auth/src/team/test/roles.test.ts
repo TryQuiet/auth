@@ -88,9 +88,9 @@ describe('Team', () => {
       expect(bobsAdminKeys).toLookLikeKeyset()
     })
 
-    // Skipped: this #26 test expects a NON-admin to create a role (and self-assign it), but creating
-    // a role (ADD_ROLE) is admin-only in d97d077, on auth main, and in path A alike — so it fails
-    // identically on pristine auth main. Supporting non-admin role creation would be a new #26
+    // Skipped: this #26 test expects a NON-admin to create a role (and self-assign it), but
+    // creating a role (ADD_ROLE) is admin-only both upstream and here — so it fails identically on
+    // pristine upstream auth. Supporting non-admin role creation would be a new #26
     // permission-model decision, out of scope for this security integration. Re-enable if/when
     // ADD_ROLE is opened to non-admins.
     it.skip('non-admin adds self to a role when creating', () => {

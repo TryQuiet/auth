@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest'
  * holding that key.
  *
  * This is the HONEST-authorship sibling of forgedChannelTakeover.test.ts. There, Eve had to forge a
- * link as an admin — which path A's device-signed links now stop. Here she forges nothing: she
+ * link as an admin — which device-signed links now stop. Here she forges nothing: she
  * signs as *herself*, using ADD_LOCKBOXES, an action every member may author, and simply hangs
  * channel-rekey lockboxes on its payload. The reducer swept in the lockboxes on any link's payload,
  * and `getLatestGeneration` / `select.keys` then adopted the highest generation present — so a

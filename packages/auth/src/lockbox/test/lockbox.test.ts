@@ -31,6 +31,11 @@ describe('lockbox', () => {
     expect(eveTriesToOpen).toThrow()
   })
 
+  // A lockbox has two representations of its contents: the public manifest (`contents`), which
+  // authorization rules read, and the sealed payload, which only recipients can decrypt. `open`
+  // must bind the two — otherwise an author could advertise an established key in the manifest to
+  // pass authorization while sealing a different keyset inside (see
+  // team/test/sameGenerationLockboxReplacement.test.ts for the attack this enables).
   it('rejects encrypted contents that do not match the public manifest', () => {
     const adminKeys = createKeyset({ type: KeyType.ROLE, name: ADMIN })
     const forgedManifestKeys = createKeyset({ type: KeyType.ROLE, name: ADMIN })

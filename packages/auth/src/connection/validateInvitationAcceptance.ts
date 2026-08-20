@@ -101,8 +101,9 @@ export const validateInvitationAcceptance = ({
       return invalid('WRONG_TEAM', 'Invitation acceptance graph has an unexpected team root')
     }
 
-    // teamMachine authenticates and validates the graph before reducing it. Path A's machine returns
-    // only state, so obtain the resolver's effective sequence separately for admission provenance.
+    // teamMachine authenticates and validates the graph before reducing it, but returns only the
+    // reduced state; run the resolver again to recover the effective link sequence, which is where
+    // admission provenance lives.
     const state = teamMachine(graph, logger)
     const effectiveLinks = getSequence(graph, membershipResolver).filter(link => !link.isInvalid)
     const invitation = state.invitations[proof.id]
