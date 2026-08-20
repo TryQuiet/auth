@@ -9,11 +9,12 @@ import { setup } from 'util/testing/index.js'
 import { describe, expect, it } from 'vitest'
 
 /**
- * A generation number must identify ONE keyset. `authorizedLockboxes` polices who may introduce a
- * *new* generation of a shared key; these tests attack the other edge: re-publishing the *current*
- * generation with different key material. Key lookup indexes by generation, so if a later lockbox
- * could rebind an established generation to a new keypair, whoever appends last would own the key
- * — no admin rights needed, since ADD_LOCKBOXES rides on links any member can author.
+ * The invariant under test: a generation number identifies exactly one keyset. Key lookup is
+ * indexed by generation, so if a later lockbox could rebind an established generation to a
+ * different keypair, whoever appended last would own the key — and no admin rights would be
+ * needed, since ADD_LOCKBOXES rides on links any member can author. `authorizedLockboxes` already
+ * polices who may introduce a *new* generation of a shared key (a rotation); these tests attack
+ * the other edge: re-publishing the *current* generation with different key material.
  *
  * Scenario (found reviewing TryQuiet/private#80): Bob is removed from a role (a Quiet private
  * channel), which rotates the role key so future messages are hidden from him. He then appends a
