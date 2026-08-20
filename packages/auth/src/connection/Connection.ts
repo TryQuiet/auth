@@ -297,7 +297,10 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           const sender = context.server ?? context.device
           assert(sender)
 
-          // Welcome them with an authenticated envelope encrypted to their invitation seed.
+          // Send them the two things they don't have yet — the team graph and keyring — encrypted
+          // to keys derived from their invitation seed and bound to this handshake's proof and
+          // claim, so only this invitee can read it and only this session can accept it (see
+          // connection/invitationAcceptance.ts).
           this.#queueMessage(
             'ACCEPT_INVITATION',
             createInvitationAcceptance({
@@ -316,14 +319,18 @@ export class Connection extends EventEmitter<ConnectionEvents> {
         receiveInvitationAcceptance: assign(({ context, event }) => {
           assertEvent(event, 'ACCEPT_INVITATION')
           this.logger.debug('received invitation acceptance')
-          assert(context.invitationSeed)
-          assert(context.expectedTeamId)
-          assert(isInviteeClaim(context.ourIdentityClaim!))
-          const { proofOfInvitation, claim } = context.ourIdentityClaim
+          const { invitationSeed, expectedTeamId, ourIdentityClaim } = context
+          assert(invitationSeed)
+          assert(expectedTeamId)
+          // We only receive ACCEPT_INVITATION in the awaitingInvitationAcceptance state, which we
+          // only enter after sending our own invitee claim — assert that machine invariant rather
+          // than silently trusting it with a non-null assertion.
+          assert(ourIdentityClaim !== undefined && isInviteeClaim(ourIdentityClaim))
+          const { proofOfInvitation, claim } = ourIdentityClaim
           const invitationAcceptanceResult = processInvitationAcceptance({
             payload: event.payload,
-            invitationSeed: context.invitationSeed,
-            expectedTeamId: context.expectedTeamId,
+            invitationSeed,
+            expectedTeamId,
             proof: proofOfInvitation,
             claim,
             logger: this.logger,

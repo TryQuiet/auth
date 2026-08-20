@@ -13,6 +13,28 @@ import {
 } from './invitationAcceptance.js'
 import type { AcceptInvitationPayload, InvitationAcceptanceEnvelope } from './message.js'
 
+/**
+ * How an invitee decides whether to trust the team it has just been handed.
+ *
+ * At this point the invitee's only trust anchors are the two values that came over the side
+ * channel with the invite: the secret seed and the expected team id. The acceptance envelope has
+ * already been authenticated and bound to this handshake (`openInvitationAcceptance`), but
+ * everything INSIDE it — the graph and keyring — is still just data an untrusted acceptor chose
+ * to send. This module decides whether that graph is the real team admitting this invitee, in
+ * this session, as exactly the identity they claimed. The checks run in order, each mapped to a
+ * failure reason the connection machine reports distinctly:
+ *
+ * 1. the envelope opened and is bound to this handshake — else ACCEPTANCE_INVALID
+ * 2. the graph's root hash is the expected team id — else WRONG_TEAM
+ * 3. the graph validates and contains this invitation with the claimed kind — else WRONG_TEAM
+ * 4. the acceptance's sender is an active device in that graph — else SENDER_UNKNOWN
+ * 5. exactly one effective (resolver-surviving) admission consumed this invitation with this
+ *    handshake's exact proof and claim — else ADMISSION_INVALID
+ * 6. the final state registers exactly the claimed identity — else ADMISSION_INVALID
+ *
+ * Merely appearing in the final state proves nothing — presence is not provenance. The specific
+ * attacks each rule defeats are enumerated in test/validateInvitationAcceptance.test.ts.
+ */
 export type InvitationAcceptanceFailureReason =
   | 'ACCEPTANCE_INVALID'
   | 'WRONG_TEAM'
@@ -101,9 +123,10 @@ export const validateInvitationAcceptance = ({
       return invalid('WRONG_TEAM', 'Invitation acceptance graph has an unexpected team root')
     }
 
-    // teamMachine authenticates and validates the graph before reducing it, but returns only the
-    // reduced state; run the resolver again to recover the effective link sequence, which is where
-    // admission provenance lives.
+    // teamMachine authenticates and validates the graph before reducing it, but reduced state
+    // cannot answer "which admission produced this member?" — the proof and claim live only on
+    // the ADMIT links themselves. Run the resolver again to recover the effective sequence (the
+    // links that survive conflict resolution) so admissions can be checked by provenance.
     const state = teamMachine(graph, logger)
     const effectiveLinks = getSequence(graph, membershipResolver).filter(link => !link.isInvalid)
     const invitation = state.invitations[proof.id]

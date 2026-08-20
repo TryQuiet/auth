@@ -14,6 +14,29 @@ import * as select from 'team/selectors/index.js'
 import type { TeamState } from 'team/types.js'
 import type { AcceptInvitationPayload, InvitationAcceptanceEnvelope } from './message.js'
 
+/**
+ * The invitation acceptance is the ACCEPT_INVITATION message an acceptor sends an invitee after
+ * verifying their proof of invitation. It delivers the two things the invitee cannot have yet —
+ * the serialized team graph and the team keyring — and it is the moment the invitee decides
+ * whether to trust a team. The invitation seed is a bearer secret (the inviter knows it, and it
+ * can leak), so this message is built to prove more than "someone knows the seed":
+ *
+ * - Confidentiality: the graph and keyring travel only inside a ciphertext encrypted to an
+ *   ephemeral key derived from the seed; an eavesdropper on the transport learns nothing but the
+ *   sender's device id and public key.
+ * - Session binding: the encrypted envelope repeats the invitation id, both peers' handshake
+ *   nonces, and a digest of the invitee's exact identity claim, so a recorded acceptance cannot
+ *   be replayed into another session and cannot stand in for accepting a different identity.
+ * - Sender authentication: decryption authenticates the sender's encryption key, the envelope
+ *   names the sending device, and the invitee requires that device to be active in the very graph
+ *   being delivered (`invitationAcceptanceSenderIsActive`).
+ * - Strictness: the outer payload and the decrypted envelope must match their schemas exactly —
+ *   unknown fields, missing fields, or other versions are rejected outright.
+ *
+ * `openInvitationAcceptance` checks all of the above. What it deliberately does NOT check is the
+ * graph inside the envelope: that is `validateInvitationAcceptance.ts`'s job, and it runs only on
+ * envelopes that opened cleanly here.
+ */
 export const INVITATION_ACCEPTANCE_DOMAIN = 'localfirst-auth/invitation-acceptance' as const
 export const INVITATION_ACCEPTANCE_VERSION = 2 as const
 
@@ -118,7 +141,18 @@ export const openInvitationAcceptance = ({
   return decrypted
 }
 
-/** Verifies that the authenticated sender key belongs to one unique active device or server. */
+/**
+ * Verifies the acceptance's sender against the delivered graph: the device id named inside the
+ * tamper-proof envelope must match the outer payload's sender fields, and the resolved team state
+ * must register exactly that encryption key under that device or server id.
+ *
+ * The "one active device" this resolves to is deterministic, not assumed. Ids cannot be chosen to
+ * collide (a device or server id is the fingerprint of its own keys), re-registering an existing
+ * or tombstoned id is rejected by the `registeredIdsAreUnique` validator, and concurrent
+ * registrations of one id — necessarily the same identity — are collapsed deterministically by
+ * the membership resolver. If a hostile graph nevertheless presents an ambiguous id,
+ * `select.device` throws and this returns false: ambiguity fails closed.
+ */
 export const invitationAcceptanceSenderIsActive = (
   state: TeamState,
   payload: AcceptInvitationPayload,
