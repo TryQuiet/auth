@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import type { Base58 } from '@localfirst/auth'
 import { useTeam } from '../hooks/useTeam.js'
 import { Button } from './Button.js'
 
@@ -44,9 +45,12 @@ export const CreateOrJoinTeam = () => {
 
     case 'joining': {
       const onClickJoin = () => {
-        const invitationSeed = invitationSeedInput.current.value // e.g. ambitious-raccoon-1234
+        const [expectedTeamId, invitationSeed] = invitationSeedInput.current.value.split(':') as [
+          Base58,
+          string,
+        ]
         const teamName = invitationSeed.split('-').slice(0, 2).join('-') // e.g. ambitious-raccoon
-        joinTeam(teamName, invitationSeed)
+        joinTeam(teamName, invitationSeed, expectedTeamId)
       }
 
       return (

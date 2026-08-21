@@ -1,5 +1,6 @@
 export const DEVICE_REMOVED = 'DEVICE_REMOVED' as const
 export const DEVICE_UNKNOWN = 'DEVICE_UNKNOWN' as const
+export const ACCEPTANCE_INVALID = 'ACCEPTANCE_INVALID' as const
 export const ENCRYPTION_FAILURE = 'ENCRYPTION_FAILURE' as const
 export const IDENTITY_PROOF_INVALID = 'IDENTITY_PROOF_INVALID' as const
 export const INVITATION_PROOF_INVALID = 'INVITATION_PROOF_INVALID' as const
@@ -14,6 +15,10 @@ export const TIMEOUT = 'TIMEOUT' as const
 export const UNHANDLED = 'UNHANDLED' as const
 
 export const connectionErrors: Record<string, ErrorDefinition> = {
+  [ACCEPTANCE_INVALID]: {
+    localMessage: 'The invitation acceptance could not be authenticated',
+    remoteMessage: 'The invitation acceptance could not be authenticated',
+  },
   [DEVICE_REMOVED]: {
     localMessage: "The peer's device was removed from this team",
     remoteMessage: 'Your device was removed from this team',

@@ -23,8 +23,9 @@ export const create = ({
   // The ephemeral public signature key will be used to verify Bob's proof of invitation
   const starterKeys = generateStarterKeys(seed)
   const { publicKey } = starterKeys.signature
+  const encryptionPublicKey = starterKeys.encryption.publicKey
 
-  return { id, publicKey, expiration, userId }
+  return { id, publicKey, encryptionPublicKey, expiration, userId }
 }
 
 type Params = {

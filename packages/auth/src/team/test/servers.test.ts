@@ -230,7 +230,7 @@ describe('Team', () => {
 
     it('can admit a device invited by a member', async () => {
       const { server, alice, bob } = setup('alice', 'bob')
-      const { seed } = bob.team.inviteDevice()
+      const { seed, teamId } = bob.team.inviteDevice()
 
       // Bob's laptop connects to the server, so now it knows about the invitation
       await connectWithServer(bob, server)
@@ -244,6 +244,7 @@ describe('Team', () => {
         userName: bob.userName,
         device: bob.phone!,
         invitationSeed: seed,
+        expectedTeamId: teamId,
       }
       const join = joinTestChannel(new TestChannel())
       const serverConnection = join(server.connectionContext).start()

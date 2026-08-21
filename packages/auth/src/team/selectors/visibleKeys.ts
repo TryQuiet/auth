@@ -15,7 +15,15 @@ export const visibleKeys = (state: TeamState, keyset: KeysetWithSecrets): Keyset
   const lockboxesICanOpen = lockboxes.filter(({ recipient }) => recipient.publicKey === publicKey)
 
   // Collect all the keys from those lockboxes
-  const keysets = lockboxesICanOpen.map(lockbox => open(lockbox, keyset))
+  // A peer can publish a malformed lockbox whose manifest names us as its recipient. Treat it as
+  // unusable instead of allowing one bad lockbox to make every key lookup fail.
+  const keysets = lockboxesICanOpen.flatMap(lockbox => {
+    try {
+      return [open(lockbox, keyset)]
+    } catch {
+      return []
+    }
+  })
 
   // Recursively get all the keys *those* keys can access
   const keys = keysets.flatMap(keyset => visibleKeys(state, keyset))

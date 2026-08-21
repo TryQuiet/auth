@@ -17,9 +17,10 @@ import {
   type Base58,
   type Hash,
 } from '@localfirst/crypto'
-import { assert, debug, Logger, SharedLogger } from '@localfirst/shared'
+import { assert, Logger, type SharedLogger } from '@localfirst/shared'
 import { deriveSharedKey } from 'connection/deriveSharedKey.js'
 import {
+  ACCEPTANCE_INVALID,
   DEVICE_REMOVED,
   DEVICE_UNKNOWN,
   ENCRYPTION_FAILURE,
@@ -38,22 +39,22 @@ import {
   ADMIT_MEMBER_LINK_MISSING,
 } from 'connection/errors.js'
 import { getDeviceUserFromState } from 'connection/getDeviceUserFromGraph.js'
+import { createInvitationAcceptance } from 'connection/invitationAcceptance.js'
 import * as identity from 'connection/identity.js'
 import {
   isReadyMessage,
   type ConnectionMessage,
   type DisconnectMessage,
 } from 'connection/message.js'
+import { processInvitationAcceptance } from 'connection/validateInvitationAcceptance.js'
 import { redactDevice, redactFirstUseDevice, type DeviceWithSecrets } from 'device/index.js'
 import * as invitations from 'invitation/index.js'
 import { pack, unpack } from 'msgpackr'
 import { castServer } from 'server/castServer.js'
-import { getTeamState } from 'team/getTeamState.js'
 import { Team, decryptTeamGraph, type TeamAction, type TeamContext } from 'team/index.js'
-import * as select from 'team/selectors/index.js'
 import { arraysAreEqual } from 'util/arraysAreEqual.js'
 import { KeyType } from 'util/index.js'
-import { and, assertEvent, assign, createActor, not, setup } from 'xstate'
+import { and, assertEvent, assign, createActor, setup } from 'xstate'
 import { MessageQueue, type NumberedMessage } from './MessageQueue.js'
 import {
   extendServerContext,
@@ -125,6 +126,11 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
   constructor({ sendMessage, context, createLogger }: ConnectionParams) {
     super()
+
+    assert(
+      !isInviteeContext(context) || context.expectedTeamId !== undefined,
+      'Invitee context requires the expected full team ID'
+    )
 
     const username = getUserName(context)
     const loggerModuleName = `auth:connection:${username}`
@@ -287,40 +293,60 @@ export class Connection extends EventEmitter<ConnectionEvents> {
             return this.#fail(INVITATION_PROOF_INVALID)
           }
 
-          // Welcome them by sending the team's graph, so they can reconstruct team membership state
-          this.#queueMessage('ACCEPT_INVITATION', {
-            serializedGraph: team.save(),
-            teamKeyring: team.teamKeyring(),
-          })
+          const invitation = team.getInvitation(proofOfInvitation.id)
+          const sender = context.server ?? context.device
+          assert(sender)
+
+          // Send them the two things they don't have yet — the team graph and keyring — encrypted
+          // to keys derived from their invitation seed and bound to this handshake's proof and
+          // claim, so only this invitee can read it and only this session can accept it (see
+          // connection/invitationAcceptance.ts).
+          this.#queueMessage(
+            'ACCEPT_INVITATION',
+            createInvitationAcceptance({
+              invitation,
+              proof: proofOfInvitation,
+              claim,
+              sender,
+              serializedGraph: team.save(),
+              teamKeyring: team.teamKeyring(),
+            })
+          )
 
           return { peer }
         }),
 
-        /**
-         * Derives team state from the graph we've been sent, so the guards that decide whether to
-         * join it are simple reads. A graph that doesn't deserialize or doesn't validate leaves
-         * `state` undefined rather than throwing out of a guard and killing the machine.
-         */
-        receiveInvitationAcceptance: assign(({ event }) => {
+        receiveInvitationAcceptance: assign(({ context, event }) => {
           assertEvent(event, 'ACCEPT_INVITATION')
           this.logger.debug('received invitation acceptance')
-          const { serializedGraph, teamKeyring } = event.payload
-          try {
-            const state = getTeamState(serializedGraph, teamKeyring, this.logger)
-            return { acceptance: { serializedGraph, teamKeyring, state } }
-          } catch (error) {
-            this.logger.error('the team graph we were sent is not valid', error)
-            return { acceptance: { serializedGraph, teamKeyring } }
-          }
+          const { invitationSeed, expectedTeamId, ourIdentityClaim } = context
+          assert(invitationSeed)
+          assert(expectedTeamId)
+          // We only receive ACCEPT_INVITATION in the awaitingInvitationAcceptance state, which we
+          // only enter after sending our own invitee claim — assert that machine invariant rather
+          // than silently trusting it with a non-null assertion.
+          assert(ourIdentityClaim !== undefined && isInviteeClaim(ourIdentityClaim))
+          const { proofOfInvitation, claim } = ourIdentityClaim
+          const invitationAcceptanceResult = processInvitationAcceptance({
+            payload: event.payload,
+            invitationSeed,
+            expectedTeamId,
+            proof: proofOfInvitation,
+            claim,
+            logger: this.logger,
+          })
+          return { invitationAcceptanceResult }
         }),
 
         joinTeam: assign(({ context }) => {
           this.logger.debug('joining team post invitation acceptance')
-          const { acceptance, invitationSeed } = context
-          assert(acceptance?.state)
+          const { invitationAcceptanceResult, invitationSeed } = context
+          assert(invitationAcceptanceResult)
+          if (!invitationAcceptanceResult.isValid) throw invitationAcceptanceResult.error
           assert(invitationSeed)
           assert(context.device)
-          const { serializedGraph, teamKeyring, state } = acceptance
+          const { acceptance, state } = invitationAcceptanceResult.value
+          const { serializedGraph, teamKeyring } = acceptance
 
           const user =
             context.user ??
@@ -661,46 +687,23 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           return result
         },
 
-        acceptanceIsValid: ({ context }) => {
-          this.logger.debug('GUARD: checking that the team graph we were sent is valid')
-          const result = context.acceptance?.state !== undefined
-          this.logger.debug('GUARD: is the team graph valid?', result)
-          return result
+        invitationAcceptanceIsInvalid: ({ context }) => {
+          const result = context.invitationAcceptanceResult
+          return result?.isValid === false && result.reason === 'ACCEPTANCE_INVALID'
         },
 
         joinedTheWrongTeam: ({ context }) => {
-          this.logger.debug('GUARD: validating invitation against team')
-          const { acceptance, invitationSeed } = context
-          assert(acceptance?.state)
-          assert(invitationSeed)
-
-          // Make sure my invitation exists on the graph of the team I'm about to join. This check
-          // prevents an attack in which a fake team pretends to accept my invitation.
-          const result = select.hasInvitation(acceptance.state, invitations.deriveId(invitationSeed))
-          this.logger.debug('GUARD: does invitation match team?', result)
-          return !result
+          const result = context.invitationAcceptanceResult
+          return result?.isValid === false && result.reason === 'WRONG_TEAM'
         },
 
-        weWereAdmitted: ({ context }) => {
-          this.logger.debug('GUARD: checking for our admission on the chain')
-          const { acceptance, device } = context
-          assert(acceptance?.state)
-          assert(device)
+        invitationAcceptanceSenderIsUnknown: ({ context }) => {
+          const result = context.invitationAcceptanceResult
+          return result?.isValid === false && result.reason === 'SENDER_UNKNOWN'
+        },
 
-          // Our device is registered by the very link that admits us — ADMIT_MEMBER registers the
-          // member together with their first device, and ADMIT_DEVICE registers the device — so
-          // finding our device is what tells us the admission actually happened. This subsumes the
-          // separate device-invitation branch from #48c0334: a device invitation admits us via
-          // ADMIT_DEVICE, which this same lookup detects.
-          let result = false
-          try {
-            result = select.hasDevice(acceptance.state, device.deviceId)
-          } catch (error) {
-            // e.g. the id resolves ambiguously in the state they sent us
-            this.logger.error('could not look up our device in the graph we were sent', error)
-          }
-          this.logger.debug('GUARD: were we admitted?', result)
-          return result
+        invitationAdmissionIsValid: ({ context }) => {
+          return context.invitationAcceptanceResult?.isValid === true
         },
 
         peerIsUnknown: ({ context }) => {
@@ -844,12 +847,22 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
             checkingInvitationAcceptance: {
               always: [
-                // A graph we can't validate tells us nothing, so treat it like the wrong team
-                { guard: not('acceptanceIsValid'), ...fail(JOINED_WRONG_TEAM) },
+                {
+                  guard: 'invitationAcceptanceIsInvalid',
+                  ...fail(ACCEPTANCE_INVALID),
+                },
                 // Make sure the team I'm joining is actually the one that invited me
                 { guard: 'joinedTheWrongTeam', ...fail(JOINED_WRONG_TEAM) },
-                // Make sure we've actually been admitted before we start signing links
-                { guard: 'weWereAdmitted', actions: 'joinTeam', target: '#checkingIdentity' },
+                {
+                  guard: 'invitationAcceptanceSenderIsUnknown',
+                  ...fail(INVITATION_PROOF_INVALID),
+                },
+                // Make sure the exact effective admission exists before we start signing links.
+                {
+                  guard: 'invitationAdmissionIsValid',
+                  actions: 'joinTeam',
+                  target: '#checkingIdentity',
+                },
                 fail(ADMIT_MEMBER_LINK_MISSING),
               ],
             },
@@ -1040,11 +1053,12 @@ export class Connection extends EventEmitter<ConnectionEvents> {
         if (!sessionEventsEmitted && state.context.sessionKey !== undefined) {
           sessionEventsEmitted = true
           this.emit('connectionSecured')
-          if (state.context.acceptance !== undefined) {
+          if (state.context.invitationAcceptanceResult?.isValid === true) {
             const { team, user } = state.context
             assert(team)
             assert(user)
-            this.emit('joined', { team, user, teamKeyring: state.context.acceptance.teamKeyring })
+            const { teamKeyring } = state.context.invitationAcceptanceResult.value.acceptance
+            this.emit('joined', { team, user, teamKeyring })
           }
         }
       },

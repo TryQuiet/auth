@@ -1,6 +1,7 @@
 import { base58 } from '@localfirst/crypto'
 import type { Base58, Hash, Keyring, SyncMessage as SyncPayload } from '@localfirst/crdx'
 import type { Challenge, IdentityClaim } from 'connection/types.js'
+import type { InvitationKind } from 'invitation/index.js'
 import type { ErrorMessage, LocalErrorMessage } from './errors.js'
 
 export type ReadyMessage = {
@@ -80,10 +81,29 @@ export type RejectIdentityMessage = {
 
 export type AcceptInvitationMessage = {
   type: 'ACCEPT_INVITATION'
-  payload: {
-    serializedGraph: Uint8Array
-    teamKeyring: Keyring
-  }
+  payload: AcceptInvitationPayload
+}
+
+/** The sensitive invitation-acceptance body encrypted to the invitation's ephemeral key. */
+export type InvitationAcceptanceEnvelope = {
+  domain: 'localfirst-auth/invitation-acceptance'
+  version: 2
+  invitationId: Base58
+  invitationKind: InvitationKind
+  claimDigest: Base58
+  acceptorNonce: Base58
+  inviteeNonce: Base58
+  acceptorDeviceId: string
+  serializedGraph: Uint8Array
+  teamKeyring: Keyring
+}
+
+/** The non-sensitive outer acceptance message. */
+export type AcceptInvitationPayload = {
+  version: 2
+  senderDeviceId: string
+  senderPublicKey: Base58
+  encryptedAcceptance: Uint8Array
 }
 // Synchronization
 

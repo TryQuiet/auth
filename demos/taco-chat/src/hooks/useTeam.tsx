@@ -85,8 +85,8 @@ export const useTeam = () => {
     connect(teamName, context)
   }
 
-  const joinTeam = (teamName: string, invitationSeed: string) => {
-    const context = { userName, userId, user, device, invitationSeed }
+  const joinTeam = (teamName: string, invitationSeed: string, expectedTeamId: auth.Base58) => {
+    const context = { userName, userId, user, device, invitationSeed, expectedTeamId }
     connect(teamName, context)
   }
 

@@ -230,6 +230,23 @@ const signingKeyOf = (record: ResolvedSigner) =>
       record.server.identityKeys.signature
 
 const validators: AuthorizedValidatorSet = {
+  /**
+   * A device invitation may only name the authenticated member who authored it. The invitation
+   * record is the sole source of the admitted device's owner, so without this check any member
+   * could attach a device they control to another member's identity (e.g. an admin's) and author
+   * links as them.
+   */
+  deviceInvitationBelongsToAuthor(previousState, link, author, extendableLogger) {
+    const logger = extendableLogger.extend('deviceInvitationBelongsToAuthor')
+    if (link.body.type !== 'INVITE_DEVICE') return VALID
+
+    if (link.body.payload.invitation.userId !== author.member.userId) {
+      return fail('A device invitation must belong to its author', previousState, link, logger)
+    }
+
+    return VALID
+  },
+
   /** A server exists to relay, not to govern: it may admit invited members and devices, nothing else. */
   serversCanOnlyAdmit(previousState, link, author, extendableLogger) {
     const logger = extendableLogger.extend('serversCanOnlyAdmit')

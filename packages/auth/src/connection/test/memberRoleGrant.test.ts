@@ -15,11 +15,12 @@ describe('granting the member role on admission', () => {
     expect(bob.team.members(bob.userId).roles).not.toContain('member')
 
     const { userId: _userId, ...phone } = bob.phone!
-    const { seed } = bob.team.inviteDevice()
+    const { seed, teamId } = bob.team.inviteDevice()
     const phoneContext: InviteeDeviceContext = {
       userName: bob.userName,
       device: phone,
       invitationSeed: seed,
+      expectedTeamId: teamId,
     }
 
     const join = joinTestChannel(new TestChannel())
