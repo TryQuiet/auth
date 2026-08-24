@@ -39,9 +39,13 @@ import {
   ADMIT_MEMBER_LINK_MISSING,
 } from 'connection/errors.js'
 import { getDeviceUserFromState } from 'connection/getDeviceUserFromGraph.js'
-import { createInvitationAcceptance } from 'connection/invitationAcceptance.js'
+import {
+  createInvitationAcceptance,
+  isAcceptInvitationPayload,
+} from 'connection/invitationAcceptance.js'
 import * as identity from 'connection/identity.js'
 import {
+  CONNECTION_PROTOCOL_VERSION,
   isReadyMessage,
   type ConnectionMessage,
   type DisconnectMessage,
@@ -150,12 +154,13 @@ export class Connection extends EventEmitter<ConnectionEvents> {
     // rather than special-casing it everywhere downstream.
     const baseContext = isServerContext(context) ? extendServerContext(context) : context
 
-    // Each peer picks a nonce for the identity claim it's about to request, and one for the claim
-    // it might present. An invitation proof is bound to both, so it can't be replayed on another
-    // connection — which is why the acceptor's nonce has to travel with REQUEST_IDENTITY.
+    // Each peer picks a challenge for the identity claim it's about to request, and one nonce for
+    // the invitation claim it might present. An invitation proof is bound to both, so it can't be
+    // replayed on another connection. The identity challenge travels with the negotiated protocol
+    // version in REQUEST_IDENTITY.
     const initialContext: ConnectionContext = {
       ...baseContext,
-      acceptorNonce: randomKey() as Base58,
+      identityNonce: randomKey() as Base58,
       inviteeNonce: randomKey() as Base58,
     }
 
@@ -173,13 +178,16 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
         requestIdentityClaim: ({ context }) => {
           this.logger.debug('requesting identity claim')
-          this.#queueMessage('REQUEST_IDENTITY', { acceptorNonce: context.acceptorNonce })
+          this.#queueMessage('REQUEST_IDENTITY', {
+            protocolVersion: CONNECTION_PROTOCOL_VERSION,
+            identityNonce: context.identityNonce,
+          })
         },
 
         sendIdentityClaim: assign(({ context, event }) => {
           assertEvent(event, 'REQUEST_IDENTITY')
           this.logger.debug('sending identity claim')
-          const { acceptorNonce } = event.payload
+          const { identityNonce } = event.payload
 
           /**
            * An invitee's claim is the identity it's asking to have registered, plus two proofs:
@@ -193,7 +201,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
             const proofOfInvitation = invitations.generateProof({
               seed: context.invitationSeed,
               claim,
-              acceptorNonce,
+              identityNonce,
               inviteeNonce: context.inviteeNonce,
             })
             const possessionProof = invitations.createPossessionProof({
@@ -652,13 +660,13 @@ export class Connection extends EventEmitter<ConnectionEvents> {
         neitherIsMember: and(['weHaveInvitation', 'theyHaveInvitation']),
         invitationIsValid: ({ context }) => {
           this.logger.debug('GUARD: validating invitation')
-          const { team, theirIdentityClaim, acceptorNonce } = context
+          const { team, theirIdentityClaim, identityNonce } = context
           assert(isInviteeClaim(theirIdentityClaim!))
           const { proofOfInvitation, claim, possessionProof } = theirIdentityClaim
 
           // The proof has to have been made for *this* handshake, or an eavesdropper could replay
           // one they saw on another connection.
-          if (proofOfInvitation.acceptorNonce !== acceptorNonce) {
+          if (proofOfInvitation.identityNonce !== identityNonce) {
             this.logger.error('the invitation proof was made for a different handshake')
             return false
           }
@@ -779,6 +787,16 @@ export class Connection extends EventEmitter<ConnectionEvents> {
         },
 
         requestIdentityIsValid: ({ event }) => isReadyMessage(event),
+
+        invitationAcceptanceProtocolIsValid: ({ event }) =>
+          event.type === 'ACCEPT_INVITATION' && isAcceptInvitationPayload(event.payload),
+
+        invitationAcceptanceProtocolIsUnsupported: ({ context }) => {
+          return (
+            context.invitationAcceptanceResult?.isValid === false &&
+            context.invitationAcceptanceResult.reason === 'PROTOCOL_VERSION_UNSUPPORTED'
+          )
+        },
       },
     }).createMachine({
       context: initialContext as ConnectionContext,
@@ -837,16 +855,24 @@ export class Connection extends EventEmitter<ConnectionEvents> {
             awaitingInvitationAcceptance: {
               // Wait for them to validate the invitation we included in our identity claim
               on: {
-                ACCEPT_INVITATION: {
-                  actions: 'receiveInvitationAcceptance',
-                  target: 'checkingInvitationAcceptance',
-                },
+                ACCEPT_INVITATION: [
+                  {
+                    guard: 'invitationAcceptanceProtocolIsValid',
+                    actions: 'receiveInvitationAcceptance',
+                    target: 'checkingInvitationAcceptance',
+                  },
+                  fail(PROTOCOL_VERSION_UNSUPPORTED),
+                ],
               },
               ...timeout,
             },
 
             checkingInvitationAcceptance: {
               always: [
+                {
+                  guard: 'invitationAcceptanceProtocolIsUnsupported',
+                  ...fail(PROTOCOL_VERSION_UNSUPPORTED),
+                },
                 {
                   guard: 'invitationAcceptanceIsInvalid',
                   ...fail(ACCEPTANCE_INVALID),

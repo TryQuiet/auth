@@ -8,6 +8,7 @@ import { teamMachine } from 'team/teamMachine.js'
 import type { TeamGraph, TeamLink, TeamState } from 'team/types.js'
 import { ValidationError } from 'util/index.js'
 import {
+  InvitationAcceptanceProtocolError,
   invitationAcceptanceSenderIsActive,
   openInvitationAcceptance,
 } from './invitationAcceptance.js'
@@ -24,19 +25,21 @@ import type { AcceptInvitationPayload, InvitationAcceptanceEnvelope } from './me
  * this session, as exactly the identity they claimed. The checks run in order, each mapped to a
  * failure reason the connection machine reports distinctly:
  *
- * 1. the envelope opened and is bound to this handshake — else ACCEPTANCE_INVALID
- * 2. the graph's root hash is the expected team id — else WRONG_TEAM
- * 3. the graph validates and contains this invitation with the claimed kind — else WRONG_TEAM
- * 4. the acceptance's sender is an active device in that graph — else SENDER_UNKNOWN
- * 5. exactly one effective (resolver-surviving) admission consumed this invitation with this
+ * 1. the outer and inner schemas are exactly v3 — else PROTOCOL_VERSION_UNSUPPORTED
+ * 2. the envelope opened and is bound to this handshake — else ACCEPTANCE_INVALID
+ * 3. the graph's root hash is the expected team id — else WRONG_TEAM
+ * 4. the graph validates and contains this invitation with the claimed kind — else WRONG_TEAM
+ * 5. the acceptance's sender is an active device in that graph — else SENDER_UNKNOWN
+ * 6. exactly one effective (resolver-surviving) admission consumed this invitation with this
  *    handshake's exact proof and claim — else ADMISSION_INVALID
- * 6. the final state registers exactly the claimed identity — else ADMISSION_INVALID
+ * 7. the final state registers exactly the claimed identity — else ADMISSION_INVALID
  *
  * Merely appearing in the final state proves nothing — presence is not provenance. The specific
  * attacks each rule defeats are enumerated in test/validateInvitationAcceptance.test.ts.
  */
 export type InvitationAcceptanceFailureReason =
   | 'ACCEPTANCE_INVALID'
+  | 'PROTOCOL_VERSION_UNSUPPORTED'
   | 'WRONG_TEAM'
   | 'SENDER_UNKNOWN'
   | 'ADMISSION_INVALID'
@@ -88,6 +91,13 @@ export const processInvitationAcceptance = ({
   try {
     acceptance = openInvitationAcceptance({ payload, invitationSeed, proof, claim })
   } catch (error) {
+    if (error instanceof InvitationAcceptanceProtocolError) {
+      return invalid(
+        'PROTOCOL_VERSION_UNSUPPORTED',
+        'Invitation acceptance uses an unsupported protocol schema',
+        { error }
+      )
+    }
     return invalid('ACCEPTANCE_INVALID', 'Invitation acceptance could not be authenticated', {
       error,
     })

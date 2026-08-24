@@ -13,20 +13,20 @@ export const INVITATION_CLAIM_DOMAIN = 'localfirst-auth/invitation-claim' as con
  * identity, and because the nonces are, it can't be replayed on a different connection.
  */
 export const invitationProofPayload = (
-  proof: Pick<ProofOfInvitation, 'id' | 'acceptorNonce' | 'inviteeNonce'>,
+  proof: Pick<ProofOfInvitation, 'id' | 'identityNonce' | 'inviteeNonce'>,
   claim: InvitationClaim
 ): Payload =>
   [
     INVITATION_CLAIM_DOMAIN,
     proof.id,
-    proof.acceptorNonce,
+    proof.identityNonce,
     proof.inviteeNonce,
     identityClaimPayload(claim),
   ] as Payload
 
 /** Returns a stable digest of the exact invitation proof transcript and identity claim. */
 export const invitationClaimDigest = (
-  proof: Pick<ProofOfInvitation, 'id' | 'acceptorNonce' | 'inviteeNonce'>,
+  proof: Pick<ProofOfInvitation, 'id' | 'identityNonce' | 'inviteeNonce'>,
   claim: InvitationClaim
 ): Base58 => hash('localfirst-auth/invitation-claim-digest', invitationProofPayload(proof, claim))
 

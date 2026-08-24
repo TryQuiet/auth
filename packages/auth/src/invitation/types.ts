@@ -76,8 +76,8 @@ export type ProofOfInvitation = {
   /** Public, unique identifier for the invitation */
   id: Base58
 
-  /** Nonce chosen by the peer accepting the invitation */
-  acceptorNonce: Base58
+  /** Identity challenge chosen by the peer accepting the invitation */
+  identityNonce: Base58
 
   /** Nonce chosen by the invitee */
   inviteeNonce: Base58

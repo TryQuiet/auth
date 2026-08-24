@@ -72,7 +72,7 @@ describe('invitation acceptance wire format', () => {
     const acceptance = openExpectedAcceptance(fixture)
 
     expect(acceptance.invitationId).toBe(fixture.proof.id)
-    expect(acceptance.acceptorNonce).toBe(fixture.proof.acceptorNonce)
+    expect(acceptance.identityNonce).toBe(fixture.proof.identityNonce)
     expect(acceptance.inviteeNonce).toBe(fixture.proof.inviteeNonce)
     expect(acceptance.claimDigest).toBe(claimDigest(fixture.proof, fixture.claim))
 
@@ -84,7 +84,7 @@ describe('invitation acceptance wire format', () => {
     expect(() =>
       openExpectedAcceptance({
         ...fixture,
-        proof: { ...fixture.proof, acceptorNonce: randomKey() as Base58 },
+        proof: { ...fixture.proof, identityNonce: randomKey() as Base58 },
       })
     ).toThrow()
     expect(() =>
@@ -139,17 +139,17 @@ describe('invitation acceptance wire format', () => {
     }
   })
 
-  // The outer payload must be *exactly* the v2 schema: no unknown extra fields (which could smuggle
+  // The outer payload must be *exactly* the v3 schema: no unknown extra fields (which could smuggle
   // data past the envelope), no missing fields, no other version. This pins the strictness of the
   // schema check, not every possible malformed payload.
-  it('rejects outer payloads that are not exactly the v2 schema', async () => {
+  it('rejects outer payloads that are not exactly the v3 schema', async () => {
     const fixture = await captureAcceptance()
 
     expect(() =>
       openExpectedAcceptance({ ...fixture, payload: { ...fixture.payload, extra: true } })
     ).toThrow()
     expect(() =>
-      openExpectedAcceptance({ ...fixture, payload: { ...fixture.payload, version: 3 } })
+      openExpectedAcceptance({ ...fixture, payload: { ...fixture.payload, version: 4 } })
     ).toThrow()
     const { senderPublicKey: _, ...missingSenderKey } = fixture.payload
     expect(() =>
@@ -169,7 +169,7 @@ describe('invitation acceptance wire format', () => {
     const laterHandshakeProof = generateProof({
       seed: fixture.invitationSeed,
       claim: fixture.claim,
-      acceptorNonce: randomKey() as Base58,
+      identityNonce: randomKey() as Base58,
       inviteeNonce: randomKey() as Base58,
     })
     expect(() => openExpectedAcceptance({ ...fixture, proof: laterHandshakeProof })).toThrow()
@@ -212,7 +212,7 @@ describe('invitation acceptance wire format', () => {
 })
 
 const ACCEPTANCE_DOMAIN = 'localfirst-auth/invitation-acceptance'
-const ACCEPTANCE_VERSION = 2
+const ACCEPTANCE_VERSION = 3
 
 type ExpectedPayload = {
   version: number
@@ -228,7 +228,7 @@ type ExpectedAcceptance = {
   invitationId: string
   invitationKind: InvitationClaim['invitationKind']
   claimDigest: string
-  acceptorNonce: string
+  identityNonce: string
   inviteeNonce: string
   acceptorDeviceId: string
   serializedGraph: Uint8Array
@@ -328,8 +328,8 @@ const openExpectedAcceptance = ({
     'Acceptance claim does not match proof'
   )
   assert(
-    decrypted.acceptorNonce === proof.acceptorNonce,
-    'Acceptance acceptor nonce does not match'
+    decrypted.identityNonce === proof.identityNonce,
+    'Acceptance identity nonce does not match'
   )
   assert(decrypted.inviteeNonce === proof.inviteeNonce, 'Acceptance invitee nonce does not match')
   assert(
@@ -358,9 +358,9 @@ const senderIsActive = (
 const assertExpectedAcceptance: (value: unknown) => asserts value is ExpectedAcceptance = value => {
   assertExactKeys(value, [
     'acceptorDeviceId',
-    'acceptorNonce',
     'claimDigest',
     'domain',
+    'identityNonce',
     'invitationId',
     'invitationKind',
     'inviteeNonce',

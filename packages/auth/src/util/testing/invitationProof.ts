@@ -14,12 +14,12 @@ import {
 } from 'invitation/index.js'
 
 type InvitationNonces = {
-  acceptorNonce: Base58
+  identityNonce: Base58
   inviteeNonce: Base58
 }
 
 export const invitationNonces = (): InvitationNonces => ({
-  acceptorNonce: randomKey() as Base58,
+  identityNonce: randomKey() as Base58,
   inviteeNonce: randomKey() as Base58,
 })
 

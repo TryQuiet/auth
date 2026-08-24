@@ -158,8 +158,8 @@ export type ConnectionContext = {
   /** Independently supplied immutable root of the team an invitation is expected to join. */
   expectedTeamId?: Base58
 
-  /** Nonce we sent with `REQUEST_IDENTITY`; an invitee's proof to us must be bound to it. */
-  acceptorNonce: Base58
+  /** Challenge we sent with `REQUEST_IDENTITY`; an invitee's proof to us must be bound to it. */
+  identityNonce: Base58
 
   /** Nonce we bind our own invitation proof to. */
   inviteeNonce: Base58

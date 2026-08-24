@@ -1,6 +1,12 @@
-import { ROOT } from '@localfirst/crdx'
+import { ROOT, type Keyset } from '@localfirst/crdx'
+import { isBase58KeyOfLength } from '@localfirst/crypto'
 import { type Logger } from '@localfirst/shared'
-import { type Lockbox } from 'lockbox/index.js'
+import {
+  isKeyManifest,
+  isRecipientManifest,
+  type Lockbox,
+  type RecipientManifest,
+} from 'lockbox/index.js'
 import { ADMIN } from 'role/index.js'
 import { KeyType } from 'util/index.js'
 import * as select from './selectors/index.js'
@@ -54,17 +60,13 @@ import { SignerKind, type TeamLink, type TeamState } from './types.js'
 export const authorizedLockboxes = (
   state: TeamState,
   link: TeamLink,
-  lockboxes: Lockbox[],
+  lockboxes: unknown,
   logger: Logger
 ): Lockbox[] => {
-  // The shared scopes this link's lockboxes distribute keys for.
-  const scopes = new Map<string, KeyScope>()
-  for (const { contents } of lockboxes) {
-    if (!isSharedScope(contents.type)) continue
-    scopes.set(scopeId(contents), { type: contents.type, name: contents.name })
+  if (!Array.isArray(lockboxes)) {
+    logger.warn(`Dropping malformed lockbox payload from link ${link.hash}: expected an array`)
+    return []
   }
-
-  if (scopes.size === 0) return lockboxes
 
   const dropped = new Set<Lockbox>()
   const drop = (rejects: Lockbox[], scope: KeyScope, reason: string) => {
@@ -75,8 +77,106 @@ export const authorizedLockboxes = (
     )
   }
 
+  // A manifest is the public authorization boundary for an encrypted keyset. Old manifests and
+  // malformed commitments are unusable, but they must not make the link carrying them unusable.
+  // Remember the coordinates of malformed manifests when possible: if this link is trying to
+  // establish a new distribution batch, one malformed recipient makes that whole batch
+  // uncommitted rather than allowing the remaining recipients to establish it partially.
+  const malformedBatches = new Set<string>()
+  let hasUnidentifiedMalformedLockbox = false
+  const validLockboxes: Lockbox[] = []
+  for (const candidate of lockboxes as unknown[]) {
+    const contents = isRecord(candidate) ? candidate.contents : undefined
+    if (isAuthorizationLockbox(candidate)) {
+      validLockboxes.push(candidate)
+      continue
+    }
+
+    const identity = keyIdentity(contents)
+    if (identity === undefined) {
+      hasUnidentifiedMalformedLockbox = true
+    } else {
+      malformedBatches.add(keyIdentityId(identity))
+    }
+
+    logger.warn(`Dropping malformed lockbox from link ${link.hash}: invalid lockbox structure`)
+  }
+
+  // Bind every scope/generation pair that has already reached state to the first valid commitment
+  // established for it. This applies to historical and identity-owned keys as well as the current
+  // generation of TEAM/ROLE keys. The advertised encryption public key remains inspectable, but
+  // is deliberately not used as keyset identity: the commitment covers both keypairs, the
+  // symmetric secret, and all metadata.
+  const established = establishedCommitments(state.lockboxes)
+  const batches = groupByKeyIdentity(validLockboxes)
+
+  for (const [id, batch] of batches) {
+    const scope = scopeOf(batch[0])
+    const establishedCommitment = established.get(id)
+
+    if (establishedCommitment !== undefined) {
+      drop(
+        batch.filter(({ contents }) => contents.commitment !== establishedCommitment),
+        scope,
+        `generation ${batch[0].contents.generation} is already bound to another keyset commitment`
+      )
+      continue
+    }
+
+    // A new generation is established by the batch as a whole. It must not be possible for one
+    // link to give different recipients different keysets under the same generation number, or to
+    // establish a partial batch after one recipient's manifest was discarded as malformed.
+    const commitments = new Set(batch.map(({ contents }) => contents.commitment))
+    if (hasUnidentifiedMalformedLockbox || malformedBatches.has(id) || commitments.size !== 1) {
+      drop(batch, scope, `generation ${batch[0].contents.generation} is not one committed keyset`)
+      continue
+    }
+
+    // USER and SERVER generations are public identity records before they are lockbox contents.
+    // Do not let an unrelated link bind an unseen generation first and make the identity owner's
+    // later, legitimate distribution look conflicting. Registration/key-change links may establish
+    // exactly the public keyset they record. The one post-registration exception is a member's own
+    // device-signed USER distribution: invitation admission cannot carry the user's secret keys,
+    // so `Team.join` must box them to that already-registered device in a follow-up link.
+    if (
+      isIdentityScope(scope.type) &&
+      !mayEstablishIdentityKeyset(state, link, batch[0].contents)
+    ) {
+      drop(
+        batch,
+        scope,
+        `generation ${batch[0].contents.generation} is not established by its identity owner`
+      )
+    }
+  }
+
+  // The shared scopes this link's surviving lockboxes distribute keys for. Commitment binding
+  // above applies to every key type; the authorization and holder-set rules below are specific to
+  // shared TEAM/ROLE rotations.
+  const scopes = new Map<string, KeyScope>()
+  for (const lockbox of validLockboxes) {
+    if (dropped.has(lockbox)) continue
+    const { contents } = lockbox
+    if (!isKeyManifest(contents) || !isSharedScope(contents.type)) continue
+    scopes.set(scopeKey(contents), { type: contents.type, name: contents.name })
+  }
+
+  if (scopes.size === 0) {
+    return validLockboxes.filter(lockbox => !dropped.has(lockbox))
+  }
+
+  const authorizationState = {
+    ...state,
+    lockboxes: state.lockboxes.filter(isAuthorizationLockbox),
+  }
   for (const scope of scopes.values()) {
-    const prior = select.lockboxesInScope(state, scope)
+    const prior = select.lockboxesInScope(authorizationState, scope)
+    const inScope = validLockboxes.filter(
+      lockbox =>
+        !dropped.has(lockbox) &&
+        isKeyManifest(lockbox.contents) &&
+        scopesMatch(lockbox.contents, scope)
+    )
 
     // No prior lockboxes can mean the scope is being created, but a ROLE scope only exists once its
     // ADD_ROLE action creates it. Otherwise anyone could pre-seed a future role with a high
@@ -89,32 +189,13 @@ export const authorizedLockboxes = (
         (link.body.type === 'ADD_ROLE' && link.body.payload.roleName === scope.name) ||
         (link.body.type === ROOT && scope.name === ADMIN)
       if (scope.type === KeyType.ROLE && !roleAlreadyExists && !createsThisRole) {
-        drop(
-          lockboxes.filter(({ contents }) => scopeId(contents) === scopeId(scope)),
-          scope,
-          'role does not exist yet'
-        )
+        drop(inScope, scope, 'role does not exist yet')
       }
 
       continue
     }
 
     const currentGeneration = prior[0].contents.generation
-    const inScope = lockboxes.filter(({ contents }) => scopeId(contents) === scopeId(scope))
-
-    // A generation identifies one keyset, not merely a position in the key history. Distributing
-    // the established generation to a new recipient is legitimate, but introducing a different key
-    // at that generation would let the later lockbox replace the established key in `keyMap`.
-    const currentPublicKeys = new Set(prior.map(({ contents }) => contents.publicKey))
-    drop(
-      inScope.filter(
-        ({ contents }) =>
-          contents.generation === currentGeneration && !currentPublicKeys.has(contents.publicKey)
-      ),
-      scope,
-      `generation ${currentGeneration} is already bound to another key`
-    )
-
     const rekey = inScope.filter(({ contents }) => contents.generation > currentGeneration)
 
     // Not a re-key. Handing out a generation the team already has — a role key to a new role member,
@@ -128,11 +209,7 @@ export const authorizedLockboxes = (
     const authorHoldsScope =
       author !== undefined &&
       (select.memberIsAdmin(state, author) ||
-        prior.some(
-          ({ recipient }) =>
-            (recipient.type === KeyType.USER || recipient.type === KeyType.SERVER) &&
-            recipient.name === author
-        ))
+        prior.some(({ recipient }) => recipientIsCurrentIdentity(state, author, recipient)))
     if (!authorHoldsScope) {
       drop(rekey, scope, `'${author ?? 'unknown signer'}' does not hold this key`)
       continue
@@ -152,12 +229,8 @@ export const authorizedLockboxes = (
 
     // (c) The new generation goes to the scope's current holders, all under one key.
 
-    // No divergent keys — an authorized insider must not be able to partition the scope by handing
-    // its holders different keysets under one generation number.
-    if (new Set(next.map(({ contents }) => contents.publicKey)).size > 1) {
-      drop(next, scope, 'distributes divergent keys to its holders')
-      continue
-    }
+    // Divergent commitments were rejected as one batch above, before any new generation could be
+    // established. Every surviving recipient therefore gets the exact same complete keyset.
 
     // No silent exclusions. Every current holder has to be re-boxed; leaving one out is how a
     // re-key becomes an eviction that no REMOVE_MEMBER / REMOVE_MEMBER_ROLE link ever recorded.
@@ -172,23 +245,315 @@ export const authorizedLockboxes = (
     // were complete, which it isn't during `decryptTeamGraph`'s per-path walk, where state carries
     // only one lineage. Checking exclusions is safe there: a partial `prior` can only shrink the
     // holder set, so the check gets more lenient, never more strict.
-    const reached = new Set(next.map(recipientId))
-    const missed = [...new Set(prior.map(recipientId))].filter(holder => !reached.has(holder))
+    const reached = new Set(next.map(({ recipient }) => recipientId(recipient)))
+    const expectedHolders = prior.map(({ recipient }) =>
+      recipientId(expectedRecipientForLink(state, recipient, link, next))
+    )
+    const missed = [...new Set(expectedHolders)].filter(holder => !reached.has(holder))
     if (missed.length > 0) {
       drop(next, scope, `does not reach current holders [${missed.join(', ')}]`)
     }
   }
 
-  return dropped.size === 0 ? lockboxes : lockboxes.filter(lockbox => !dropped.has(lockbox))
+  return validLockboxes.filter(lockbox => !dropped.has(lockbox))
 }
 
 type KeyScope = { type: string; name: string }
 
+type KeyIdentity = KeyScope & { generation: number }
+
 /** TEAM and ROLE keys are shared by many holders; every other scope is one identity's own keys. */
 const isSharedScope = (type: string) => type === KeyType.TEAM || type === KeyType.ROLE
+const isIdentityScope = (type: string) => type === KeyType.USER || type === KeyType.SERVER
 
 const scopeId = ({ type, name }: KeyScope) => `${type}:${name}`
-const recipientId = ({ recipient }: Lockbox) => scopeId(recipient)
+const scopeKey = ({ type, name }: KeyScope) => JSON.stringify([type, name])
+const keyIdentityId = ({ type, name, generation }: KeyIdentity) =>
+  JSON.stringify([type, name, generation])
+const recipientId = ({ type, name, generation, publicKey }: RecipientManifest) =>
+  JSON.stringify([type, name, generation, publicKey])
+const scopesMatch = (left: KeyScope, right: KeyScope) =>
+  left.type === right.type && left.name === right.name
+const scopeOf = ({ contents }: Lockbox): KeyScope => ({
+  type: contents.type,
+  name: contents.name,
+})
+
+const groupByKeyIdentity = (lockboxes: Lockbox[]): Map<string, Lockbox[]> => {
+  const batches = new Map<string, Lockbox[]>()
+  for (const lockbox of lockboxes) {
+    const id = keyIdentityId(lockbox.contents)
+    const batch = batches.get(id) ?? []
+    batch.push(lockbox)
+    batches.set(id, batch)
+  }
+
+  return batches
+}
+
+const establishedCommitments = (lockboxes: unknown): Map<string, string> => {
+  const commitments = new Map<string, string>()
+  if (!Array.isArray(lockboxes)) return commitments
+
+  for (const candidate of lockboxes as unknown[]) {
+    if (!isAuthorizationLockbox(candidate)) continue
+    const { contents } = candidate
+    const id = keyIdentityId(contents)
+    if (!commitments.has(id)) commitments.set(id, contents.commitment)
+  }
+
+  return commitments
+}
+
+/** Extracts only the coordinates needed to associate a malformed manifest with its batch. */
+const keyIdentity = (value: unknown): KeyIdentity | undefined => {
+  if (!isRecord(value)) return undefined
+  const candidate = value
+  if (
+    typeof candidate.type !== 'string' ||
+    typeof candidate.name !== 'string' ||
+    typeof candidate.generation !== 'number' ||
+    !Number.isSafeInteger(candidate.generation) ||
+    candidate.generation < 0
+  ) {
+    return undefined
+  }
+
+  return {
+    type: candidate.type,
+    name: candidate.name,
+    generation: candidate.generation,
+  }
+}
+
+/** Strict public structure check before attacker-controlled lockboxes reach any selector. */
+const isAuthorizationLockbox = (value: unknown): value is Lockbox => {
+  if (!isRecord(value) || !hasExactKeys(value, LOCKBOX_FIELDS)) return false
+  if (!isRecord(value.encryptionKey) || !hasExactKeys(value.encryptionKey, ENCRYPTION_KEY_FIELDS)) {
+    return false
+  }
+
+  return (
+    value.encryptionKey.type === 'EPHEMERAL' &&
+    value.encryptionKey.name === 'EPHEMERAL' &&
+    isBase58KeyOfLength(value.encryptionKey.publicKey, 32) &&
+    isRecipientManifest(value.recipient) &&
+    isKeyManifest(value.contents) &&
+    value.encryptedPayload instanceof Uint8Array
+  )
+}
+
+const mayEstablishIdentityKeyset = (
+  state: TeamState,
+  link: TeamLink,
+  manifest: Lockbox['contents']
+): boolean => {
+  const declaredByAction = identityKeysDeclaredByAction(link, manifest)
+  if (declaredByAction !== undefined) return keysetMatchesManifest(declaredByAction, manifest)
+
+  if (isAuthorizedIdentityRotation(state, link, manifest)) return true
+
+  // A newly admitted member establishes the USER commitment when their already-registered device
+  // posts `Team.join`. Requiring the resolved signer to own that USER scope prevents every other
+  // member from pre-seeding it while retaining the invitation flow.
+  if (manifest.type !== KeyType.USER || actingMemberId(state, link) !== manifest.name) return false
+  const registered = state.members.find(member => member.userId === manifest.name)?.keys
+  return registered !== undefined && keysetMatchesManifest(registered, manifest)
+}
+
+const identityKeysDeclaredByAction = (
+  link: TeamLink,
+  manifest: Lockbox['contents']
+): Keyset | undefined => {
+  const { type, payload } = link.body
+
+  if (type === ROOT && manifest.type === KeyType.USER) return payload.rootMember.keys
+  if (type === 'ADD_MEMBER' && manifest.type === KeyType.USER) return payload.member.keys
+  if (type === 'CHANGE_MEMBER_KEYS' && manifest.type === KeyType.USER) return payload.keys
+  if (type === 'ADD_SERVER' && manifest.type === KeyType.SERVER) return payload.server.keys
+  if (type === 'CHANGE_SERVER_KEYS' && manifest.type === KeyType.SERVER) return payload.keys
+
+  return undefined
+}
+
+const keysetMatchesManifest = (keys: Keyset, manifest: Lockbox['contents']) =>
+  keys.type === manifest.type &&
+  keys.name === manifest.name &&
+  keys.generation === manifest.generation &&
+  keys.encryption === manifest.publicKey
+
+/** A claimed holder must use the latest authorized recipient generation/key for that identity. */
+const recipientIsCurrentIdentity = (
+  state: TeamState,
+  identityId: string,
+  recipient: RecipientManifest
+): boolean => {
+  if (recipient.name !== identityId) return false
+  const registered =
+    recipient.type === KeyType.USER
+      ? state.members.find(member => member.userId === identityId)?.keys
+      : recipient.type === KeyType.SERVER
+        ? state.servers.find(server => server.serverId === identityId)?.keys
+        : undefined
+
+  const latestContents = latestIdentityManifest(state, recipient.type, identityId)
+  if (latestContents !== undefined && latestContents.generation >= (registered?.generation ?? -1)) {
+    return (
+      recipient.generation === latestContents.generation &&
+      recipient.publicKey === latestContents.publicKey
+    )
+  }
+
+  return registered !== undefined && keysetMatchesRecipient(registered, recipient)
+}
+
+/** Honest key changes re-address every affected lockbox to the newly declared recipient keys. */
+const expectedRecipientForLink = (
+  state: TeamState,
+  recipient: RecipientManifest,
+  link: TeamLink,
+  next: Lockbox[]
+): RecipientManifest => {
+  const { type, payload } = link.body
+  const updatedKeys =
+    type === 'CHANGE_MEMBER_KEYS' && recipient.type === KeyType.USER
+      ? payload.keys
+      : type === 'CHANGE_SERVER_KEYS' && recipient.type === KeyType.SERVER
+        ? payload.keys
+        : undefined
+
+  if (
+    updatedKeys !== undefined &&
+    updatedKeys.type === recipient.type &&
+    updatedKeys.name === recipient.name
+  ) {
+    return {
+      type: updatedKeys.type,
+      name: updatedKeys.name,
+      generation: updatedKeys.generation,
+      publicKey: updatedKeys.encryption,
+    }
+  }
+
+  // Removal-driven rotations deliberately mint replacement recipient keys that are not installed
+  // in the public identity record: their purpose is to cut the compromised member/device off. The
+  // link therefore has no separate public key declaration to compare against. Accept exactly one
+  // canonical next recipient manifest for the affected identity; an unrelated action gets no such
+  // transition and must reproduce the old manifest exactly.
+  if (!linkMayRotateRecipientWithoutDeclaration(state, link, recipient)) return recipient
+  const candidates = new Map<string, RecipientManifest>()
+  for (const { recipient: candidate } of next) {
+    if (
+      candidate.type === recipient.type &&
+      candidate.name === recipient.name &&
+      candidate.generation === recipient.generation + 1
+    ) {
+      candidates.set(recipientId(candidate), candidate)
+    }
+  }
+
+  return candidates.size === 1 ? [...candidates.values()][0] : recipient
+}
+
+const keysetMatchesRecipient = (keys: Keyset, recipient: RecipientManifest) =>
+  keys.type === recipient.type &&
+  keys.name === recipient.name &&
+  keys.generation === recipient.generation &&
+  keys.encryption === recipient.publicKey
+
+const isAuthorizedIdentityRotation = (
+  state: TeamState,
+  link: TeamLink,
+  manifest: Lockbox['contents']
+): boolean => {
+  if (manifest.type !== KeyType.USER) return false
+  const owner = identityRotationOwner(state, link)
+  if (owner !== manifest.name) return false
+
+  const latestGeneration = latestIdentityGeneration(state, manifest.type, manifest.name)
+  return manifest.generation === latestGeneration + 1
+}
+
+const identityRotationOwner = (state: TeamState, link: TeamLink): string | undefined => {
+  const { type, payload } = link.body
+  if (type === 'REMOVE_MEMBER') return payload.userId
+  if (type === 'REMOVE_DEVICE') {
+    return state.members.find(member =>
+      member.devices?.some(device => device.deviceId === payload.deviceId)
+    )?.userId
+  }
+
+  return type === 'ROTATE_KEYS' ? actingMemberId(state, link) : undefined
+}
+
+const linkMayRotateRecipientWithoutDeclaration = (
+  state: TeamState,
+  link: TeamLink,
+  recipient: RecipientManifest
+): boolean => {
+  const { type, payload } = link.body
+  if (type === 'REMOVE_MEMBER') {
+    return recipient.type === KeyType.USER && recipient.name === payload.userId
+  }
+
+  if (type === 'REMOVE_DEVICE') {
+    const owner = identityRotationOwner(state, link)
+    return (
+      (recipient.type === KeyType.DEVICE && recipient.name === payload.deviceId) ||
+      (recipient.type === KeyType.USER && recipient.name === owner)
+    )
+  }
+
+  if (type === 'ROTATE_KEYS') {
+    return recipient.type === KeyType.USER && recipient.name === actingMemberId(state, link)
+  }
+
+  return false
+}
+
+const latestIdentityManifest = (
+  state: TeamState,
+  type: string,
+  name: string
+): Lockbox['contents'] | undefined => {
+  let latest: Lockbox['contents'] | undefined
+  for (const candidate of state.lockboxes as unknown[]) {
+    if (
+      !isAuthorizationLockbox(candidate) ||
+      candidate.contents.type !== type ||
+      candidate.contents.name !== name ||
+      (latest !== undefined && candidate.contents.generation <= latest.generation)
+    ) {
+      continue
+    }
+
+    latest = candidate.contents
+  }
+
+  return latest
+}
+
+const latestIdentityGeneration = (state: TeamState, type: string, name: string): number => {
+  const fromContents = latestIdentityManifest(state, type, name)?.generation ?? -1
+  const fromRegistration =
+    type === KeyType.USER
+      ? state.members.find(member => member.userId === name)?.keys.generation
+      : type === KeyType.SERVER
+        ? state.servers.find(server => server.serverId === name)?.keys.generation
+        : undefined
+  return Math.max(fromContents, fromRegistration ?? -1)
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const hasExactKeys = (value: Record<string, unknown>, expected: readonly string[]) => {
+  const actual = Object.keys(value)
+  return actual.length === expected.length && expected.every(key => Object.hasOwn(value, key))
+}
+
+const LOCKBOX_FIELDS = ['encryptionKey', 'recipient', 'contents', 'encryptedPayload'] as const
+const ENCRYPTION_KEY_FIELDS = ['type', 'name', 'publicKey'] as const
 
 /**
  * The member a link acts as: the owner of the signing device, or the server itself.

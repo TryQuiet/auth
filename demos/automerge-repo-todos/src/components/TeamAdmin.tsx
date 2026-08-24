@@ -9,7 +9,6 @@ export const TeamAdmin = () => {
   const [state, setState] = useState<State>(SHOW_MEMBERS)
   const [invitationCode, setInvitationCode] = useState<string>()
 
-  const maxUsesSelect = useRef() as MutableRefObject<HTMLSelectElement>
   const expirationSelect = useRef() as MutableRefObject<HTMLSelectElement>
 
   const { user, team } = useAuth()
@@ -32,11 +31,10 @@ export const TeamAdmin = () => {
   }
 
   const inviteMembers = () => {
-    const maxUses = Number(maxUsesSelect.current.value)
     const now = Date.now()
     const expirationMs = Number(expirationSelect.current.value) * 1000
     const expiration = (now + expirationMs) as UnixTimestamp
-    const { seed } = team.inviteMember({ maxUses, expiration })
+    const { seed } = team.inviteMember({ expiration })
     createInvitationCode(seed)
     setState(SHOWING_MEMBER_INVITE)
   }
@@ -108,18 +106,6 @@ export const TeamAdmin = () => {
         <div>
           <h4>Invite members</h4>
           <div className="flex flex-col gap-4 mt-4">
-            <label>
-              How many people can use this invitation code?
-              <select
-                ref={maxUsesSelect}
-                className="mt-1 w-full border border-gray-200 rounded-md p-2 text-sm"
-              >
-                <option value={1}>1 person</option>
-                <option value={5}>5 people</option>
-                <option value={10}>10 people</option>
-                <option value={0}>No limit</option>
-              </select>
-            </label>
             <label>
               When does this invitation code expire?
               <select

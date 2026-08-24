@@ -3,6 +3,7 @@ import { pack } from 'msgpackr'
 import { stretch } from './stretch.js'
 import { type Base58, type Payload, type SignedMessage } from './types.js'
 import { base58, keypairToBase58, keyToBytes } from './util/index.js'
+import { isValidSignatureKeypair } from './keypairValidation.js'
 
 /**
  * @returns A key pair consisting of a public key and a secret key, encoded as base58 strings, to
@@ -58,4 +59,4 @@ const verify = ({ payload, signature, publicKey, context }: SignedMessage): bool
   return sodium.crypto_sign_verify_detached(signatureBytes, payloadBytes, publicKeyBytes)
 }
 
-export const signatures = { keyPair, sign, verify }
+export const signatures = { keyPair, keyPairIsValid: isValidSignatureKeypair, sign, verify }

@@ -5,7 +5,8 @@ import {
   type Keyset,
   type UnixTimestamp,
 } from '@localfirst/crdx'
-import { signatures, randomKey, IDENTITY_CHALLENGE } from '@localfirst/crypto'
+import { signatures, randomKey, IDENTITY_CHALLENGE, type Payload } from '@localfirst/crypto'
+import { CONNECTION_PROTOCOL_VERSION } from 'connection/message.js'
 import { type Challenge } from 'connection/types.js'
 import { VALID, type ValidationResult } from 'util/index.js'
 
@@ -15,8 +16,22 @@ export const challenge = (identityClaim: KeyScope): Challenge => ({
   timestamp: Date.now() as UnixTimestamp,
 })
 
+/**
+ * Canonical v3 payload signed when proving an established peer's identity. Including the protocol
+ * version in the authenticated tuple prevents a relay from bridging a legacy REQUEST_IDENTITY
+ * shape into v3 while forwarding the legacy proof and then synchronizing incompatible replicas.
+ */
+export const identityProofPayload = (challenge: Challenge): Payload =>
+  [
+    CONNECTION_PROTOCOL_VERSION,
+    challenge.type,
+    challenge.name,
+    challenge.nonce,
+    challenge.timestamp,
+  ] as Payload
+
 export const prove = (challenge: Challenge, keys: KeysetWithSecrets): Base58 =>
-  signatures.sign(challenge, keys.signature.secretKey, IDENTITY_CHALLENGE)
+  signatures.sign(identityProofPayload(challenge), keys.signature.secretKey, IDENTITY_CHALLENGE)
 
 export const verify = (
   challenge: Challenge,
@@ -26,7 +41,7 @@ export const verify = (
   const details = { challenge, signature }
 
   const signatureIsValid = signatures.verify({
-    payload: challenge,
+    payload: identityProofPayload(challenge),
     signature,
     publicKey: publicKeys.signature,
     context: IDENTITY_CHALLENGE,

@@ -1,4 +1,5 @@
 import { append, createGraph, decryptGraph } from 'graph/index.js'
+import { type DecryptFn } from 'graph/decrypt.js'
 import {
   DEFAULT_SYNC_LIMITS,
   initSyncState,
@@ -16,7 +17,11 @@ describe('sync message hardening', () => {
     const second = append({ graph: first, action: { type: 'SECOND' }, signer: alice, keys })
     const [firstHash] = first.head
     const [secondHash] = second.head
-    const decrypt = vi.fn(decryptGraph)
+    const decryptMock = vi.fn()
+    const decrypt: DecryptFn = parameters => {
+      decryptMock(parameters)
+      return decryptGraph(parameters)
+    }
     const message: SyncMessage = {
       root: graph.root,
       head: second.head,
@@ -42,7 +47,7 @@ describe('sync message hardening', () => {
     expect(state.failedSyncCount).toBe(1)
     expect(state.our.reportedError?.message).toMatch(/cycle/)
     expect(state.their.head).toEqual([])
-    expect(decrypt).not.toHaveBeenCalled()
+    expect(decryptMock).not.toHaveBeenCalled()
   })
 
   it('rejects advertised parents that do not match authenticated link bodies', () => {
@@ -76,7 +81,11 @@ describe('sync message hardening', () => {
     const graph = createGraph<any>({ signer: alice, name: 'test graph', keys })
     const remoteGraph = append({ graph, action: { type: 'FIRST' }, signer: alice, keys })
     const [remoteHash] = remoteGraph.head
-    const decrypt = vi.fn(decryptGraph)
+    const decryptMock = vi.fn()
+    const decrypt: DecryptFn = parameters => {
+      decryptMock(parameters)
+      return decryptGraph(parameters)
+    }
     const message: SyncMessage = {
       root: graph.root,
       head: remoteGraph.head,
@@ -97,6 +106,6 @@ describe('sync message hardening', () => {
     expect(nextGraph).toBe(graph)
     expect(state.failedSyncCount).toBe(1)
     expect(state.our.reportedError?.message).toMatch(/pending-link limit/)
-    expect(decrypt).not.toHaveBeenCalled()
+    expect(decryptMock).not.toHaveBeenCalled()
   })
 })

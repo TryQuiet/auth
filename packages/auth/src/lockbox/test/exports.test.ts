@@ -4,57 +4,65 @@
  */
 import { createKeyset } from '@localfirst/crdx'
 import { describe, expect, it } from 'vitest'
-import { lockbox, type Lockbox, type KeyManifest } from '../../index.js'
+import { lockbox, type KeyManifest, type Lockbox, type RecipientManifest } from '../../index.js'
 import { KeyType } from 'util/index.js'
 import { setup } from 'util/testing/index.js'
 
 const { bob, eve } = setup('alice', 'bob', { user: 'eve', member: false })
 
 describe('lockbox public API exports', () => {
-    it('lockbox.create and lockbox.open work via public API', () => {
-        const adminKeys = createKeyset({ type: KeyType.ROLE, name: 'ADMIN' })
+  it('lockbox.create and lockbox.open work via public API', () => {
+    const adminKeys = createKeyset({ type: KeyType.ROLE, name: 'ADMIN' })
 
-        // Create a lockbox using the public API
-        const box: Lockbox = lockbox.create(adminKeys, bob.user.keys)
+    // Create a lockbox using the public API
+    const box: Lockbox = lockbox.create(adminKeys, bob.user.keys)
 
-        // Verify the lockbox structure matches expected types
-        expect(box.encryptionKey).toBeDefined()
-        expect(box.recipient).toBeDefined()
-        expect(box.contents).toBeDefined()
-        expect(box.encryptedPayload).toBeDefined()
+    // Verify the lockbox structure matches expected types
+    expect(box.encryptionKey).toBeDefined()
+    expect(box.recipient).toBeDefined()
+    expect(box.contents).toBeDefined()
+    expect(box.encryptedPayload).toBeDefined()
 
-        // Verify recipient and contents are KeyManifest objects
-        const recipient: KeyManifest = box.recipient
-        expect(recipient.publicKey).toBeDefined()
+    // Recipient metadata is distinct from the committed contents manifest.
+    const {
+      recipient,
+      contents,
+    }: {
+      recipient: RecipientManifest
+      contents: KeyManifest
+    } = box
+    expect(recipient.publicKey).toBeDefined()
+    expect(contents.version).toBe(1)
+    expect(contents.commitment).toBe(lockbox.keysetCommitment(adminKeys))
 
-        // Open the lockbox using the public API
-        const keys = lockbox.open(box, bob.user.keys)
-        expect(keys).toEqual(adminKeys)
-    })
+    // Open the lockbox using the public API
+    const keys = lockbox.open(box, bob.user.keys)
+    expect(keys).toEqual(adminKeys)
+  })
 
-    it('lockbox.rotate works via public API', () => {
-        const originalKeys = createKeyset({ type: KeyType.ROLE, name: 'MANAGERS' })
-        const newKeys = createKeyset({ type: KeyType.ROLE, name: 'MANAGERS' })
+  it('lockbox.rotate works via public API', () => {
+    const originalKeys = createKeyset({ type: KeyType.ROLE, name: 'MANAGERS' })
+    const newKeys = createKeyset({ type: KeyType.ROLE, name: 'MANAGERS' })
 
-        // Create a lockbox
-        const box = lockbox.create(originalKeys, bob.user.keys)
+    // Create a lockbox
+    const box = lockbox.create(originalKeys, bob.user.keys)
 
-        // Rotate the lockbox with new keys
-        const rotatedBox: Lockbox = lockbox.rotate({ oldLockbox: box, newContents: newKeys })
+    // Rotate the lockbox with new keys
+    const rotatedBox: Lockbox = lockbox.rotate({ oldLockbox: box, newContents: newKeys })
 
-        // The rotated lockbox should contain the new keys
-        const retrievedKeys = lockbox.open(rotatedBox, bob.user.keys)
-        expect(retrievedKeys).toEqual(newKeys)
-        expect(retrievedKeys).not.toEqual(originalKeys)
-    })
+    // The rotated lockbox should contain the new keys
+    const retrievedKeys = lockbox.open(rotatedBox, bob.user.keys)
+    expect(retrievedKeys).toEqual(newKeys)
+    expect(retrievedKeys).not.toEqual(originalKeys)
+  })
 
-    it("lockbox.open throws when wrong keys are used", () => {
-        const adminKeys = createKeyset({ type: KeyType.ROLE, name: 'ADMIN' })
+  it('lockbox.open throws when wrong keys are used', () => {
+    const adminKeys = createKeyset({ type: KeyType.ROLE, name: 'ADMIN' })
 
-        // Create a lockbox for Bob
-        const box = lockbox.create(adminKeys, bob.user.keys)
+    // Create a lockbox for Bob
+    const box = lockbox.create(adminKeys, bob.user.keys)
 
-        // Eve tries to open it
-        expect(() => lockbox.open(box, eve.user.keys)).toThrow()
-    })
+    // Eve tries to open it
+    expect(() => lockbox.open(box, eve.user.keys)).toThrow()
+  })
 })

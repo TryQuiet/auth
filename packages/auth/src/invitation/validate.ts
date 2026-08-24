@@ -32,16 +32,16 @@ export const invitationCanBeUsed = (invitation: InvitationState, timeOfUse: numb
  * Validates a proof of invitation against the invitation record on the team graph and the exact
  * identity being claimed.
  *
- * When `expectedAcceptorNonce` is supplied, the proof must have been created for that connection
+ * When `expectedIdentityNonce` is supplied, the proof must have been created for that connection
  * handshake.
  */
 export const validate = (
   proof: ProofOfInvitation,
   invitation: Invitation,
   claim: InvitationClaim,
-  expectedAcceptorNonce?: Base58
+  expectedIdentityNonce?: Base58
 ): ValidationResult => {
-  if (!hasExactKeys(proof, ['id', 'acceptorNonce', 'inviteeNonce', 'signature'])) {
+  if (!hasExactKeys(proof, ['id', 'identityNonce', 'inviteeNonce', 'signature'])) {
     return fail('Invitation proof has extra or missing fields')
   }
 
@@ -50,7 +50,7 @@ export const validate = (
     return fail("IDs don't match", { proof, invitation })
   }
 
-  if (expectedAcceptorNonce && proof.acceptorNonce !== expectedAcceptorNonce) {
+  if (expectedIdentityNonce && proof.identityNonce !== expectedIdentityNonce) {
     return fail('Invitation proof was created for a different handshake', { proof, invitation })
   }
 

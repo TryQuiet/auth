@@ -13,8 +13,9 @@ export const collectLockboxes =
   (link: TeamLink, logger: Logger): Transform =>
   state => {
     const newLockboxes = link.body.payload.lockboxes
-    if (newLockboxes === undefined || newLockboxes.length === 0) return state
+    if (newLockboxes === undefined) return state
 
     const authorized = authorizedLockboxes(state, link, newLockboxes, logger)
+    if (authorized.length === 0) return state
     return { ...state, lockboxes: state.lockboxes.concat(authorized) }
   }

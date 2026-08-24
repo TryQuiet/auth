@@ -82,7 +82,7 @@ const forgeViaHarvestedSignature = ({
 
   // HARVEST: the attacker sends `hash` as a bare-string CHALLENGE_IDENTITY over the wire. Model the
   // wire faithfully: the challenge survives the msgpackr codec unchanged, then the victim signs it.
-  const challengeOffWire = unpack(pack(hash)) as typeof hash
+  const challengeOffWire = unpack(pack(hash)) as unknown as Parameters<typeof prove>[0]
   const signature = prove(challengeOffWire, victim.device.keys)
 
   const encryptedLink: EncryptedLink = {

@@ -1,5 +1,5 @@
 import { merge } from '@localfirst/crdx'
-import { randomKey } from '@localfirst/crypto'
+import { signatures } from '@localfirst/crypto'
 import { assert, eventPromise } from '@localfirst/shared'
 import type { ConnectionMessage } from 'connection/message.js'
 import { createInvitationAcceptance } from 'connection/invitationAcceptance.js'
@@ -86,10 +86,10 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
     expect(device.outcome.kind).toBe('joined')
   })
 
-  // The connection must send the welcome exactly once, and only in the encrypted v2 envelope.
+  // The connection must send the welcome exactly once, and only in the encrypted v3 envelope.
   // Counting on the wire guards against a duplicate send or a residual plaintext/legacy-format
   // path that an attacker could trigger as a downgrade.
-  it('sends exactly one welcome per handshake, always in the encrypted v2 envelope', async () => {
+  it('sends exactly one welcome per handshake, always in the encrypted v3 envelope', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
     const { seed, teamId } = alice.team.inviteMember()
     const result = await connectInvitee({
@@ -98,7 +98,7 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
     })
 
     expect(result.channel.acceptanceCount).toBe(1)
-    expect(result.channel.acceptance).toHaveProperty('version', 2)
+    expect(result.channel.acceptance).toHaveProperty('version', 3)
     expect(result.channel.acceptance).toHaveProperty('encryptedAcceptance', expect.any(Uint8Array))
   })
 
@@ -286,10 +286,10 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
         const claim = memberClaim(bob.user, bob.device)
         const changedClaim = {
           ...claim,
-          memberKeys: { ...claim.memberKeys, signature: randomKey() },
+          memberKeys: { ...claim.memberKeys, signature: signatures.keyPair().publicKey },
         }
-        const { acceptorNonce, inviteeNonce } = inviteeClaim.proofOfInvitation
-        const proof = generateProof({ seed, claim: changedClaim, acceptorNonce, inviteeNonce })
+        const { identityNonce, inviteeNonce } = inviteeClaim.proofOfInvitation
+        const proof = generateProof({ seed, claim: changedClaim, identityNonce, inviteeNonce })
         const possessionProof = createPossessionProof({
           invitationId: proof.id,
           claim: changedClaim,

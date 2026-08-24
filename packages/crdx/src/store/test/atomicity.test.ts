@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { append, type Graph } from 'graph/index.js'
 import { createStore } from 'store/index.js'
 import { type Reducer } from 'store/types.js'
+import { type Hash } from 'util/index.js'
 import { createTestSigner, TEST_GRAPH_KEYS as keys } from 'util/testing/setup.js'
 import {
   counterReducer,
@@ -20,7 +21,7 @@ const setupCounter = (reducer: Reducer<CounterState, CounterAction> = counterRed
 }
 
 /** Corrupts one link's ciphertext, so the link no longer hashes to the value the graph records. */
-const tamper = (graph: Graph<CounterAction, Record<string, unknown>>, hash: string) => {
+const tamper = (graph: Graph<CounterAction, Record<string, unknown>>, hash: Hash) => {
   const original = graph.encryptedLinks[hash]
   const encryptedBody = Uint8Array.from(original.encryptedBody)
   encryptedBody[encryptedBody.length - 1] ^= 0xff

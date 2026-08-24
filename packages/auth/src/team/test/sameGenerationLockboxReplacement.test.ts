@@ -103,14 +103,19 @@ describe('same-generation lockbox replacement', () => {
     const { alice, legitimateKeys, evilKeys, recipient, attackWith } = setupRemovedRoleMember()
 
     // Authorization reads the public manifest; only recipients can decrypt the payload. So this
-    // lockbox claims the legitimate public key in its manifest while sealing Bob's keyset inside.
-    // It passes the manifest-level generation check, but `lockbox.open` binds ciphertext to
-    // manifest, so the conflicting key can neither be adopted nor poison key lookup.
+    // lockbox claims the legitimate encryption public key while sealing Bob's keyset inside. The
+    // complete-keyset commitment still differs, so it is dropped before `lockbox.open` (which also
+    // recomputes and verifies the commitment as defense in depth).
     const disguised = lockbox.create(evilKeys, recipient)
     disguised.contents.publicKey = legitimateKeys.encryption.publicKey
 
     const attack = attackWith(disguised)
     expect(() => alice.team.merge(attack)).not.toThrow()
+    expect(
+      alice.team.state.lockboxes.some(
+        ({ contents }) => contents.commitment === disguised.contents.commitment
+      )
+    ).toBe(false)
     expect(alice.team.roleKeys(CHANNEL).encryption.publicKey).toBe(
       legitimateKeys.encryption.publicKey
     )

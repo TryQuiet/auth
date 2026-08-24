@@ -1,5 +1,5 @@
 import type { Keyring } from '@localfirst/crdx'
-import { asymmetric, type Base58 } from '@localfirst/crypto'
+import { asymmetric, base58, type Base58 } from '@localfirst/crypto'
 import { assert } from '@localfirst/shared'
 import type { DeviceWithSecrets, FirstUseDeviceWithSecrets } from 'device/index.js'
 import {
@@ -12,7 +12,11 @@ import {
 import type { ServerWithSecrets } from 'server/index.js'
 import * as select from 'team/selectors/index.js'
 import type { TeamState } from 'team/types.js'
-import type { AcceptInvitationPayload, InvitationAcceptanceEnvelope } from './message.js'
+import {
+  CONNECTION_PROTOCOL_VERSION,
+  type AcceptInvitationPayload,
+  type InvitationAcceptanceEnvelope,
+} from './message.js'
 
 /**
  * The invitation acceptance is the ACCEPT_INVITATION message an acceptor sends an invitee after
@@ -49,7 +53,7 @@ import type { AcceptInvitationPayload, InvitationAcceptanceEnvelope } from './me
  * envelopes that opened cleanly here.
  */
 export const INVITATION_ACCEPTANCE_DOMAIN = 'localfirst-auth/invitation-acceptance' as const
-export const INVITATION_ACCEPTANCE_VERSION = 2 as const
+export const INVITATION_ACCEPTANCE_VERSION = CONNECTION_PROTOCOL_VERSION
 
 type AcceptanceSender = DeviceWithSecrets | FirstUseDeviceWithSecrets | ServerWithSecrets
 
@@ -84,7 +88,7 @@ export const createInvitationAcceptance = ({
     invitationId: proof.id,
     invitationKind: claim.invitationKind,
     claimDigest: invitationClaimDigest(proof, claim),
-    acceptorNonce: proof.acceptorNonce,
+    identityNonce: proof.identityNonce,
     inviteeNonce: proof.inviteeNonce,
     acceptorDeviceId: senderDeviceId,
     serializedGraph,
@@ -137,8 +141,8 @@ export const openInvitationAcceptance = ({
     'Invitation acceptance claim digest does not match'
   )
   assert(
-    decrypted.acceptorNonce === proof.acceptorNonce,
-    'Invitation acceptance acceptor nonce does not match'
+    decrypted.identityNonce === proof.identityNonce,
+    'Invitation acceptance identity nonce does not match'
   )
   assert(
     decrypted.inviteeNonce === proof.inviteeNonce,
@@ -201,9 +205,9 @@ const ACCEPT_INVITATION_PAYLOAD_KEYS = [
 
 const INVITATION_ACCEPTANCE_KEYS = [
   'acceptorDeviceId',
-  'acceptorNonce',
   'claimDigest',
   'domain',
+  'identityNonce',
   'invitationId',
   'invitationKind',
   'inviteeNonce',
@@ -212,46 +216,101 @@ const INVITATION_ACCEPTANCE_KEYS = [
   'version',
 ] as const
 
+/** True only for the exact outer payload understood by this protocol version. */
+export const isAcceptInvitationPayload = (value: unknown): value is AcceptInvitationPayload => {
+  try {
+    assertAcceptInvitationPayload(value)
+    return true
+  } catch {
+    return false
+  }
+}
+
 function assertAcceptInvitationPayload(value: unknown): asserts value is AcceptInvitationPayload {
   assertExactKeys(value, ACCEPT_INVITATION_PAYLOAD_KEYS)
-  assert(value.version === INVITATION_ACCEPTANCE_VERSION, 'Unsupported invitation acceptance')
-  assert(typeof value.senderDeviceId === 'string', 'Invalid invitation acceptance sender ID')
-  assert(typeof value.senderPublicKey === 'string', 'Invalid invitation acceptance sender key')
-  assert(value.encryptedAcceptance instanceof Uint8Array, 'Invalid encrypted invitation acceptance')
+  protocolAssert(
+    value.version === INVITATION_ACCEPTANCE_VERSION,
+    'Unsupported invitation acceptance'
+  )
+  protocolAssert(
+    typeof value.senderDeviceId === 'string',
+    'Invalid invitation acceptance sender ID'
+  )
+  protocolAssert(
+    typeof value.senderPublicKey === 'string' && base58.detect(value.senderPublicKey),
+    'Invalid invitation acceptance sender key'
+  )
+  protocolAssert(
+    value.encryptedAcceptance instanceof Uint8Array,
+    'Invalid encrypted invitation acceptance'
+  )
 }
 
 function assertInvitationAcceptance(value: unknown): asserts value is InvitationAcceptanceEnvelope {
   assertExactKeys(value, INVITATION_ACCEPTANCE_KEYS)
-  assert(value.domain === INVITATION_ACCEPTANCE_DOMAIN, 'Invalid invitation acceptance domain')
-  assert(value.version === INVITATION_ACCEPTANCE_VERSION, 'Unsupported invitation acceptance')
-  assert(typeof value.invitationId === 'string', 'Invalid invitation acceptance ID')
-  assert(
+  protocolAssert(
+    value.domain === INVITATION_ACCEPTANCE_DOMAIN,
+    'Invalid invitation acceptance domain'
+  )
+  protocolAssert(
+    value.version === INVITATION_ACCEPTANCE_VERSION,
+    'Unsupported invitation acceptance'
+  )
+  protocolAssert(
+    typeof value.invitationId === 'string' && base58.detect(value.invitationId),
+    'Invalid invitation acceptance ID'
+  )
+  protocolAssert(
     value.invitationKind === 'member' || value.invitationKind === 'device',
     'Invalid invitation acceptance kind'
   )
-  assert(typeof value.claimDigest === 'string', 'Invalid invitation acceptance claim digest')
-  assert(typeof value.acceptorNonce === 'string', 'Invalid invitation acceptance acceptor nonce')
-  assert(typeof value.inviteeNonce === 'string', 'Invalid invitation acceptance invitee nonce')
-  assert(
+  protocolAssert(
+    typeof value.claimDigest === 'string' && base58.detect(value.claimDigest),
+    'Invalid invitation acceptance claim digest'
+  )
+  protocolAssert(
+    typeof value.identityNonce === 'string' && base58.detect(value.identityNonce),
+    'Invalid invitation acceptance identity nonce'
+  )
+  protocolAssert(
+    typeof value.inviteeNonce === 'string' && base58.detect(value.inviteeNonce),
+    'Invalid invitation acceptance invitee nonce'
+  )
+  protocolAssert(
     typeof value.acceptorDeviceId === 'string',
     'Invalid invitation acceptance acceptor device ID'
   )
-  assert(value.serializedGraph instanceof Uint8Array, 'Invalid invitation acceptance graph')
-  assert(isRecord(value.teamKeyring), 'Invalid invitation acceptance keyring')
+  protocolAssert(value.serializedGraph instanceof Uint8Array, 'Invalid invitation acceptance graph')
+  protocolAssert(isRecord(value.teamKeyring), 'Invalid invitation acceptance keyring')
 }
 
 function assertExactKeys<Keys extends readonly string[]>(
   value: unknown,
   expectedKeys: Keys
 ): asserts value is Record<Keys[number], unknown> {
-  assert(isRecord(value), 'Invitation acceptance must be an object')
+  protocolAssert(isRecord(value), 'Invitation acceptance must be an object')
   const actualKeys = Object.keys(value).sort((a, b) => a.localeCompare(b))
   const expected = [...expectedKeys].sort((a, b) => a.localeCompare(b))
-  assert(
+  protocolAssert(
     actualKeys.length === expected.length &&
       actualKeys.every((key, index) => key === expected[index]),
     'Invitation acceptance has unexpected fields'
   )
+}
+
+/** Schema/version errors are distinct from authentication or transcript failures. */
+export class InvitationAcceptanceProtocolError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'InvitationAcceptanceProtocolError'
+  }
+}
+
+const protocolAssert: (condition: unknown, message: string) => asserts condition = (
+  condition,
+  message
+) => {
+  if (!condition) throw new InvitationAcceptanceProtocolError(message)
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

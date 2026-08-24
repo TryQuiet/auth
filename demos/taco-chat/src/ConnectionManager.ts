@@ -96,11 +96,11 @@ export class ConnectionManager extends EventEmitter<ConnectionManagerEvents> {
         storedMessages,
       })
       connection
-        .on('joined', ({ team, user }) => {
+        .on('joined', ({ team, user, teamKeyring }) => {
           // no longer an invitee - update our context for future connections
           const { device } = this.context as Auth.InviteeMemberContext
           this.context = { device, user, team } as Auth.MemberContext
-          this.emit('joined', { team, user })
+          this.emit('joined', { team, user, teamKeyring })
         })
         .on('connected', () => {
           this.emit('connected', connection)
@@ -162,7 +162,7 @@ type ConnectionManagerEvents = {
   'peer-connect': (payload: { peerId: string; socket: WebSocket }) => void
   connected: (payload: DemoConnection) => void
   disconnected: (peerId: string, event?: any) => void
-  joined: (payload: { team: string; user: Auth.User }) => void
+  joined: (payload: { team: Auth.Team; user: Auth.UserWithSecrets; teamKeyring: Auth.Keyring }) => void
   change: (payload: { peerId: string; state: string }) => void
   localError: (payload: Auth.ConnectionErrorPayload) => void
   remoteError: (payload: Auth.ConnectionErrorPayload) => void

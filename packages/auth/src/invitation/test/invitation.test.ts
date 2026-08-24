@@ -14,7 +14,9 @@ import {
   memberInvitationProof,
 } from 'util/testing/invitationProof.js'
 
-const createUser = (userName: string): Pick<UserWithSecrets, 'userName' | 'keys'> & { userId: string } => {
+const createUser = (
+  userName: string
+): Pick<UserWithSecrets, 'userName' | 'keys'> & { userId: string } => {
   const userId = randomKey()
   return { userId, userName, keys: createKeyset({ type: KeyType.USER, name: userId }) }
 }
@@ -46,7 +48,7 @@ describe('invitations', () => {
     const proof = memberInvitationProof(seed, bob, bobsLaptop, nonces)
 
     // 👳🏽‍♂️ Charlie checks the proof against the invitation Alice posted.
-    expect(validate(proof, invitation, claim, nonces.acceptorNonce)).toBeValid()
+    expect(validate(proof, invitation, claim, nonces.identityNonce)).toBeValid()
   })
 
   test('validate device invitation', () => {
@@ -97,12 +99,12 @@ describe('invitations', () => {
     const proof = memberInvitationProof(seed, bob, bobsLaptop)
 
     // The proof is only good for the connection whose nonce it signed
-    expect(validate(proof, invitation, claim, proof.acceptorNonce)).toBeValid()
+    expect(validate(proof, invitation, claim, proof.identityNonce)).toBeValid()
     expect(validate(proof, invitation, claim, randomKey())).not.toBeValid()
 
     // Replaying it with a rewritten nonce breaks the signature
-    const replayed = { ...proof, acceptorNonce: randomKey() }
-    expect(validate(replayed, invitation, claim, replayed.acceptorNonce)).not.toBeValid()
+    const replayed = { ...proof, identityNonce: randomKey() }
+    expect(validate(replayed, invitation, claim, replayed.identityNonce)).not.toBeValid()
   })
 
   test('rejects a proof with extra or missing fields', () => {

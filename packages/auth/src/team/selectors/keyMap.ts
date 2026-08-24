@@ -29,6 +29,12 @@ const organizeKeysIntoMap = (result: KeyMap, keys: KeysetWithSecrets) => {
   const { type, name, generation } = keys
   const keysetsForScope = result[type] ?? {}
   const keysetHistory = keysetsForScope[name] ?? []
+
+  // An established generation is immutable. `authorizedLockboxes` ensures duplicates carry the
+  // same committed keyset, but first-write-wins here keeps selection stable if a caller supplies a
+  // state that bypassed collection or contains hostile legacy lockboxes.
+  if (keysetHistory[generation] !== undefined) return result
+
   keysetHistory[generation] = keys
   return {
     ...result,

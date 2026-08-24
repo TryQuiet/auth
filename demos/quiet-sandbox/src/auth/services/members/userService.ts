@@ -8,7 +8,6 @@ import { ProspectiveUser, MemberSearchOptions, DEFAULT_SEARCH_OPTIONS } from './
 import { DeviceWithSecrets, LocalUserContext, Member, User, UserWithSecrets } from '@localfirst/auth'
 import { SigChain } from '../../chain.js'
 import { DeviceService } from './deviceService.js'
-import { InviteService } from '../invites/inviteService.js'
 import { KeyMap } from '../../../../../../packages/auth/dist/team/selectors/keyMap.js'
 
 class UserService extends BaseChainService {
@@ -35,12 +34,11 @@ class UserService extends BaseChainService {
 
   public static createFromInviteSeed(name: string, seed: string): ProspectiveUser {
     const context = this.create(name)
-    const inviteProof = InviteService.generateProof(seed)
     const publicKeys = UserService.redactUser(context.user).keys
 
     return {
       context,
-      inviteProof,
+      invitationSeed: seed,
       publicKeys
     }
   }
