@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest'
 const CHANNEL = 'security-poc-channel'
 
 describe('security candidate PoCs: team and lockbox state', () => {
-  it('lets a phantom role holder rotate a role after copying its public commitment', () => {
+  it('does not let a phantom role holder rotate a role after copying its public commitment', () => {
     const { alice, eve } = setup('alice', { user: 'eve', admin: false })
     alice.team.addRole(CHANNEL)
 
@@ -81,11 +81,10 @@ describe('security candidate PoCs: team and lockbox state', () => {
     })
     alice.team.merge(rotation)
 
-    expect(alice.team.roleKeys(CHANNEL).secretKey).toBe(attackerRoleKeys.secretKey)
-    const message = alice.team.encrypt('phantom holder controls future role traffic', CHANNEL)
-    expect(symmetric.decryptBytes(message.contents, attackerRoleKeys.secretKey)).toBe(
-      'phantom holder controls future role traffic'
-    )
+    expect(alice.team.roleKeys(CHANNEL).generation).toBe(0)
+    expect(alice.team.roleKeys(CHANNEL).secretKey).not.toBe(attackerRoleKeys.secretKey)
+    const message = alice.team.encrypt('role traffic remains on the admin-established key', CHANNEL)
+    expect(() => symmetric.decryptBytes(message.contents, attackerRoleKeys.secretKey)).toThrow()
   })
 
   it('leaks the replacement role key to the principal removed by the rotation', () => {

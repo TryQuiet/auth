@@ -83,7 +83,7 @@ describe('honest lockbox private-channel takeover (#61)', () => {
     expect(() => eve.team.decrypt(newEnvelope)).toThrow()
   })
 
-  it('drops a channel member re-keying the channel to lock another member out', () => {
+  it('drops a complete channel re-key by a non-admin channel member', () => {
     const { alice, bob, charlie } = setup(
       'alice',
       { user: 'bob', admin: false },
@@ -99,15 +99,21 @@ describe('honest lockbox private-channel takeover (#61)', () => {
     bob.team = teams.load(graph0, bob.localContext, createKeyring(teamKeys))
     charlie.team = teams.load(graph0, charlie.localContext, createKeyring(teamKeys))
 
-    // 👨🏻‍🦲 Bob *is* in the channel, so he holds its key and clears check (a). What he may not do is
-    // re-key it to a holder set that quietly omits 👳🏽‍♂️ Charlie — that would evict Charlie with no
-    // REMOVE_MEMBER_ROLE link and no admin rights.
+    // 👨🏻‍🦲 Bob is a legitimate channel member and supplies the new generation to every current
+    // recipient. The batch is otherwise a valid rotation, but holding the channel key does not give
+    // a non-admin authority to replace it.
     const evilKeys = createKeyset({ type: KeyType.ROLE, name: CHANNEL }, 'bob-controls-this-key')
     evilKeys.generation = 1
-    const attack = rideLockboxesOnHonestLink(bob, [
-      lockbox.create(evilKeys, bob.team.members(bob.userId).keys),
-      lockbox.create(evilKeys, bob.team.members(alice.userId).keys),
-    ])
+    const currentRecipients = bob.team.state.lockboxes
+      .filter(
+        ({ contents }) =>
+          contents.type === KeyType.ROLE && contents.name === CHANNEL && contents.generation === 0
+      )
+      .map(({ recipient }) => recipient)
+    const attack = rideLockboxesOnHonestLink(
+      bob,
+      currentRecipients.map(recipient => lockbox.create(evilKeys, recipient))
+    )
 
     expect(() => alice.team.merge(attack)).not.toThrow()
     expect(() => charlie.team.merge(attack)).not.toThrow()
@@ -118,7 +124,7 @@ describe('honest lockbox private-channel takeover (#61)', () => {
     expect(charlie.team.decrypt(newEnvelope)).toEqual(newMessage)
   })
 
-  it('drops a member re-keying the *team* key to lock another member out', () => {
+  it('drops a complete team re-key by a non-admin member', () => {
     const { alice, bob, charlie } = setup(
       'alice',
       { user: 'bob', admin: false },
@@ -129,14 +135,17 @@ describe('honest lockbox private-channel takeover (#61)', () => {
     const graph0 = serializeTeamGraph(alice.team.graph)
     charlie.team = teams.load(graph0, charlie.localContext, createKeyring(teamKeys))
 
-    // Every member holds the team key, so scope authority alone can't stop this one: what stops it
-    // is that a re-key has to reach *every* current holder.
+    // Every member holds the team key. Bob reaches every current recipient with one committed
+    // generation, so the only reason to reject this otherwise valid batch is that he is not admin.
     const evilKeys = createKeyset({ type: KeyType.TEAM, name: KeyType.TEAM }, 'bob-controls-this')
     evilKeys.generation = 1
-    const attack = rideLockboxesOnHonestLink(bob, [
-      lockbox.create(evilKeys, bob.team.members(bob.userId).keys),
-      lockbox.create(evilKeys, bob.team.members(alice.userId).keys),
-    ])
+    const currentRecipients = bob.team.state.lockboxes
+      .filter(({ contents }) => contents.type === KeyType.TEAM && contents.generation === 0)
+      .map(({ recipient }) => recipient)
+    const attack = rideLockboxesOnHonestLink(
+      bob,
+      currentRecipients.map(recipient => lockbox.create(evilKeys, recipient))
+    )
 
     expect(() => alice.team.merge(attack)).not.toThrow()
     expect(alice.team.teamKeys().generation).toBe(0)

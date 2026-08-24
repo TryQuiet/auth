@@ -28,9 +28,8 @@ import { SignerKind, type TeamLink, type TeamState } from './types.js'
  * A link that introduces a *higher* generation than the team has for a TEAM or ROLE scope is a
  * re-key, and must satisfy all of:
  *
- *   (a) the author holds that scope's key — an admin, or a member/server the current generation is
- *       already boxed to. Whoever mints a keyset knows it, so an outsider must not get to introduce
- *       one.
+ *   (a) the author is an admin. Holding a shared key permits reading and exact redistribution, but
+ *       it does not grant authority to replace that key with a new generation.
  *   (b) it increments the current generation by exactly one — no gaps, no leapfrogging to a number
  *       that would outrank every honest rotation forever.
  *   (c) it reaches every one of the scope's current holders, all under one key: no silent
@@ -203,15 +202,14 @@ export const authorizedLockboxes = (
     // team-key generation to a joiner — is governed by the membership validators, not here.
     if (rekey.length === 0) continue
 
-    // (a) Only a current holder of the scope may introduce a new generation of it. `author` is the
-    // signer resolved from the link's signature, not anything the body claims about itself.
+    // (a) Only an admin may introduce a new generation of a shared key. `author` is the signer
+    // resolved from the link's signature, not anything the body claims about itself. Merely holding
+    // a TEAM or ROLE key grants read access and redistribution of that established generation; it
+    // must not also grant authority to replace the key.
     const author = actingMemberId(state, link)
-    const authorHoldsScope =
-      author !== undefined &&
-      (select.memberIsAdmin(state, author) ||
-        prior.some(({ recipient }) => recipientIsCurrentIdentity(state, author, recipient)))
-    if (!authorHoldsScope) {
-      drop(rekey, scope, `'${author ?? 'unknown signer'}' does not hold this key`)
+    const authorIsAdmin = author !== undefined && select.memberIsAdmin(state, author)
+    if (!authorIsAdmin) {
+      drop(rekey, scope, `'${author ?? 'unknown signer'}' is not an admin`)
       continue
     }
 
@@ -234,9 +232,9 @@ export const authorizedLockboxes = (
 
     // No silent exclusions. Every current holder has to be re-boxed; leaving one out is how a
     // re-key becomes an eviction that no REMOVE_MEMBER / REMOVE_MEMBER_ROLE link ever recorded.
-    // This is what stops the attack on the *team* key, which (a) can't: every member holds that
-    // one, so scope authority alone lets any of them rotate it. (Honest removals pass: they re-box
-    // to the removed member too, and the removal's own reducer is what takes their access away.)
+    // This also prevents an admin from using a re-key as an undeclared eviction. (Honest removals
+    // pass: they re-box to the removed member too, and the removal's own reducer is what takes their
+    // access away.)
     //
     // Only exclusions are checked, not set equality. An *extra* recipient is not a boundary anyone
     // is defending: any holder can hand the current generation to an arbitrary keyset with
@@ -382,31 +380,6 @@ const keysetMatchesManifest = (keys: Keyset, manifest: Lockbox['contents']) =>
   keys.generation === manifest.generation &&
   keys.encryption === manifest.publicKey
 
-/** A claimed holder must use the latest authorized recipient generation/key for that identity. */
-const recipientIsCurrentIdentity = (
-  state: TeamState,
-  identityId: string,
-  recipient: RecipientManifest
-): boolean => {
-  if (recipient.name !== identityId) return false
-  const registered =
-    recipient.type === KeyType.USER
-      ? state.members.find(member => member.userId === identityId)?.keys
-      : recipient.type === KeyType.SERVER
-        ? state.servers.find(server => server.serverId === identityId)?.keys
-        : undefined
-
-  const latestContents = latestIdentityManifest(state, recipient.type, identityId)
-  if (latestContents !== undefined && latestContents.generation >= (registered?.generation ?? -1)) {
-    return (
-      recipient.generation === latestContents.generation &&
-      recipient.publicKey === latestContents.publicKey
-    )
-  }
-
-  return registered !== undefined && keysetMatchesRecipient(registered, recipient)
-}
-
 /** Honest key changes re-address every affected lockbox to the newly declared recipient keys. */
 const expectedRecipientForLink = (
   state: TeamState,
@@ -454,12 +427,6 @@ const expectedRecipientForLink = (
 
   return candidates.size === 1 ? [...candidates.values()][0] : recipient
 }
-
-const keysetMatchesRecipient = (keys: Keyset, recipient: RecipientManifest) =>
-  keys.type === recipient.type &&
-  keys.name === recipient.name &&
-  keys.generation === recipient.generation &&
-  keys.encryption === recipient.publicKey
 
 const isAuthorizedIdentityRotation = (
   state: TeamState,

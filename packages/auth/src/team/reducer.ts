@@ -21,6 +21,7 @@ import {
   removeMemberRole,
   removeRole,
   removeServer,
+  requestAdminKeyRotation,
   revokeInvitation,
   rotateKeys,
   setTeamName,
@@ -74,6 +75,7 @@ export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (state, link
   const applyTransforms = composeTransforms([
     setHead(link),
     collectLockboxes(link, logger), // Any payload can include lockboxes
+    requestAdminKeyRotation(link), // Non-admin identity/device changes queue shared re-keying
     ...getTransforms(link), // Get the specific transforms indicated by this action
   ])
 

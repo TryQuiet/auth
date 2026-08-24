@@ -106,8 +106,8 @@ describe('Team', () => {
       expect(getDevice).toThrow()
     })
 
-    it('rotates keys after removing a device', () => {
-      const { bob } = setup()
+    it('has an admin rotate shared keys after a non-admin removes a device', () => {
+      const { alice, bob } = setup()
 
       // Keys have never been rotated
       expect(bob.team.teamKeys().generation).toBe(0)
@@ -131,9 +131,19 @@ describe('Team', () => {
       // Remove bob's phone
       bob.team.removeDevice(bob.phone!.deviceId)
 
-      // Team keys have now been rotated once
+      // Bob can rotate his own USER keys, but his shared-key batch is dropped and queued for an
+      // admin rather than granting every key holder rotation authority.
+      expect(bob.team.teamKeys().generation).toBe(0)
+      expect(bob.team.state.pendingKeyRotations).toContain(bob.userId)
+
+      // When an admin receives the removal, it publishes the shared-key rotation. Bob then learns
+      // that authorized rotation normally.
+      alice.team.merge(bob.team.graph)
+      bob.team.merge(alice.team.graph)
+
       expect(bob.team.teamKeys().generation).toBe(1)
       expect(bob.team.teamKeys().secretKey).not.toBe(secretKey)
+      expect(bob.team.state.pendingKeyRotations).not.toContain(bob.userId)
     })
   })
 })
