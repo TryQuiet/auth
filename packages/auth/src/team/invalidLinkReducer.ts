@@ -43,7 +43,7 @@ export const invalidLinkReducer = (state: TeamState, link: TeamLink): TeamState 
       return {
         ...state,
         // Note that we don't need to alter the list of members, because this member is never added
-        removedMembers: [...state.removedMembers, member],
+        removedMembers: tombstoneMember(state, member),
         // The device that came in with them is tombstoned too — it was never registered, but its id
         // must not become available to anyone else.
         removedDevices: tombstone(state, { ...claim.device, admittedAt: link.body.timestamp }),
@@ -73,6 +73,23 @@ export const invalidLinkReducer = (state: TeamState, link: TeamLink): TeamState 
       }
     }
 
+    case 'INVITE_MEMBER':
+    case 'INVITE_DEVICE': {
+      // Keep a revoked record for an invalid invitation. Besides making its id permanently
+      // unusable, this preserves a device invitation's owner for a dependent invalid admission,
+      // whose cleanup must tombstone the exposed device and rotate the owner's keys.
+      const { invitation } = payload
+      if (state.invitations[invitation.id] !== undefined) return state
+      const kind = type === 'INVITE_MEMBER' ? 'member' : 'device'
+      return {
+        ...state,
+        invitations: {
+          ...state.invitations,
+          [invitation.id]: { ...invitation, kind, revoked: true },
+        },
+      }
+    }
+
     default: {
       return state
     }
@@ -86,6 +103,11 @@ const isValidlyRegisteredMember = (state: TeamState, userId: string) =>
 /** True if this device is a live (non-tombstoned) device of some current member. */
 const isValidlyRegisteredDevice = (state: TeamState, deviceId: string) =>
   state.members.some(member => (member.devices ?? []).some(device => device.deviceId === deviceId))
+
+const tombstoneMember = (state: TeamState, member: Member) =>
+  state.removedMembers.some(({ userId }) => userId === member.userId)
+    ? state.removedMembers
+    : [...state.removedMembers, member]
 
 const tombstone = (state: TeamState, device: DeviceRecord) =>
   state.removedDevices.some(d => d.deviceId === device.deviceId)

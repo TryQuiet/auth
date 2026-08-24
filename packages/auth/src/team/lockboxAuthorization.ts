@@ -1,5 +1,7 @@
+import { ROOT } from '@localfirst/crdx'
 import { type Logger } from '@localfirst/shared'
 import { type Lockbox } from 'lockbox/index.js'
+import { ADMIN } from 'role/index.js'
 import { KeyType } from 'util/index.js'
 import * as select from './selectors/index.js'
 import { SignerKind, type TeamLink, type TeamState } from './types.js'
@@ -76,10 +78,26 @@ export const authorizedLockboxes = (
   for (const scope of scopes.values()) {
     const prior = select.lockboxesInScope(state, scope)
 
-    // No prior lockboxes means this scope is being *created*, not re-keyed. Creating one is
-    // authorized by the action (ADD_ROLE is admin-only; ROOT establishes the team's own keys), and
-    // there is no holder set to preserve yet.
-    if (prior.length === 0) continue
+    // No prior lockboxes can mean the scope is being created, but a ROLE scope only exists once its
+    // ADD_ROLE action creates it. Otherwise anyone could pre-seed a future role with a high
+    // generation and have that key outrank the legitimate generation-zero key when the role is
+    // eventually added.
+    if (prior.length === 0) {
+      const roleAlreadyExists =
+        scope.type === KeyType.ROLE && state.roles.some(role => role.roleName === scope.name)
+      const createsThisRole =
+        (link.body.type === 'ADD_ROLE' && link.body.payload.roleName === scope.name) ||
+        (link.body.type === ROOT && scope.name === ADMIN)
+      if (scope.type === KeyType.ROLE && !roleAlreadyExists && !createsThisRole) {
+        drop(
+          lockboxes.filter(({ contents }) => scopeId(contents) === scopeId(scope)),
+          scope,
+          'role does not exist yet'
+        )
+      }
+
+      continue
+    }
 
     const currentGeneration = prior[0].contents.generation
     const inScope = lockboxes.filter(({ contents }) => scopeId(contents) === scopeId(scope))

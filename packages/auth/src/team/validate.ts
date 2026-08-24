@@ -247,6 +247,20 @@ const validators: AuthorizedValidatorSet = {
     return VALID
   },
 
+  /** Invitation ids identify immutable records. Revocation changes the existing record in place;
+   * no later invite action may overwrite it, revive it, or change its expiry/owner/kind. */
+  invitationIdsAreUnique(previousState, link, _author, extendableLogger) {
+    const logger = extendableLogger.extend('invitationIdsAreUnique')
+    if (link.body.type !== 'INVITE_MEMBER' && link.body.type !== 'INVITE_DEVICE') return VALID
+
+    const { id } = link.body.payload.invitation
+    if (select.hasInvitation(previousState, id)) {
+      return fail(`Invitation id '${id}' is already in use`, previousState, link, logger)
+    }
+
+    return VALID
+  },
+
   /** A server exists to relay, not to govern: it may admit invited members and devices, nothing else. */
   serversCanOnlyAdmit(previousState, link, author, extendableLogger) {
     const logger = extendableLogger.extend('serversCanOnlyAdmit')

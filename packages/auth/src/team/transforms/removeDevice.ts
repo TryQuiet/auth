@@ -12,6 +12,10 @@ import { type Member, type Transform } from 'team/types.js'
 export const removeDevice =
   (deviceId: string, removedAt: UnixTimestamp): Transform =>
   state => {
+    // Concurrent identical removals reduce to one tombstone. The resolver normally discards the
+    // duplicate, but keeping the transform idempotent also makes replay robust.
+    if (state.removedDevices.some(device => device.deviceId === deviceId)) return state
+
     const removedDevice = select.device(state, deviceId)
 
     const removeDeviceFromMember = (member: Member) =>

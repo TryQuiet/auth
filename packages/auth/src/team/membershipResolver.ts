@@ -47,9 +47,16 @@ export const membershipResolver: Resolver<TeamAction, TeamContext> = graph => {
       const invalidLinksByThisRule = rule(bubble, graph, authors)
 
       // Expand this list to include any links that depend on invalid links we've already found
-      const alsoInvalid = invalidLinksByThisRule //
-        // eslint-disable-next-line @typescript-eslint/no-loop-func
-        .flatMap(link => findDependentLinks(bubble, link))
+      // A collapsed duplicate registration is the one exception. The surviving registration
+      // introduces the exact same identity, so links signed by that identity remain authorized;
+      // treating them as descendants of the discarded copy would invalidate perfectly valid work
+      // on the canonical branch.
+      const alsoInvalid =
+        ruleName === 'collapseDuplicateRegistrations'
+          ? []
+          : invalidLinksByThisRule //
+              // eslint-disable-next-line @typescript-eslint/no-loop-func
+              .flatMap(link => findDependentLinks(bubble, link))
 
       invalidLinks.push(...invalidLinksByThisRule, ...alsoInvalid)
 
@@ -76,13 +83,7 @@ export const getSignerUserMap = (graph: TeamGraph): SignerUserMap => {
 
   // Device invitations record the owner of the device they'll admit; that owner lives in the
   // INVITE_DEVICE link, so we collect those first.
-  const invitationOwners: Record<string, string> = {}
-  for (const link of Object.values(graph.links)) {
-    if (link.body.type === 'INVITE_DEVICE') {
-      const { invitation } = link.body.payload
-      if (invitation.userId !== undefined) invitationOwners[invitation.id] = invitation.userId
-    }
-  }
+  const invitationOwners = getInvitationOwners(graph)
 
   for (const link of Object.values(graph.links)) {
     const { type, payload } = link.body
@@ -123,6 +124,17 @@ export const getSignerUserMap = (graph: TeamGraph): SignerUserMap => {
   }
 
   return map
+}
+
+const getInvitationOwners = (graph: TeamGraph): Record<string, string> => {
+  const owners: Record<string, string> = {}
+  for (const link of Object.values(graph.links)) {
+    if (link.body.type !== 'INVITE_DEVICE') continue
+    const { invitation } = link.body.payload
+    if (invitation.userId !== undefined) owners[invitation.id] = invitation.userId
+  }
+
+  return owners
 }
 
 /**
@@ -278,6 +290,27 @@ const membershipRules: Record<string, MembershipRuleEnforcer> = {
     return [...duplicates]
   },
 
+  /** Concurrent removals of one device are one idempotent operation. Keep a canonical link so the
+   * device is tombstoned exactly once and the other link cannot try to remove an already-absent
+   * device when the sequence is reduced. */
+  collapseDuplicateDeviceRemovals(links) {
+    const removalsByDevice = new Map<string, RemoveDeviceLink[]>()
+    for (const link of getDeviceRemovals(links)) {
+      const { deviceId } = link.body.payload
+      const group = removalsByDevice.get(deviceId)
+      if (group) group.push(link)
+      else removalsByDevice.set(deviceId, [link])
+    }
+
+    const duplicates: TeamLink[] = []
+    for (const group of removalsByDevice.values()) {
+      if (group.length < 2) continue
+      duplicates.push(...[...group].sort(byLinkHash).slice(1))
+    }
+
+    return duplicates
+  },
+
   // RULE: mutual and circular removals are resolved by seniority
   resolveMutualRemovals(links, graph, authors) {
     const removed = getRemovedAndDemotedMembers(links)
@@ -315,6 +348,19 @@ const membershipRules: Record<string, MembershipRuleEnforcer> = {
   cantAddBackRemovedMember(links) {
     const removedMembers = getRemovedAndDemotedMembers(links)
     return getAdditions(links).filter(link => removedMembers.includes(addedUserId(link)))
+  },
+
+  /** Removing a member also wins over concurrently admitting one of their invited devices. */
+  cantAdmitDeviceForRemovedMember(links, graph) {
+    const removedMembers = getRemovedMembers(links)
+    if (removedMembers.length === 0) return []
+
+    const invitationOwners = getInvitationOwners(graph)
+    return links.filter(
+      link =>
+        link.body.type === 'ADMIT_DEVICE' &&
+        removedMembers.includes(invitationOwners[link.body.payload.id])
+    )
   },
 
   // RULE: If B is removed, anything they do concurrently is omitted
