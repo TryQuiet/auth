@@ -12,6 +12,60 @@ import { memberAdmission } from './helpers.js'
 const CHANNEL = 'authorization-hardening-channel'
 
 describe('lockbox authorization hardening', () => {
+  it.fails('rejects a same-generation redistribution to an unregistered recipient', () => {
+    const { alice, bob } = setup('alice', { user: 'bob', admin: false })
+    alice.team.addRole(CHANNEL)
+    alice.team.addMemberRole(bob.userId, CHANNEL)
+
+    const phantomKeys = createKeyset(
+      { type: KeyType.USER, name: 'phantom-holder' },
+      'phantom-holder'
+    )
+    const redistribution = lockbox.create(alice.team.roleKeys(CHANNEL), phantomKeys)
+
+    alice.team.dispatch({
+      type: 'ADD_LOCKBOXES',
+      payload: { lockboxes: [redistribution] },
+    })
+
+    expect(
+      alice.team.state.lockboxes.some(
+        ({ contents, recipient }) =>
+          contents.commitment === redistribution.contents.commitment &&
+          recipient.name === phantomKeys.name
+      )
+    ).toBe(false)
+  })
+
+  it.fails('does not carry a phantom recipient into a subsequent role rotation', () => {
+    const { alice, bob } = setup('alice', { user: 'bob', admin: false })
+    alice.team.addRole(CHANNEL)
+    alice.team.addMemberRole(bob.userId, CHANNEL)
+
+    const phantomKeys = createKeyset(
+      { type: KeyType.USER, name: 'phantom-holder' },
+      'phantom-holder-rotation'
+    )
+    const redistribution = lockbox.create(alice.team.roleKeys(CHANNEL), phantomKeys)
+    alice.team.dispatch({
+      type: 'ADD_LOCKBOXES',
+      payload: { lockboxes: [redistribution] },
+    })
+
+    alice.team.removeMemberRole(bob.userId, CHANNEL)
+
+    expect(alice.team.roleKeys(CHANNEL).generation).toBe(1)
+    expect(
+      alice.team.state.lockboxes.some(
+        ({ contents, recipient }) =>
+          contents.type === KeyType.ROLE &&
+          contents.name === CHANNEL &&
+          contents.generation === 1 &&
+          recipient.name === phantomKeys.name
+      )
+    ).toBe(false)
+  })
+
   it('requires every current holder recipient generation and public key during rotation', () => {
     const { alice, bob, charlie } = setup(
       'alice',
