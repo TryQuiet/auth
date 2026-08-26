@@ -20,6 +20,15 @@ export type Invitation = {
    * keyring. */
   encryptionPublicKey: Base58
 
+  /** Public key for invitation-bound role grants. This is domain-separated from the key used for
+   * the acceptance handshake, so a relay can carry both ciphertexts without gaining either
+   * decryption key. Older invitations may not contain this field. */
+  roleGrantPublicKey?: Base58
+
+  /** Self-assignable roles whose existing keys are delivered by this member invitation. The
+   * corresponding ciphertexts live on the admin-authored INVITE_MEMBER action. */
+  roleNames?: string[]
+
   /** Time when the invitation expires. If 0, the invitation does not expire. */
   expiration: UnixTimestamp
 

@@ -192,7 +192,7 @@ export type RemoveDeviceAction = {
 
 export type InviteMemberAction = {
   type: 'INVITE_MEMBER'
-  payload: {
+  payload: LockboxPayload & {
     invitation: Invitation
   }
 }
@@ -353,6 +353,7 @@ export type LockboxCarrierAction =
   | AddMemberRoleAction
   | RemoveMemberRoleAction
   | RemoveDeviceAction
+  | InviteMemberAction
   | InviteDeviceAction
   | AdmitMemberAction
   | ChangeMemberKeysAction
@@ -370,6 +371,7 @@ const lockboxCarrierTypes = [
   'ADD_MEMBER_ROLE',
   'REMOVE_MEMBER_ROLE',
   'REMOVE_DEVICE',
+  'INVITE_MEMBER',
   'INVITE_DEVICE',
   'ADMIT_MEMBER',
   'CHANGE_MEMBER_KEYS',

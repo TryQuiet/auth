@@ -1,5 +1,6 @@
 import { type UnixTimestamp } from '@localfirst/crdx'
 import { generateStarterKeys } from './generateStarterKeys.js'
+import { generateRoleGrantKeys } from './generateRoleGrantKeys.js'
 import { deriveId } from 'invitation/deriveId.js'
 import { normalize } from 'invitation/normalize.js'
 import { type Invitation } from 'invitation/types.js'
@@ -14,6 +15,7 @@ export const create = ({
   seed,
   expiration = 0 as UnixTimestamp, // By default an invitation never expires
   userId,
+  roleNames,
 }: Params): Invitation => {
   seed = normalize(seed)
 
@@ -24,8 +26,9 @@ export const create = ({
   const starterKeys = generateStarterKeys(seed)
   const { publicKey } = starterKeys.signature
   const encryptionPublicKey = starterKeys.encryption.publicKey
+  const roleGrantPublicKey = generateRoleGrantKeys(seed).encryption.publicKey
 
-  return { id, publicKey, encryptionPublicKey, expiration, userId }
+  return { id, publicKey, encryptionPublicKey, roleGrantPublicKey, expiration, userId, roleNames }
 }
 
 type Params = {
@@ -37,4 +40,7 @@ type Params = {
 
   /** (Device invitations only) User name the device will be associated with. */
   userId?: string
+
+  /** (Member invitations only) Self-assignable roles delivered with the invitation. */
+  roleNames?: string[]
 }
