@@ -27,7 +27,7 @@ import type { Lockbox } from 'lockbox/index.js'
 import type { PermissionsMap, Role } from 'role/index.js'
 import type { Server } from 'server/index.js'
 import type { ValidationResult } from 'util/index.js'
-import { Logger, SharedLogger } from '@localfirst/shared'
+import type { Logger, SharedLogger } from '@localfirst/shared'
 
 // ********* MEMBER
 
@@ -121,14 +121,17 @@ export const isNewTeam = (options: NewOrExisting): options is NewTeamOptions =>
 
 // ********* ACTIONS
 
-type BasePayload = {
-  // Every action might include new lockboxes
+/**
+ * Lockboxes are capability-bearing deliveries, not incidental metadata. Only actions whose
+ * semantics explicitly describe a key transition include this shape in their payload.
+ */
+type LockboxPayload = {
   lockboxes?: Lockbox[]
 }
 
 export type RootAction = {
   type: typeof ROOT
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     name: string
     rootMember: Member
     rootDevice: Device
@@ -138,7 +141,7 @@ export type RootAction = {
 
 export type AddMemberAction = {
   type: 'ADD_MEMBER'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     member: NewMember
     roles?: string[]
   }
@@ -146,26 +149,26 @@ export type AddMemberAction = {
 
 export type RemoveMemberAction = {
   type: 'REMOVE_MEMBER'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     userId: string
   }
 }
 
 export type AddRoleAction = {
   type: 'ADD_ROLE'
-  payload: BasePayload & Role
+  payload: LockboxPayload & Role
 }
 
 export type RemoveRoleAction = {
   type: 'REMOVE_ROLE'
-  payload: BasePayload & {
+  payload: {
     roleName: string
   }
 }
 
 export type AddMemberRoleAction = {
   type: 'ADD_MEMBER_ROLE'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     userId: string
     roleName: string
     permissions?: PermissionsMap
@@ -174,7 +177,7 @@ export type AddMemberRoleAction = {
 
 export type RemoveMemberRoleAction = {
   type: 'REMOVE_MEMBER_ROLE'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     userId: string
     roleName: string
   }
@@ -182,28 +185,28 @@ export type RemoveMemberRoleAction = {
 
 export type RemoveDeviceAction = {
   type: 'REMOVE_DEVICE'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     deviceId: string
   }
 }
 
 export type InviteMemberAction = {
   type: 'INVITE_MEMBER'
-  payload: BasePayload & {
+  payload: {
     invitation: Invitation
   }
 }
 
 export type InviteDeviceAction = {
   type: 'INVITE_DEVICE'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     invitation: Invitation
   }
 }
 
 export type RevokeInvitationAction = {
   type: 'REVOKE_INVITATION'
-  payload: BasePayload & {
+  payload: {
     id: string // Invitation ID
   }
 }
@@ -217,7 +220,7 @@ export type RevokeInvitationAction = {
  */
 export type AdmitMemberAction = {
   type: 'ADMIT_MEMBER'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     /** Invitation ID */
     id: Base58
 
@@ -238,7 +241,7 @@ export type AdmitMemberAction = {
  * invitation record on the graph, never from the claim. */
 export type AdmitDeviceAction = {
   type: 'ADMIT_DEVICE'
-  payload: BasePayload & {
+  payload: {
     id: Base58 // Invitation ID
     proof: ProofOfInvitation
     claim: DeviceInvitationClaim
@@ -248,28 +251,28 @@ export type AdmitDeviceAction = {
 
 export type ChangeMemberKeysAction = {
   type: 'CHANGE_MEMBER_KEYS'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     keys: Keyset
   }
 }
 
 export type RotateKeysAction = {
   type: 'ROTATE_KEYS'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     userId: string
   }
 }
 
 export type AddServerAction = {
   type: 'ADD_SERVER'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     server: Server
   }
 }
 
 export type RemoveServerAction = {
   type: 'REMOVE_SERVER'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     /** A server is identified by its `serverId` (the fingerprint of its identity key), never by its
      * host — a host is a mutable label. */
     serverId: string
@@ -278,35 +281,41 @@ export type RemoveServerAction = {
 
 export type ChangeServerKeysAction = {
   type: 'CHANGE_SERVER_KEYS'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     keys: Keyset
   }
 }
 
 export type MessageAction = {
   type: 'MESSAGE'
-  payload: BasePayload & {
+  payload: {
     message: unknown
   }
 }
 
 export type SetTeamNameAction = {
   type: 'SET_TEAM_NAME'
-  payload: BasePayload & {
+  payload: {
     teamName: string
   }
 }
 
-export type AddLockboxesAction = {
-  type: 'ADD_LOCKBOXES'
-  payload: BasePayload & {
+/**
+ * A newly admitted member publishes its USER keys to one of its already-registered devices.
+ * This replaces the ambient ADD_LOCKBOXES action: the device relationship is now explicit and
+ * can be checked from team state.
+ */
+export type PublishUserKeysToDeviceAction = {
+  type: 'PUBLISH_USER_KEYS_TO_DEVICE'
+  payload: {
+    deviceId: string
     lockboxes: Lockbox[]
   }
 }
 
 export type SetMetadataAction = {
   type: 'SET_METADATA'
-  payload: BasePayload & {
+  payload: {
     metadata: TeamMetadata
   }
 }
@@ -332,8 +341,56 @@ export type TeamAction =
   | ChangeServerKeysAction
   | MessageAction
   | SetTeamNameAction
-  | AddLockboxesAction
+  | PublishUserKeysToDeviceAction
   | SetMetadataAction
+
+/** Actions whose public semantics include a lockbox delivery plan. */
+export type LockboxCarrierAction =
+  | RootAction
+  | AddMemberAction
+  | RemoveMemberAction
+  | AddRoleAction
+  | AddMemberRoleAction
+  | RemoveMemberRoleAction
+  | RemoveDeviceAction
+  | InviteDeviceAction
+  | AdmitMemberAction
+  | ChangeMemberKeysAction
+  | RotateKeysAction
+  | AddServerAction
+  | RemoveServerAction
+  | ChangeServerKeysAction
+  | PublishUserKeysToDeviceAction
+
+const lockboxCarrierTypes = [
+  'ROOT',
+  'ADD_MEMBER',
+  'REMOVE_MEMBER',
+  'ADD_ROLE',
+  'ADD_MEMBER_ROLE',
+  'REMOVE_MEMBER_ROLE',
+  'REMOVE_DEVICE',
+  'INVITE_DEVICE',
+  'ADMIT_MEMBER',
+  'CHANGE_MEMBER_KEYS',
+  'ROTATE_KEYS',
+  'ADD_SERVER',
+  'REMOVE_SERVER',
+  'CHANGE_SERVER_KEYS',
+  'PUBLISH_USER_KEYS_TO_DEVICE',
+] as const satisfies ReadonlyArray<LockboxCarrierAction['type']>
+
+/** Runtime boundary for deserialized/untyped action payloads. */
+export const isLockboxCarrierAction = (action: unknown): action is LockboxCarrierAction => {
+  if (!isActionRecord(action)) return false
+  return lockboxCarrierTypes.includes(action.type as LockboxCarrierAction['type'])
+}
+
+const isActionRecord = (value: unknown): value is { type: unknown } =>
+  typeof value === 'object' &&
+  value !== null &&
+  !Array.isArray(value) &&
+  Object.hasOwn(value, 'type')
 
 /**
  * Application context added to every link. It deliberately says nothing about who authored the
@@ -467,6 +524,10 @@ export type LookupIdentityResult =
   | 'VALID_SERVER'
   | 'SERVER_REMOVED'
 
-export type EncryptStreamTeamPayload = { recipient: KeyMetadata, encryptStream: AsyncGenerator<Uint8Array>, header: Uint8Array }
+export type EncryptStreamTeamPayload = {
+  recipient: KeyMetadata
+  encryptStream: AsyncGenerator<Uint8Array>
+  header: Uint8Array
+}
 
 export type TeamMetadata = { selfAssignableRoles: string[] }

@@ -10,20 +10,21 @@ import {
 import { ADMIN } from 'role/index.js'
 import { KeyType } from 'util/index.js'
 import * as select from './selectors/index.js'
-import { SignerKind, type TeamLink, type TeamState } from './types.js'
+import {
+  isLockboxCarrierAction,
+  SignerKind,
+  type LockboxCarrierAction,
+  type TeamLink,
+  type TeamState,
+} from './types.js'
 
 /**
  * Decides which of a link's lockboxes may be applied to the team's state.
  *
- * Lockboxes distribute keys, and they ride on *any* link's payload: the reducer sweeps them in
- * regardless of what action the link is taking. For a member's own (USER / DEVICE / SERVER) keys
- * that's fine — those are governed by `canOnlyChangeYourOwnKeys`. But TEAM and ROLE keys are
- * *shared*, honest clients adopt the highest generation they can see for a scope, and a keyset is
- * just a random keypair anyone can mint. So without this, introducing a new generation of a shared
- * key was an unauthorized primitive: a non-admin who is not even in a role (a Quiet "private
- * channel") could mint a next-generation role keyset, hand it to a subset that leaves out the real
- * members, and have honest clients silently encrypt future channel traffic under a key she holds —
- * effective removal of the excluded members plus takeover of the channel (#61).
+ * A lockbox is a delivery of a capability. It is therefore accepted only when the action that
+ * carries it has a declared delivery purpose. This keeps lockboxes from becoming an ambient
+ * authority channel: a MESSAGE, metadata update, or copied link cannot silently grant access to a
+ * key merely by adding a `lockboxes` property.
  *
  * A link that introduces a *higher* generation than the team has for a TEAM or ROLE scope is a
  * re-key, and must satisfy all of:
@@ -32,10 +33,9 @@ import { SignerKind, type TeamLink, type TeamState } from './types.js'
  *       it does not grant authority to replace that key with a new generation.
  *   (b) it increments the current generation by exactly one — no gaps, no leapfrogging to a number
  *       that would outrank every honest rotation forever.
- *   (c) it reaches every one of the scope's current holders, all under one key: no silent
- *       exclusions, no handing different holders divergent keysets. The holder set is read from the
- *       recipients of the scope's current-generation lockboxes, which is precisely what the honest
- *       rotation path (`Team.rotateKeys` -> `lockboxesInScope`) re-boxes to.
+ *   (c) it reaches every holder implied by membership and role state, all under one key: no silent
+ *       exclusions, no handing different holders divergent keysets. Lockbox recipients are delivery
+ *       addresses, never the authorization registry.
  *
  * WHY THIS DROPS RATHER THAN REJECTS. A link whose lockboxes fail these checks is not rejected; the
  * offending lockboxes are simply not collected, and the link's action applies as usual. That is
@@ -57,11 +57,19 @@ import { SignerKind, type TeamLink, type TeamState } from './types.js'
  * brick the graph by publishing a link nobody can reduce.
  */
 export const authorizedLockboxes = (
-  state: TeamState,
+  previousState: TeamState,
+  projectedState: TeamState,
   link: TeamLink,
   lockboxes: unknown,
   logger: Logger
 ): Lockbox[] => {
+  if (!isLockboxCarrierAction(link.body)) {
+    logger.warn(
+      `Dropping lockboxes from ${link.body.type} link ${link.hash}: action cannot carry key deliveries`
+    )
+    return []
+  }
+
   if (!Array.isArray(lockboxes)) {
     logger.warn(`Dropping malformed lockbox payload from link ${link.hash}: expected an array`)
     return []
@@ -106,7 +114,7 @@ export const authorizedLockboxes = (
   // generation of TEAM/ROLE keys. The advertised encryption public key remains inspectable, but
   // is deliberately not used as keyset identity: the commitment covers both keypairs, the
   // symmetric secret, and all metadata.
-  const established = establishedCommitments(state.lockboxes)
+  const established = establishedCommitments(previousState.lockboxes)
   const batches = groupByKeyIdentity(validLockboxes)
 
   for (const [id, batch] of batches) {
@@ -139,7 +147,7 @@ export const authorizedLockboxes = (
     // so `Team.join` must box them to that already-registered device in a follow-up link.
     if (
       isIdentityScope(scope.type) &&
-      !mayEstablishIdentityKeyset(state, link, batch[0].contents)
+      !mayEstablishIdentityKeyset(previousState, link, batch[0].contents)
     ) {
       drop(
         batch,
@@ -147,6 +155,14 @@ export const authorizedLockboxes = (
         `generation ${batch[0].contents.generation} is not established by its identity owner`
       )
     }
+  }
+
+  // Structural validity says only that a lockbox is well formed. The action policy below says
+  // what it is allowed to deliver, to whom, and whether it may establish a new generation.
+  for (const lockbox of validLockboxes) {
+    if (dropped.has(lockbox)) continue
+    const reason = actionPolicyReason(previousState, projectedState, link, lockbox)
+    if (reason !== undefined) drop([lockbox], scopeOf(lockbox), reason)
   }
 
   // The shared scopes this link's surviving lockboxes distribute keys for. Commitment binding
@@ -165,8 +181,8 @@ export const authorizedLockboxes = (
   }
 
   const authorizationState = {
-    ...state,
-    lockboxes: state.lockboxes.filter(isAuthorizationLockbox),
+    ...previousState,
+    lockboxes: previousState.lockboxes.filter(isAuthorizationLockbox),
   }
   for (const scope of scopes.values()) {
     const prior = select.lockboxesInScope(authorizationState, scope)
@@ -177,38 +193,50 @@ export const authorizedLockboxes = (
         scopesMatch(lockbox.contents, scope)
     )
 
-    // No prior lockboxes can mean the scope is being created, but a ROLE scope only exists once its
-    // ADD_ROLE action creates it. Otherwise anyone could pre-seed a future role with a high
-    // generation and have that key outrank the legitimate generation-zero key when the role is
-    // eventually added.
     if (prior.length === 0) {
-      const roleAlreadyExists =
-        scope.type === KeyType.ROLE && state.roles.some(role => role.roleName === scope.name)
-      const createsThisRole =
-        (link.body.type === 'ADD_ROLE' && link.body.payload.roleName === scope.name) ||
-        (link.body.type === ROOT && scope.name === ADMIN)
-      if (scope.type === KeyType.ROLE && !roleAlreadyExists && !createsThisRole) {
-        drop(inScope, scope, 'role does not exist yet')
+      if (!actionCreatesSharedScope(link.body, scope)) {
+        drop(inScope, scope, 'action does not establish this shared scope')
+        continue
       }
 
+      if (inScope.some(({ contents }) => contents.generation !== 0)) {
+        drop(inScope, scope, 'new shared scopes must begin at generation 0')
+        continue
+      }
+
+      const expected = expectedRecipientsForScope(
+        projectedState,
+        previousState,
+        link,
+        scope,
+        validLockboxes.filter(lockbox => !dropped.has(lockbox))
+      )
+      if (expected === undefined) {
+        drop(inScope, scope, 'administrator access cannot be carried into this rotation plan')
+        continue
+      }
+      if (!reachesExactly(inScope, expected)) {
+        drop(
+          inScope,
+          scope,
+          `initial distribution does not reach exactly [${recipientList(expected)}]`
+        )
+      }
       continue
     }
 
     const currentGeneration = prior[0].contents.generation
     const rekey = inScope.filter(({ contents }) => contents.generation > currentGeneration)
 
-    // Not a re-key. Handing out a generation the team already has — a role key to a new role member,
-    // or (since a member admitted after a rotation needs the older generations to read history) every
-    // team-key generation to a joiner — is governed by the membership validators, not here.
+    // Same-generation deliveries are constrained by actionPolicyReason: a joiner may receive
+    // historical TEAM generations and a new role holder may receive that role's existing keys, but
+    // arbitrary actions cannot redistribute a current key.
     if (rekey.length === 0) continue
 
-    // (a) Only an admin may introduce a new generation of a shared key. `author` is the signer
-    // resolved from the link's signature, not anything the body claims about itself. Merely holding
-    // a TEAM or ROLE key grants read access and redistribution of that established generation; it
-    // must not also grant authority to replace the key.
-    const author = actingMemberId(state, link)
-    const authorIsAdmin = author !== undefined && select.memberIsAdmin(state, author)
-    if (!authorIsAdmin) {
+    // Only a declared rotation transition, authored by an admin, can introduce a shared generation.
+    const author = actingMemberId(previousState, link)
+    const authorIsAdmin = author !== undefined && select.memberIsAdmin(previousState, author)
+    if (!isRotationAction(link.body) || !authorIsAdmin) {
       drop(rekey, scope, `'${author ?? 'unknown signer'}' is not an admin`)
       continue
     }
@@ -225,36 +253,548 @@ export const authorizedLockboxes = (
     const next = rekey.filter(({ contents }) => contents.generation === nextGeneration)
     if (next.length === 0) continue
 
-    // (c) The new generation goes to the scope's current holders, all under one key.
-
-    // Divergent commitments were rejected as one batch above, before any new generation could be
-    // established. Every surviving recipient therefore gets the exact same complete keyset.
-
-    // No silent exclusions. Every current holder has to be re-boxed; leaving one out is how a
-    // re-key becomes an eviction that no REMOVE_MEMBER / REMOVE_MEMBER_ROLE link ever recorded.
-    // This also prevents an admin from using a re-key as an undeclared eviction. (Honest removals
-    // pass: they re-box to the removed member too, and the removal's own reducer is what takes their
-    // access away.)
-    //
-    // Only exclusions are checked, not set equality. An *extra* recipient is not a boundary anyone
-    // is defending: any holder can hand the current generation to an arbitrary keyset with
-    // `ADD_LOCKBOXES` (`Team.createLockbox`), no rotation needed — that's the separate
-    // recipient-authorization gap (#18 / #25). Meanwhile a set-equality check reads `prior` as if it
-    // were complete, which it isn't during `decryptTeamGraph`'s per-path walk, where state carries
-    // only one lineage. Checking exclusions is safe there: a partial `prior` can only shrink the
-    // holder set, so the check gets more lenient, never more strict.
-    const reached = new Set(next.map(({ recipient }) => recipientId(recipient)))
-    const expectedHolders = prior.map(({ recipient }) =>
-      recipientId(expectedRecipientForLink(state, recipient, link, next))
+    // The post-action state determines who is entitled to the replacement. Delivery addresses may
+    // change during an identity rotation, but those addresses do not create new holders.
+    const expected = expectedRecipientsForScope(
+      projectedState,
+      previousState,
+      link,
+      scope,
+      validLockboxes.filter(lockbox => !dropped.has(lockbox))
     )
-    const missed = [...new Set(expectedHolders)].filter(holder => !reached.has(holder))
-    if (missed.length > 0) {
-      drop(next, scope, `does not reach current holders [${missed.join(', ')}]`)
+    if (expected === undefined) {
+      drop(next, scope, 'administrator access cannot be carried into this rotation plan')
+      continue
+    }
+    if (!reachesExactly(next, expected)) {
+      drop(next, scope, `re-key does not reach exactly [${recipientList(expected)}]`)
     }
   }
 
   return validLockboxes.filter(lockbox => !dropped.has(lockbox))
 }
+
+/** Returns a reason when a structurally valid lockbox is outside its action's delivery contract. */
+const actionPolicyReason = (
+  previousState: TeamState,
+  projectedState: TeamState,
+  link: TeamLink,
+  lockbox: Lockbox
+): string | undefined => {
+  const action = link.body
+  if (!isLockboxCarrierAction(action)) return 'action cannot carry key deliveries'
+
+  const { contents, recipient } = lockbox
+  switch (action.type) {
+    case ROOT: {
+      if (contents.generation !== 0) return 'ROOT may only establish generation-zero keys'
+      if (isTeamScope(contents) && recipientMatchesKeys(recipient, action.payload.rootMember.keys))
+        return undefined
+      if (
+        isRoleScope(contents, ADMIN) &&
+        recipientMatchesKeys(recipient, action.payload.rootMember.keys)
+      ) {
+        return undefined
+      }
+      if (
+        keysetMatchesManifest(action.payload.rootMember.keys, contents) &&
+        recipientMatchesKeys(recipient, action.payload.rootDevice.keys)
+      ) {
+        return undefined
+      }
+      return 'ROOT may deliver only TEAM, ADMIN, and founding USER keys to the founding identity'
+    }
+
+    case 'ADD_MEMBER': {
+      const { member, roles = [] } = action.payload
+      if (
+        keysetMatchesManifest(member.keys, contents) &&
+        (member.devices ?? []).some(device => recipientMatchesKeys(recipient, device.keys))
+      ) {
+        return undefined
+      }
+
+      const assignedRoles = new Set(roles)
+      const isPermittedSharedKey =
+        isTeamScope(contents) ||
+        (contents.type === KeyType.ROLE && assignedRoles.has(contents.name))
+      if (
+        isPermittedSharedKey &&
+        knownContents(previousState, contents) &&
+        recipientMatchesKeys(recipient, member.keys)
+      ) {
+        return undefined
+      }
+      return 'ADD_MEMBER may deliver existing TEAM or assigned ROLE keys to the added member'
+    }
+
+    case 'ADMIT_MEMBER': {
+      if (
+        isTeamScope(contents) &&
+        knownContents(previousState, contents) &&
+        recipientMatchesKeys(recipient, action.payload.claim.memberKeys)
+      ) {
+        return undefined
+      }
+      return 'ADMIT_MEMBER may deliver existing TEAM generations only to the admitted member'
+    }
+
+    case 'ADD_ROLE': {
+      if (
+        isRoleScope(contents, action.payload.roleName) &&
+        contents.generation === 0 &&
+        recipientIsExpectedForScope(projectedState, previousState, link, contents, [lockbox])
+      ) {
+        return undefined
+      }
+      return 'ADD_ROLE may establish generation-zero keys only for the role being added'
+    }
+
+    case 'ADD_MEMBER_ROLE': {
+      const member = projectedState.members.find(
+        candidate => candidate.userId === action.payload.userId
+      )
+      if (
+        member !== undefined &&
+        isRoleScope(contents, action.payload.roleName) &&
+        knownContents(previousState, contents) &&
+        recipientMatchesKeys(recipient, member.keys)
+      ) {
+        return undefined
+      }
+      return 'ADD_MEMBER_ROLE may deliver existing keys of that role only to the assigned member'
+    }
+
+    case 'INVITE_DEVICE': {
+      const { invitation } = action.payload
+      const owner =
+        invitation.userId === undefined
+          ? undefined
+          : previousState.members.find(member => member.userId === invitation.userId)
+      if (
+        owner !== undefined &&
+        keysetMatchesManifest(owner.keys, contents) &&
+        recipient.type === KeyType.EPHEMERAL &&
+        recipient.name === KeyType.EPHEMERAL &&
+        recipient.generation === 0 &&
+        recipient.publicKey === invitation.encryptionPublicKey
+      ) {
+        return undefined
+      }
+      return 'INVITE_DEVICE may deliver its owner’s USER key only to that invitation starter'
+    }
+
+    case 'PUBLISH_USER_KEYS_TO_DEVICE': {
+      const ownerId = actingMemberId(previousState, link)
+      const owner =
+        ownerId === undefined
+          ? undefined
+          : previousState.members.find(member => member.userId === ownerId)
+      const device = owner?.devices?.find(
+        candidate => candidate.deviceId === action.payload.deviceId
+      )
+      if (
+        link.body.signer.kind === SignerKind.DEVICE &&
+        link.body.signer.id === action.payload.deviceId &&
+        owner !== undefined &&
+        device !== undefined &&
+        keysetMatchesManifest(owner.keys, contents) &&
+        recipientMatchesKeys(recipient, device.keys)
+      ) {
+        return undefined
+      }
+      return 'PUBLISH_USER_KEYS_TO_DEVICE may deliver the author’s USER key only to its registered device'
+    }
+
+    case 'ADD_SERVER': {
+      if (
+        isTeamScope(contents) &&
+        knownContents(previousState, contents) &&
+        recipientMatchesKeys(recipient, action.payload.server.keys)
+      ) {
+        return undefined
+      }
+      return 'ADD_SERVER may deliver existing TEAM keys only to the added server'
+    }
+
+    case 'REMOVE_SERVER': {
+      if (!isTeamScope(contents)) return 'REMOVE_SERVER may rotate only TEAM keys'
+      return sharedRotationReason(previousState, contents)
+    }
+
+    case 'REMOVE_MEMBER': {
+      if (!memberCanHoldSharedScope(previousState, action.payload.userId, contents)) {
+        return 'REMOVE_MEMBER may rotate only keys the removed member was authorized to hold'
+      }
+      return sharedRotationReason(previousState, contents)
+    }
+
+    case 'REMOVE_MEMBER_ROLE': {
+      const removesAdminAccess = action.payload.roleName === ADMIN && contents.type === KeyType.ROLE
+      if (!removesAdminAccess && !isRoleScope(contents, action.payload.roleName)) {
+        return 'REMOVE_MEMBER_ROLE may rotate only the removed role'
+      }
+      return sharedRotationReason(previousState, contents)
+    }
+
+    case 'REMOVE_DEVICE': {
+      const owner = identityRotationOwner(previousState, link)
+      if (
+        isSharedScope(contents.type) &&
+        !memberCanHoldSharedScope(previousState, owner, contents)
+      ) {
+        return 'REMOVE_DEVICE may rotate only keys its owner was authorized to hold'
+      }
+      const sharedReason = sharedRotationReason(previousState, contents)
+      return sharedReason === undefined
+        ? undefined
+        : identityRotationReason(previousState, projectedState, link, lockbox)
+    }
+
+    case 'CHANGE_MEMBER_KEYS': {
+      if (
+        isSharedScope(contents.type) &&
+        !memberCanHoldSharedScope(previousState, action.payload.keys.name, contents)
+      ) {
+        return 'CHANGE_MEMBER_KEYS may rotate only keys that member was authorized to hold'
+      }
+      const sharedReason = sharedRotationReason(previousState, contents)
+      if (sharedReason === undefined) return undefined
+      if (
+        keysetMatchesManifest(action.payload.keys, contents) &&
+        recipientIsActiveDeviceOf(projectedState, action.payload.keys.name, recipient)
+      ) {
+        return undefined
+      }
+      return 'CHANGE_MEMBER_KEYS may deliver its declared USER key only to the member’s active devices'
+    }
+
+    case 'CHANGE_SERVER_KEYS': {
+      if (isSharedScope(contents.type) && !isTeamScope(contents)) {
+        return 'CHANGE_SERVER_KEYS may rotate only TEAM keys'
+      }
+      const sharedReason = sharedRotationReason(previousState, contents)
+      if (sharedReason === undefined) return undefined
+      if (
+        keysetMatchesManifest(action.payload.keys, contents) &&
+        recipientMatchesKeys(recipient, action.payload.keys)
+      ) {
+        return undefined
+      }
+      return 'CHANGE_SERVER_KEYS may deliver only its declared SERVER key or an authorized shared rotation'
+    }
+
+    case 'ROTATE_KEYS': {
+      const owner = actingMemberId(previousState, link)
+      if (
+        isSharedScope(contents.type) &&
+        !memberCanHoldSharedScope(previousState, owner, contents)
+      ) {
+        return 'ROTATE_KEYS may rotate only keys its author is authorized to hold'
+      }
+      const sharedReason = sharedRotationReason(previousState, contents)
+      return sharedReason === undefined
+        ? undefined
+        : identityRotationReason(previousState, projectedState, link, lockbox)
+    }
+
+    default: {
+      return 'action cannot carry key deliveries'
+    }
+  }
+}
+
+const sharedRotationReason = (
+  previousState: TeamState,
+  contents: Lockbox['contents']
+): string | undefined => {
+  if (!isSharedScope(contents.type)) return 'action may not deliver this key type'
+  const currentGeneration = currentSharedGeneration(previousState, contents)
+  if (currentGeneration === undefined)
+    return 'rotation references a shared scope with no established key'
+  if (contents.generation !== currentGeneration + 1) {
+    return `rotation must advance generation ${currentGeneration} by one`
+  }
+  return undefined
+}
+
+const identityRotationReason = (
+  previousState: TeamState,
+  projectedState: TeamState,
+  link: TeamLink,
+  lockbox: Lockbox
+): string | undefined => {
+  const owner = identityRotationOwner(previousState, link)
+  const { contents, recipient } = lockbox
+  if (
+    owner !== undefined &&
+    contents.type === KeyType.USER &&
+    contents.name === owner &&
+    contents.generation === latestIdentityGeneration(previousState, KeyType.USER, owner) + 1 &&
+    recipientIsActiveDeviceOf(projectedState, owner, recipient)
+  ) {
+    return undefined
+  }
+  return 'identity rotation may deliver only the affected USER key to that user’s active devices'
+}
+
+const memberCanHoldSharedScope = (
+  state: TeamState,
+  userId: string | undefined,
+  scope: KeyScope
+) => {
+  if (userId === undefined) return false
+  if (isTeamScope(scope)) return true
+  if (scope.type !== KeyType.ROLE) return false
+
+  const member = state.members.find(candidate => candidate.userId === userId)
+  return member !== undefined && (member.roles.includes(scope.name) || member.roles.includes(ADMIN))
+}
+
+const actionCreatesSharedScope = (action: LockboxCarrierAction, scope: KeyScope) =>
+  (action.type === ROOT && (isTeamScope(scope) || isRoleScope(scope, ADMIN))) ||
+  (action.type === 'ADD_ROLE' && isRoleScope(scope, action.payload.roleName))
+
+const isRotationAction = (action: LockboxCarrierAction) =>
+  action.type === 'REMOVE_MEMBER' ||
+  action.type === 'REMOVE_MEMBER_ROLE' ||
+  action.type === 'REMOVE_DEVICE' ||
+  action.type === 'REMOVE_SERVER' ||
+  action.type === 'CHANGE_MEMBER_KEYS' ||
+  action.type === 'CHANGE_SERVER_KEYS' ||
+  action.type === 'ROTATE_KEYS'
+
+const expectedRecipientsForScope = (
+  projectedState: TeamState,
+  previousState: TeamState,
+  link: TeamLink,
+  scope: KeyScope,
+  next: Lockbox[]
+): RecipientManifest[] | undefined => {
+  if (isTeamScope(scope)) {
+    const holders = [
+      ...projectedState.members.map(member => member.keys),
+      ...projectedState.servers.map(server => server.keys),
+    ]
+    return uniqueRecipients(
+      holders.map(
+        keys =>
+          replacementRecipientForIdentityRotation(previousState, link, keys, next) ??
+          recipientForKeys(keys)
+      )
+    )
+  }
+
+  const roleMembers = projectedState.members
+    .filter(member => member.roles.includes(scope.name))
+    .map(member => member.keys)
+  if (scope.name === ADMIN) {
+    return uniqueRecipients(
+      roleMembers.map(
+        keys =>
+          replacementRecipientForIdentityRotation(previousState, link, keys, next) ??
+          recipientForKeys(keys)
+      )
+    )
+  }
+
+  const recipients = roleMembers.map(
+    keys =>
+      replacementRecipientForIdentityRotation(previousState, link, keys, next) ??
+      recipientForKeys(keys)
+  )
+  const adminRecipient = adminAccessRecipient(previousState, projectedState, link, next)
+  if (adminRecipient === undefined) return undefined
+  recipients.push(adminRecipient)
+  return uniqueRecipients(recipients)
+}
+
+/** The ADMIN role key is the explicit administrator-access delivery address for other roles. */
+const adminAccessRecipient = (
+  previousState: TeamState,
+  projectedState: TeamState,
+  link: TeamLink,
+  lockboxes: Lockbox[]
+): RecipientManifest | undefined => {
+  const authorizationState = {
+    ...previousState,
+    lockboxes: previousState.lockboxes.filter(isAuthorizationLockbox),
+  }
+  const prior = select.lockboxesInScope(authorizationState, { type: KeyType.ROLE, name: ADMIN })[0]
+  const currentGeneration = prior?.contents.generation
+  if (currentGeneration === undefined) return undefined
+
+  const replacements = lockboxes.filter(
+    ({ contents }) => isRoleScope(contents, ADMIN) && contents.generation === currentGeneration + 1
+  )
+
+  // A new non-ADMIN role key is normally addressed to the current ADMIN role key. If this action
+  // also changes administrator access, it must first supply a complete replacement ADMIN plan;
+  // otherwise an old administrator could remain the delivery address for a fresh role generation.
+  if (replacements.length === 0) {
+    if (actionRequiresAdminRotation(previousState, link)) return undefined
+    return recipientForContents(prior.contents)
+  }
+
+  const expectedAdmins = uniqueRecipients(
+    projectedState.members
+      .filter(member => member.roles.includes(ADMIN))
+      .map(
+        member =>
+          replacementRecipientForIdentityRotation(previousState, link, member.keys, lockboxes) ??
+          recipientForKeys(member.keys)
+      )
+  )
+  if (!reachesExactly(replacements, expectedAdmins)) return undefined
+
+  return recipientForContents(replacements[0].contents)
+}
+
+/** Whether this transition invalidates the current ADMIN key's delivery authority. */
+const actionRequiresAdminRotation = (state: TeamState, link: TeamLink) => {
+  const { type, payload } = link.body
+  switch (type) {
+    case 'REMOVE_MEMBER': {
+      return memberHasRole(state, payload.userId, ADMIN)
+    }
+
+    case 'REMOVE_MEMBER_ROLE': {
+      return payload.roleName === ADMIN
+    }
+
+    case 'REMOVE_DEVICE': {
+      return memberHasRole(state, identityRotationOwner(state, link), ADMIN)
+    }
+
+    case 'CHANGE_MEMBER_KEYS': {
+      return memberHasRole(state, payload.keys.name, ADMIN)
+    }
+
+    case 'ROTATE_KEYS': {
+      return memberHasRole(state, actingMemberId(state, link), ADMIN)
+    }
+
+    default: {
+      return false
+    }
+  }
+}
+
+const memberHasRole = (state: TeamState, userId: string | undefined, roleName: string) =>
+  userId !== undefined &&
+  state.members.find(member => member.userId === userId)?.roles.includes(roleName) === true
+
+const replacementRecipientForIdentityRotation = (
+  previousState: TeamState,
+  link: TeamLink,
+  keys: Keyset,
+  lockboxes: Lockbox[]
+): RecipientManifest | undefined => {
+  const owner = identityRotationOwner(previousState, link)
+  if (owner === undefined || keys.type !== KeyType.USER || keys.name !== owner) return undefined
+
+  const candidates = lockboxes.filter(
+    ({ recipient }) =>
+      recipient.type === keys.type &&
+      recipient.name === keys.name &&
+      recipient.generation === keys.generation + 1
+  )
+  const unique = uniqueRecipients(candidates.map(({ recipient }) => recipient))
+  if (unique.length !== 1) return undefined
+
+  const candidate = unique[0]
+  const hasDelivery = lockboxes.some(
+    ({ contents, recipient }) =>
+      contents.type === KeyType.USER &&
+      contents.name === owner &&
+      contents.generation === candidate.generation &&
+      contents.publicKey === candidate.publicKey &&
+      recipient.type === KeyType.DEVICE
+  )
+  return hasDelivery ? candidate : undefined
+}
+
+const recipientIsExpectedForScope = (
+  projectedState: TeamState,
+  previousState: TeamState,
+  link: TeamLink,
+  contents: Lockbox['contents'],
+  lockboxes: Lockbox[]
+) => {
+  const recipient = lockboxes[0]?.recipient
+  if (recipient === undefined) return false
+  const expected = expectedRecipientsForScope(
+    projectedState,
+    previousState,
+    link,
+    contents,
+    lockboxes
+  )
+  return expected?.some(candidate => recipientId(candidate) === recipientId(recipient)) ?? false
+}
+
+const reachesExactly = (lockboxes: Lockbox[], expected: RecipientManifest[]) => {
+  const reached = new Set(lockboxes.map(({ recipient }) => recipientId(recipient)))
+  const expectedIds = new Set(expected.map(recipientId))
+  return (
+    reached.size === expectedIds.size && [...reached].every(recipient => expectedIds.has(recipient))
+  )
+}
+
+const recipientList = (recipients: RecipientManifest[]) => recipients.map(recipientId).join(', ')
+
+const uniqueRecipients = (recipients: RecipientManifest[]) => {
+  const byId = new Map<string, RecipientManifest>()
+  for (const recipient of recipients) byId.set(recipientId(recipient), recipient)
+  return [...byId.values()]
+}
+
+const recipientForKeys = (keys: Keyset): RecipientManifest => ({
+  type: keys.type,
+  name: keys.name,
+  generation: keys.generation,
+  publicKey: keys.encryption,
+})
+
+const recipientForContents = (contents: Lockbox['contents']): RecipientManifest => ({
+  type: contents.type,
+  name: contents.name,
+  generation: contents.generation,
+  publicKey: contents.publicKey,
+})
+
+const recipientMatchesKeys = (recipient: RecipientManifest, keys: Keyset) =>
+  recipientId(recipient) === recipientId(recipientForKeys(keys))
+
+const recipientIsActiveDeviceOf = (
+  state: TeamState,
+  userId: string,
+  recipient: RecipientManifest
+) =>
+  state.members
+    .find(member => member.userId === userId)
+    ?.devices?.some(device => recipientMatchesKeys(recipient, device.keys)) ?? false
+
+const knownContents = (state: TeamState, contents: Lockbox['contents']) =>
+  state.lockboxes.some(
+    candidate =>
+      isAuthorizationLockbox(candidate) &&
+      candidate.contents.type === contents.type &&
+      candidate.contents.name === contents.name &&
+      candidate.contents.generation === contents.generation &&
+      candidate.contents.publicKey === contents.publicKey &&
+      candidate.contents.commitment === contents.commitment
+  )
+
+const currentSharedGeneration = (state: TeamState, scope: KeyScope): number | undefined => {
+  const authorizationState = { ...state, lockboxes: state.lockboxes.filter(isAuthorizationLockbox) }
+  return select.lockboxesInScope(authorizationState, scope)[0]?.contents.generation
+}
+
+const isTeamScope = (scope: KeyScope) => scope.type === KeyType.TEAM && scope.name === KeyType.TEAM
+
+const isRoleScope = (scope: KeyScope, roleName: string) =>
+  scope.type === KeyType.ROLE && scope.name === roleName
 
 type KeyScope = { type: string; name: string }
 
@@ -352,8 +892,8 @@ const mayEstablishIdentityKeyset = (
   if (isAuthorizedIdentityRotation(state, link, manifest)) return true
 
   // A newly admitted member establishes the USER commitment when their already-registered device
-  // posts `Team.join`. Requiring the resolved signer to own that USER scope prevents every other
-  // member from pre-seeding it while retaining the invitation flow.
+  // posts PUBLISH_USER_KEYS_TO_DEVICE. The action-specific policy below also binds the delivery to
+  // that exact device, so no other action can use this owner check as a distribution channel.
   if (manifest.type !== KeyType.USER || actingMemberId(state, link) !== manifest.name) return false
   const registered = state.members.find(member => member.userId === manifest.name)?.keys
   return registered !== undefined && keysetMatchesManifest(registered, manifest)
@@ -380,54 +920,6 @@ const keysetMatchesManifest = (keys: Keyset, manifest: Lockbox['contents']) =>
   keys.generation === manifest.generation &&
   keys.encryption === manifest.publicKey
 
-/** Honest key changes re-address every affected lockbox to the newly declared recipient keys. */
-const expectedRecipientForLink = (
-  state: TeamState,
-  recipient: RecipientManifest,
-  link: TeamLink,
-  next: Lockbox[]
-): RecipientManifest => {
-  const { type, payload } = link.body
-  const updatedKeys =
-    type === 'CHANGE_MEMBER_KEYS' && recipient.type === KeyType.USER
-      ? payload.keys
-      : type === 'CHANGE_SERVER_KEYS' && recipient.type === KeyType.SERVER
-        ? payload.keys
-        : undefined
-
-  if (
-    updatedKeys !== undefined &&
-    updatedKeys.type === recipient.type &&
-    updatedKeys.name === recipient.name
-  ) {
-    return {
-      type: updatedKeys.type,
-      name: updatedKeys.name,
-      generation: updatedKeys.generation,
-      publicKey: updatedKeys.encryption,
-    }
-  }
-
-  // Removal-driven rotations deliberately mint replacement recipient keys that are not installed
-  // in the public identity record: their purpose is to cut the compromised member/device off. The
-  // link therefore has no separate public key declaration to compare against. Accept exactly one
-  // canonical next recipient manifest for the affected identity; an unrelated action gets no such
-  // transition and must reproduce the old manifest exactly.
-  if (!linkMayRotateRecipientWithoutDeclaration(state, link, recipient)) return recipient
-  const candidates = new Map<string, RecipientManifest>()
-  for (const { recipient: candidate } of next) {
-    if (
-      candidate.type === recipient.type &&
-      candidate.name === recipient.name &&
-      candidate.generation === recipient.generation + 1
-    ) {
-      candidates.set(recipientId(candidate), candidate)
-    }
-  }
-
-  return candidates.size === 1 ? [...candidates.values()][0] : recipient
-}
-
 const isAuthorizedIdentityRotation = (
   state: TeamState,
   link: TeamLink,
@@ -451,31 +943,6 @@ const identityRotationOwner = (state: TeamState, link: TeamLink): string | undef
   }
 
   return type === 'ROTATE_KEYS' ? actingMemberId(state, link) : undefined
-}
-
-const linkMayRotateRecipientWithoutDeclaration = (
-  state: TeamState,
-  link: TeamLink,
-  recipient: RecipientManifest
-): boolean => {
-  const { type, payload } = link.body
-  if (type === 'REMOVE_MEMBER') {
-    return recipient.type === KeyType.USER && recipient.name === payload.userId
-  }
-
-  if (type === 'REMOVE_DEVICE') {
-    const owner = identityRotationOwner(state, link)
-    return (
-      (recipient.type === KeyType.DEVICE && recipient.name === payload.deviceId) ||
-      (recipient.type === KeyType.USER && recipient.name === owner)
-    )
-  }
-
-  if (type === 'ROTATE_KEYS') {
-    return recipient.type === KeyType.USER && recipient.name === actingMemberId(state, link)
-  }
-
-  return false
 }
 
 const latestIdentityManifest = (

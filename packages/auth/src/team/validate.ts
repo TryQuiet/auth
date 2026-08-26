@@ -247,6 +247,46 @@ const validators: AuthorizedValidatorSet = {
     return VALID
   },
 
+  /** A device-key publication is meaningful only for the member who owns that registered device. */
+  publishUserKeysBelongsToDeviceOwner(previousState, link, author, extendableLogger) {
+    const logger = extendableLogger.extend('publishUserKeysBelongsToDeviceOwner')
+    if (link.body.type !== 'PUBLISH_USER_KEYS_TO_DEVICE') return VALID
+
+    const { deviceId } = link.body.payload
+    if (
+      author.signer.kind !== SignerKind.DEVICE ||
+      author.signer.device.deviceId !== deviceId
+    ) {
+      return fail(
+        'USER keys may be published only by the device that receives them',
+        previousState,
+        link,
+        logger
+      )
+    }
+
+    if (!select.hasDevice(previousState, deviceId)) {
+      return fail(
+        `Cannot publish keys to unknown device '${deviceId}'`,
+        previousState,
+        link,
+        logger
+      )
+    }
+
+    const device = select.device(previousState, deviceId)
+    if (device.userId !== author.member.userId) {
+      return fail(
+        'A member may publish USER keys only to its own device',
+        previousState,
+        link,
+        logger
+      )
+    }
+
+    return VALID
+  },
+
   /** Invitation ids identify immutable records. Revocation changes the existing record in place;
    * no later invite action may overwrite it, revive it, or change its expiry/owner/kind. */
   invitationIdsAreUnique(previousState, link, _author, extendableLogger) {

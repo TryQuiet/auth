@@ -7,6 +7,7 @@ import { randomBytes, symmetric } from '@localfirst/crypto'
 import { describe, expect, it } from 'vitest'
 import { randomUUID } from 'crypto'
 import { createKeyset, KeyScope } from '@localfirst/crdx'
+import * as lockbox from 'lockbox/index.js'
 
 const MANAGERS = 'managers'
 const managers: AddRoleInput = { roleName: MANAGERS }
@@ -150,8 +151,8 @@ describe('Team', () => {
     })
 
     it('self-assigns a role using pre-shared keys', () => {
-      const { alice, bob } = setup('alice', 'bob')
-      
+      const { alice, bob } = setup('alice', { user: 'bob', admin: false })
+
       // 👩🏾 Alice creates MEMBER role
       alice.team.addRole('MEMBER')
       alice.team.addMemberRole(alice.userId, 'MEMBER')
@@ -160,13 +161,14 @@ describe('Team', () => {
       expect(alice.team.hasRole('MEMBER')).toBe(true)
       expect(alice.team.memberHasRole(alice.userId, 'MEMBER')).toBe(true)
 
-      // 👩🏾 Alice creates a lockbox for MEMBER keys under arbitrary keys
+      // 👩🏾 Alice sends a lockbox for MEMBER keys over an out-of-band channel.
       const randomSeed = randomUUID()
       const arbitraryScope: KeyScope = { type: 'TESTING', name: 'TESTING' }
       const keySet = createKeyset(arbitraryScope, randomSeed)
-      alice.team.createLockbox('MEMBER', keySet)
-      
-      // 👩🏾 Alice persists the team
+      const [memberKeyLockbox] = alice.team.createLockbox('MEMBER', keySet)
+      const memberKeys = lockbox.open(memberKeyLockbox, keySet)
+
+      // The out-of-band delivery is not persisted in the team graph.
       const savedTeam = alice.team.save()
 
       // 👨🏻‍🦲 Bob loads the team
@@ -176,7 +178,7 @@ describe('Team', () => {
       expect(bob.team.memberHasRole(bob.userId, 'MEMBER')).toBe(false)
 
       // 👨🏻‍🦲 Bob self-assigns the MEMBER role
-      bob.team.addMemberRoleToSelf('MEMBER', keySet)
+      bob.team.addMemberRoleToSelf('MEMBER', memberKeys)
 
       // 👨🏻‍🦲 Bob has the MEMBER role keys
       const bobsMemberKeys = bob.team.roleKeys('MEMBER')
@@ -185,18 +187,19 @@ describe('Team', () => {
 
     it(`attempts to self-assign a role that can't be self-assigned`, () => {
       const { alice, bob } = setup('alice', 'bob')
-      
+
       // 👩🏾 Alice creates FOOBAR role. She doesn't give it to herself — FOOBAR isn't self-
       // assignable, and that rule applies to her too; as an admin she holds its keys regardless.
       alice.team.addRole('FOOBAR')
       expect(alice.team.hasRole('FOOBAR')).toBe(true)
 
-      // 👩🏾 Alice creates a lockbox for FOOBAR keys under arbitrary keys
+      // 👩🏾 Alice creates an out-of-band lockbox for FOOBAR keys under arbitrary keys.
       const randomSeed = randomUUID()
       const arbitraryScope: KeyScope = { type: 'TESTING', name: 'TESTING' }
       const keySet = createKeyset(arbitraryScope, randomSeed)
-      alice.team.createLockbox('FOOBAR', keySet)
-      
+      const [foobarKeyLockbox] = alice.team.createLockbox('FOOBAR', keySet)
+      expect(lockbox.open(foobarKeyLockbox, keySet)).toLookLikeKeyset()
+
       // 👩🏾 Alice persists the team
       const savedTeam = alice.team.save()
 

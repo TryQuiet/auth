@@ -2,6 +2,11 @@ import { ADMIN } from 'role/index.js'
 import { type TeamAction, type TeamLinkBody } from './types.js'
 
 export const isAdminOnlyAction = (action: TeamLinkBody) => {
+  // Preserve replay compatibility for a serialized ambient action while making its reducer
+  // transition a no-op. ADD_LOCKBOXES is intentionally absent from TeamAction and cannot
+  // introduce ambient deliveries.
+  if ((action as { type?: unknown }).type === 'ADD_LOCKBOXES') return false
+
   // Granting the admin role is itself an admin-only act. Role grants are otherwise open to any
   // member (see below), but admin is the keys to the team: if a plain member could grant it, two
   // members could promote each other (or a colluder) to admin and take over. Self-assignment is
@@ -24,10 +29,9 @@ export const isAdminOnlyActionType = (actionType: TeamAction['type']): boolean =
     'ADMIT_DEVICE',
     'ADD_MEMBER_ROLE',
 
-    // A newly admitted member posts lockboxes for its own device as its first act, before it could
-    // possibly be an admin. Lockboxes ride along on every other action's payload anyway, so
-    // gating this one wouldn't be keeping anything out.
-    'ADD_LOCKBOXES',
+    // A newly admitted member publishes its own USER keys to an already-registered device. The
+    // action-specific collector verifies both sides of that relationship.
+    'PUBLISH_USER_KEYS_TO_DEVICE',
   ]
 
   return !nonAdminActions.includes(actionType)

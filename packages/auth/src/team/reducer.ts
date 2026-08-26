@@ -71,15 +71,17 @@ export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (state, link
     throw validation.error
   }
 
-  // Get all transforms and compose them into a single function
-  const applyTransforms = composeTransforms([
+  // Apply the semantic state transition before collecting its lockbox deliveries. A delivery
+  // policy can then compare the plan with both the state that authorized the action and the state
+  // the action creates (especially important for removal and key-change transitions).
+  const applyActionTransforms = composeTransforms([
     setHead(link),
-    collectLockboxes(link, logger), // Any payload can include lockboxes
     requestAdminKeyRotation(link), // Non-admin identity/device changes queue shared re-keying
     ...getTransforms(link), // Get the specific transforms indicated by this action
   ])
 
-  return applyTransforms(state)
+  const projectedState = applyActionTransforms(state)
+  return collectLockboxes(state, link, logger)(projectedState)
 }
 
 /**
@@ -247,8 +249,9 @@ const getTransforms = (link: TeamLink): Transform[] => {
       ]
     }
 
-    case 'ADD_LOCKBOXES': {
-      // Note: lockboxes are handled by default so we don't need to do anything special here
+    case 'PUBLISH_USER_KEYS_TO_DEVICE': {
+      // The lockbox delivery is handled by the action-specific collector. The device was already
+      // registered by admission, so this action has no independent state mutation.
       return [(state) => state]
     }
 
@@ -260,11 +263,19 @@ const getTransforms = (link: TeamLink): Transform[] => {
     }
 
     default: {
+      // ADD_LOCKBOXES is no longer part of the public action union. Its state transition remains
+      // a no-op; the collector may translate only a historical self-device USER-key publication.
+      if (isLegacyAddLockboxes(action)) return [state => state]
       // ignore coverage
       throw unrecognizedLinkType(action)
     }
   }
 }
+
+const isLegacyAddLockboxes = (action: unknown) =>
+  typeof action === 'object' &&
+  action !== null &&
+  (action as { type?: unknown }).type === 'ADD_LOCKBOXES'
 
 // ignore coverage
 function unrecognizedLinkType(action: never) {

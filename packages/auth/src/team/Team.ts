@@ -307,7 +307,7 @@ export class Team extends EventEmitter<TeamEvents> {
   /** Remove a member from the team */
   public remove = (userId: string) => {
     // Create new keys & lockboxes for any keys this person had access to
-    const lockboxes = this.rotateKeys({ type: USER, name: userId })
+    const lockboxes = this.rotateKeys({ type: USER, name: userId }, { excludeMemberId: userId })
 
     // Post the removal to the graph
     this.dispatch({
@@ -366,15 +366,16 @@ export class Team extends EventEmitter<TeamEvents> {
     // We're creating this role so we need to generate new keys
     const roleKeys = createKeyset({ type: KeyType.ROLE, name: role.roleName }, this.seed)
 
-    const lockboxes: lockbox.Lockbox[] = []
-    if (this.memberIsAdmin(this.userId)) {
-      // Make a lockbox for the admin role, so that all admins can access this role's keys
-      lockboxes.push(lockbox.create(roleKeys, this.adminKeys()))
-    }
+    // Administrator access is an explicit part of the role-key policy. A role is delivered to the
+    // current ADMIN key; members gain that key only through an authorized ADMIN membership grant.
+    const lockboxes = this.memberIsAdmin(this.userId)
+      ? [lockbox.create(roleKeys, this.adminKeys())]
+      : []
 
     // Post the role to the graph. Creating a role does NOT make the creator a member of it: an
-    // admin can already open the role's keys through the admin lockbox above, and adding oneself as
-    // a member is a separate, explicit act (addMemberRole). #26's own roles.test.ts asserts exactly
+    // admin can already open the role's keys through the explicit administrator access rule above,
+    // and adding oneself as a member is a separate, explicit act (addMemberRole). #26's own
+    // roles.test.ts asserts exactly
     // this ("adds a role" expects the role to have only the members later assigned to it; "admins
     // have access to all role keys" expects the admin NOT to be a member) — the auto-membership its
     // addRole grew fails those tests on pristine auth main, and it also breaks A's on-admission
@@ -382,7 +383,7 @@ export class Team extends EventEmitter<TeamEvents> {
     // rejected self-assignment that kills the connection). Aligning with #26's tests + A's design.
     this.dispatch({
       type: 'ADD_ROLE',
-      payload: { ...(role as Role), lockboxes: lockboxes },
+      payload: { ...(role as Role), lockboxes },
     })
   }
 
@@ -424,10 +425,28 @@ export class Team extends EventEmitter<TeamEvents> {
     this._dispatchAddMemberRole(userId, roleName, lockboxRoleKeysForMember)
   }
 
-  /** Give yourself a role */
-  public addMemberRoleToSelf = (roleName: string, decryptionKeys: KeysetWithSecrets) => {
+  /**
+   * Give yourself a self-assignable role using role keys received out of band.
+   *
+   * `createLockbox` no longer publishes the delivery to the graph, so this accepts the opened
+   * role keyset(s), not the recipient keyset that originally decrypted their lockboxes.
+   */
+  public addMemberRoleToSelf = (
+    roleName: string,
+    roleKeys: KeysetWithSecrets | KeysetWithSecrets[]
+  ) => {
     assert(this.state.metadata.selfAssignableRoles.includes(roleName), `Cannot self-assign role ${roleName}`)
-    this.addMemberRole(this.userId, roleName, decryptionKeys)
+    const keysets = Array.isArray(roleKeys) ? roleKeys : [roleKeys]
+    assert(
+      keysets.length > 0 && keysets.every(keys => keys.type === KeyType.ROLE && keys.name === roleName),
+      `Expected ${roleName} role keys`
+    )
+    const member = this.members(this.userId)
+    this._dispatchAddMemberRole(
+      this.userId,
+      roleName,
+      keysets.map(keys => lockbox.create(keys, member.keys))
+    )
   }
 
   /** Remove a role from a member */
@@ -438,7 +457,10 @@ export class Team extends EventEmitter<TeamEvents> {
     }
 
     // Create new keys & lockboxes for any keys this person had access to via this role
-    const lockboxes = this.rotateKeys({ type: KeyType.ROLE, name: roleName })
+    const lockboxes = this.rotateKeys(
+      { type: KeyType.ROLE, name: roleName },
+      { excludeRoleMember: { userId, roleName } }
+    )
 
     // Post the removal to the graph
     this.dispatch({
@@ -506,7 +528,10 @@ export class Team extends EventEmitter<TeamEvents> {
     if (!this.hasDevice(deviceId)) throw new Error(`Device ${deviceId} not found`)
 
     // Create new keys & lockboxes for any keys this device had access to
-    const lockboxes = this.rotateKeys({ type: DEVICE, name: deviceId })
+    const lockboxes = this.rotateKeys(
+      { type: DEVICE, name: deviceId },
+      { excludeDeviceId: deviceId }
+    )
 
     // Post the removal to the graph
     this.dispatch({
@@ -774,8 +799,8 @@ export class Team extends EventEmitter<TeamEvents> {
 
     this.dispatch(
       {
-        type: 'ADD_LOCKBOXES',
-        payload: { lockboxes: [lockboxUserKeysForDevice] },
+        type: 'PUBLISH_USER_KEYS_TO_DEVICE',
+        payload: { deviceId: device.deviceId, lockboxes: [lockboxUserKeysForDevice] },
       },
       teamKeys
     )
@@ -819,9 +844,14 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** Removes a server from the team. */
   public removeServer = (serverId: string) => {
+    const lockboxes = this.rotateKeys(
+      { type: SERVER, name: serverId },
+      { excludeServerId: serverId }
+    )
+
     this.dispatch({
       type: 'REMOVE_SERVER',
-      payload: { serverId },
+      payload: { serverId, lockboxes },
     })
   }
 
@@ -1024,17 +1054,22 @@ export class Team extends EventEmitter<TeamEvents> {
   }
 
   /**
-   * Create a new lockbox containing a role's current generation keys encrypted to an arbitrary keyset
-   * 
+   * Create lockboxes containing every available generation of a role's keys encrypted to an
+   * arbitrary keyset.
+   *
+   * This is intentionally an out-of-band encryption utility. Publishing one of these boxes no
+   * longer mutates the team graph or grants the recipient access through an ambient action.
+   *
    * @param roleName Role whose keys we want to encapsulate in the lockbox (must be a role the user has!)
    * @param encryptionKeys Keys to encrypt the lockbox to
    * @returns Generated lockbox
    */
-  public createLockbox = (roleName: string, encryptionKeys: KeysetWithSecrets): lockbox.Lockbox[] => {
+  public createLockbox = (
+    roleName: string,
+    encryptionKeys: KeysetWithSecrets
+  ): lockbox.Lockbox[] => {
     const roleKeys = this.roleKeysAllGenerations(roleName)
-    const lockboxes = roleKeys.map((keys) => lockbox.create(keys, encryptionKeys))
-    this.dispatch({ type: 'ADD_LOCKBOXES', payload: { lockboxes }})
-    return lockboxes
+    return roleKeys.map(keys => lockbox.create(keys, encryptionKeys))
   }
 
   private checkForPendingKeyRotations() {
@@ -1055,11 +1090,15 @@ export class Team extends EventEmitter<TeamEvents> {
   }
 
   private readonly createMemberLockboxes = (member: NewMember) => {
-    const roleKeys = member.roles.map((roleName: string) => this.roleKeys(roleName))
+    // A newly registered recipient needs historical generations as well as the current key: old
+    // graph links remain encrypted under the generation that existed when they were authored.
+    const roleKeys = member.roles.flatMap((roleName: string) =>
+      this.roleKeysAllGenerations(roleName)
+    )
     const createLockboxRoleKeysForMember = (keys: KeysetWithSecrets) => {
       return lockbox.create(keys, member.keys)
     }
-    return [...roleKeys, this.teamKeys()].map(createLockboxRoleKeysForMember)
+    return [...roleKeys, ...this.keysAllGenerations(TEAM_SCOPE)].map(createLockboxRoleKeysForMember)
   }
 
   /**
@@ -1073,7 +1112,20 @@ export class Team extends EventEmitter<TeamEvents> {
    * @param compromised If `compromised` is a keyset, that will become the new keyset for the
    * compromised scope. If it is just a scope, new keys will be randomly generated for that scope.
    */
-  private readonly rotateKeys = (compromised: KeyScope | KeysetWithSecrets) => {
+  private readonly rotateKeys = (
+    compromised: KeyScope | KeysetWithSecrets,
+    {
+      excludeMemberId,
+      excludeDeviceId,
+      excludeRoleMember,
+      excludeServerId,
+    }: {
+      excludeMemberId?: string
+      excludeDeviceId?: string
+      excludeRoleMember?: { userId: string; roleName: string }
+      excludeServerId?: string
+    } = {}
+  ) => {
     const newKeyset = isKeyset(compromised)
       ? compromised // We're given a keyset - use it as the new keys
       : createKeyset(compromised) // We're just given a scope - generate new keys for it
@@ -1085,20 +1137,75 @@ export class Team extends EventEmitter<TeamEvents> {
     // Generate new keys for each one
     const newKeysets = [newKeyset, ...otherNewKeysets]
 
-    // Create new lockboxes for each of these
-    const newLockboxes = newKeysets.flatMap(newKeyset => {
-      const oldLockboxes = select.lockboxesInScope(this.state, newKeyset)
+    // The state defines who holds a shared key. Existing lockbox recipients only tell us which
+    // scopes were exposed; they never decide who receives a replacement generation.
+    const replaceRecipientKeys = (keys: Keyset) =>
+      newKeysets.find(newKeyset => scopesMatch(newKeyset, keys)) ?? keys
 
-      return oldLockboxes.map(oldLockbox => {
-        // Check whether we have new keys for the recipient of this lockbox
-        const updatedKeyset = newKeysets.find(k => scopesMatch(k, oldLockbox.recipient))
-        return lockbox.rotate({
-          oldLockbox,
-          newContents: newKeyset,
-          // If we did, address the new lockbox to those keys
-          updatedRecipientKeys: updatedKeyset ? redactKeys(updatedKeyset) : undefined,
-        })
-      })
+    const activeMembers = this.state.members.filter(member => member.userId !== excludeMemberId)
+    const currentAdminRecipient = select.lockboxesInScope(this.state, {
+      type: KeyType.ROLE,
+      name: ADMIN,
+    })[0]?.contents
+    const recipientsForSharedScope = (scope: KeyScope) => {
+      if (scope.type === KeyType.TEAM) {
+        return [
+          ...activeMembers.map(member => replaceRecipientKeys(member.keys)),
+          ...this.state.servers
+            .filter(server => server.serverId !== excludeServerId)
+            .map(server => replaceRecipientKeys(server.keys)),
+        ]
+      }
+
+      const roleMemberWasRemoved = (member: Member) =>
+        excludeRoleMember !== undefined &&
+        scope.name === excludeRoleMember.roleName &&
+        member.userId === excludeRoleMember.userId
+      const membersInRole = activeMembers.filter(
+        member => member.roles.includes(scope.name) && !roleMemberWasRemoved(member)
+      )
+      const admins = activeMembers.filter(
+        member => member.roles.includes(ADMIN) && !roleMemberWasRemoved(member)
+      )
+      if (scope.name === ADMIN) return admins.map(member => replaceRecipientKeys(member.keys))
+
+      const nextAdminKeys = newKeysets.find(
+        newKeyset => newKeyset.type === KeyType.ROLE && newKeyset.name === ADMIN
+      )
+      const adminRecipient = nextAdminKeys ?? currentAdminRecipient
+      return [
+        ...membersInRole.map(member => replaceRecipientKeys(member.keys)),
+        ...(adminRecipient === undefined ? [] : [adminRecipient]),
+      ]
+    }
+
+    const newLockboxes = newKeysets.flatMap(newKeyset => {
+      if (newKeyset.type === KeyType.TEAM || newKeyset.type === KeyType.ROLE) {
+        const previous = select.lockboxesInScope(this.state, newKeyset)
+        if (previous.length === 0) return []
+
+        newKeyset.generation = previous[0].contents.generation + 1
+        return recipientsForSharedScope(newKeyset).map(recipient =>
+          lockbox.create(newKeyset, recipient)
+        )
+      }
+
+      if (newKeyset.type !== USER || newKeyset.name === excludeMemberId) return []
+
+      const member = this.state.members.find(candidate => candidate.userId === newKeyset.name)
+      if (member === undefined) return []
+
+      const priorGeneration = Math.max(
+        member.keys.generation,
+        ...select
+          .lockboxesInScope(this.state, newKeyset)
+          .map(lockbox => lockbox.contents.generation)
+      )
+      newKeyset.generation = Math.max(newKeyset.generation, priorGeneration + 1)
+      const recipients = (member.devices ?? [])
+        .filter(device => device.deviceId !== excludeDeviceId)
+        .map(device => device.keys)
+      return recipients.map(recipient => lockbox.create(newKeyset, recipient))
     })
 
     return newLockboxes
