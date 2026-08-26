@@ -5,7 +5,6 @@ import { clone, composeTransforms } from 'util/index.js'
 import { invalidLinkReducer } from './invalidLinkReducer.js'
 import { setHead } from './setHead.js'
 import {
-  addDevice,
   addInvitedDevice,
   addMember,
   addMemberRoles,
@@ -50,8 +49,15 @@ import { validate } from './validate.js'
  * @param state The team state as of the previous link in the signature chain.
  * @param link The current link being processed.
  */
-export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (state, link, extendableLogger) => {
-  const logger = extendableLogger != null ? extendableLogger.extend('reducer') : new Logger({ moduleName: 'auth:reducer' })
+export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (
+  state,
+  link,
+  extendableLogger
+) => {
+  const logger =
+    extendableLogger !== undefined && extendableLogger !== null
+      ? extendableLogger.extend('reducer')
+      : new Logger({ moduleName: 'auth:reducer' })
   // Invalid links are marked to be discarded by the MembershipResolver due to conflicting
   // concurrent actions. In most cases we just ignore these links and they don't affect state at
   // all; but in some cases we need to clean up, for example when someone's admission is reversed
@@ -180,7 +186,7 @@ const getTransforms = (link: TeamLink): Transform[] => {
     case 'ADMIT_MEMBER': {
       // Everything we register comes out of the signed claim, not out of fields the admitting peer
       // chose: the validator has checked that the claim is what the invitee signed.
-      const { id, claim } = action.payload
+      const { claim } = action.payload
       const member: Member = {
         userId: claim.memberKeys.name,
         userName: claim.userName,
@@ -252,14 +258,12 @@ const getTransforms = (link: TeamLink): Transform[] => {
     case 'PUBLISH_USER_KEYS_TO_DEVICE': {
       // The lockbox delivery is handled by the action-specific collector. The device was already
       // registered by admission, so this action has no independent state mutation.
-      return [(state) => state]
+      return [state => state]
     }
 
     case 'SET_METADATA': {
       const { metadata } = action.payload
-      return [
-        setMetadata(metadata)
-      ]
+      return [setMetadata(metadata)]
     }
 
     default: {

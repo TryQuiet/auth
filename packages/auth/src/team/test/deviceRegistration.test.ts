@@ -52,7 +52,7 @@ describe('Team', () => {
     })
 
     it("won't register a device id that was removed", () => {
-      const { alice, bob } = setup('alice', 'bob')
+      const { bob } = setup('alice', 'bob')
 
       // 👨🏻‍🦲 Bob admits his phone, then it's stolen and 👩🏾 Alice removes it
       const firstInvitation = bob.team.inviteDevice()

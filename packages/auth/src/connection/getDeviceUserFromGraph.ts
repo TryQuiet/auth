@@ -1,5 +1,5 @@
 import type { Keyring, UserWithSecrets } from '@localfirst/crdx'
-import { assert, Logger } from '@localfirst/shared'
+import { assert, type Logger } from '@localfirst/shared'
 import { deriveId } from 'invitation/deriveId.js'
 import { generateStarterKeys } from 'invitation/generateStarterKeys.js'
 import type { TeamState } from 'team/index.js'

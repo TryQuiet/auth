@@ -55,7 +55,7 @@ export const decryptGraph: DecryptFn = <A extends Action, C>({
 }): Graph<A, C> => {
   const { encryptedLinks, root, childMap = {} } = encryptedGraph
   const toVisit = [root]
-  const visited: Set<Hash> = new Set()
+  const visited = new Set<Hash>()
   const decryptedLinks: Record<Hash, Link<A, C>> = {}
   let traversalSteps = 0
 

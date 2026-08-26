@@ -1,4 +1,4 @@
-import { Logger } from '@localfirst/shared'
+import { type Logger } from '@localfirst/shared'
 import { type Action, type Graph, type Link } from 'graph/index.js'
 
 export type Reducer<S, A extends Action, C = Record<string, unknown>> = (

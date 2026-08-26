@@ -115,7 +115,8 @@ describe('invitation acceptance wire format', () => {
     let inert = 0
     for (const index of positions) {
       const encryptedAcceptance = original.slice()
-      encryptedAcceptance[index] ^= 1
+      const originalByte = encryptedAcceptance[index]
+      encryptedAcceptance[index] = originalByte % 2 === 0 ? originalByte + 1 : originalByte - 1
       let opened: ExpectedAcceptance
       try {
         opened = openExpectedAcceptance({
@@ -316,7 +317,7 @@ const openExpectedAcceptance = ({
   const starterKeys = generateStarterKeys(invitationSeed)
   const decrypted = asymmetric.decryptBytes({
     cipher: payload.encryptedAcceptance,
-    recipientSecretKey: starterKeys.encryption.secretKey as Base58,
+    recipientSecretKey: starterKeys.encryption.secretKey,
     senderPublicKey: payload.senderPublicKey as Base58,
   })
   assertExpectedAcceptance(decrypted)

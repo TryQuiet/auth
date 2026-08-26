@@ -46,12 +46,12 @@ describe('forged signer identity', () => {
   it('rejects a link whose signer is registered only on a branch this validator has not seen', () => {
     const { alice, bob } = setup('alice', 'bob')
     const teamKeys = alice.team.teamKeys()
-    const beforeAdmission = clone(alice.team.graph) as TeamGraph
+    const beforeAdmission = clone(alice.team.graph)
 
     // 👨🏻‍🦲 Bob admits his 📱 phone on his own branch...
     const { seed } = bob.team.inviteDevice()
     bob.team.admitDevice(...deviceAdmission(seed, bob.phone!))
-    const registrationBranch = clone(bob.team.graph) as TeamGraph
+    const registrationBranch = clone(bob.team.graph)
 
     // ...and the phone signs a link rooted before that admission, which it hands to 👩🏾 Alice on
     // its own. She has no way to know this device: nothing in what she was given registers it.

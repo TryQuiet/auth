@@ -375,10 +375,8 @@ const membershipRules: Record<string, MembershipRuleEnforcer> = {
    * removal, not something being overridden by it.
    */
   cantDoAnythingWhenDeviceRemoved(links) {
-    const removedDevices = getDeviceRemovals(links).map(link => link.body.payload.deviceId)
-    return links.filter(
-      link => removedDevices.includes(signerId(link)) && !isSelfRemoval(link)
-    )
+    const removedDevices = new Set(getDeviceRemovals(links).map(link => link.body.payload.deviceId))
+    return links.filter(link => removedDevices.has(signerId(link)) && !isSelfRemoval(link))
   },
 
   // RULE: If B is demoted, any admin-only actions they do concurrently are omitted
@@ -425,12 +423,13 @@ const isSelfRemoval = (link: TeamLink) =>
   link.body.type === 'REMOVE_DEVICE' && link.body.payload.deviceId === signerId(link)
 
 const getDeviceRemovals = (links: TeamLink[]) =>
-  links.filter(link => link.body.type === 'REMOVE_DEVICE' && !isSelfRemoval(link)) as RemoveDeviceLink[]
+  links.filter(
+    link => link.body.type === 'REMOVE_DEVICE' && !isSelfRemoval(link)
+  ) as RemoveDeviceLink[]
 
 const signerId = (link: TeamLink): string => link.body.signer.id
 
-const byLinkHash = (a: TeamLink, b: TeamLink) =>
-  a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0
+const byLinkHash = (a: TeamLink, b: TeamLink) => (a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0)
 
 /**
  * The signer ids a link registers — the same ids `getSignerRegistrationMap` keys on: the founding
@@ -441,17 +440,22 @@ const byLinkHash = (a: TeamLink, b: TeamLink) =>
 const registeredSignerIds = (link: TeamLink): string[] => {
   const { type, payload } = link.body
   switch (type) {
-    case ROOT:
+    case ROOT: {
       return [payload.rootDevice.deviceId]
-    case 'ADD_MEMBER':
+    }
+    case 'ADD_MEMBER': {
       return (payload.member.devices ?? []).map(device => device.deviceId)
+    }
     case 'ADMIT_MEMBER':
-    case 'ADMIT_DEVICE':
+    case 'ADMIT_DEVICE': {
       return [payload.claim.device.deviceId]
-    case 'ADD_SERVER':
+    }
+    case 'ADD_SERVER': {
       return [payload.server.serverId]
-    default:
+    }
+    default: {
       return []
+    }
   }
 }
 

@@ -324,7 +324,7 @@ describe('Team', () => {
         })
 
         it("won't accept proof of invitation with an invalid signature", () => {
-          const { alice, eve } = setup('alice', 'eve')
+          const { alice } = setup('alice', 'eve')
 
           // 💻 on her laptop, Alice generates an invitation for her phone
           alice.team.inviteDevice()

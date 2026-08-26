@@ -5,7 +5,7 @@ import { getTeamState } from 'team/getTeamState.js'
 import * as select from 'team/selectors/index.js'
 import { serializeTeamGraph } from 'team/serialize.js'
 import type { Team } from 'team/Team.js'
-import { SignerKind, type TeamGraph, type TeamLink } from 'team/types.js'
+import { SignerKind, type TeamLink } from 'team/types.js'
 import { KeyType } from 'util/index.js'
 import { setup } from 'util/testing/index.js'
 import { describe, expect, it } from 'vitest'
@@ -23,7 +23,7 @@ import { deviceAdmission, memberAdmission } from './helpers.js'
 describe('the honest path', () => {
   /** Every link in the graph is signed by a key the graph itself registers for its signer. */
   const everyLinkVerifies = (team: Team) => {
-    const state = team.state
+    const { state } = team
     for (const link of Object.values(team.graph.links) as TeamLink[]) {
       const { signer } = link.body
       const record = select.signerRecord(state, signer, { includeRemoved: true })
@@ -94,7 +94,7 @@ describe('the honest path', () => {
     expect(alice.team.has(bob.userId)).toBe(true)
 
     const reloaded = teams.load(
-      serializeTeamGraph(alice.team.graph as TeamGraph),
+      serializeTeamGraph(alice.team.graph),
       alice.localContext,
       teamKeyring
     )
@@ -134,7 +134,7 @@ describe('the honest path', () => {
     }
 
     const reloaded = teams.load(
-      serializeTeamGraph(alice.team.graph as TeamGraph),
+      serializeTeamGraph(alice.team.graph),
       charlie.localContext,
       createKeyring(teamKeyring)
     )

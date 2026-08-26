@@ -4,12 +4,11 @@ import { deviceIdentityIsValid } from 'device/index.js'
 import * as invitations from 'invitation/index.js'
 import { invitationCanBeUsed } from 'invitation/index.js'
 import { castServer, serverIdentityIsValid } from 'server/index.js'
-import { KeyType, VALID, ValidationError, actionFingerprint, deriveUserId, type ValidationResult } from 'util/index.js'
+import { KeyType, VALID, ValidationError, actionFingerprint, deriveUserId } from 'util/index.js'
 import { isAdminOnlyAction } from './isAdminOnlyAction.js'
 import * as select from './selectors/index.js'
 import {
   SignerKind,
-  type AuthorizedValidator,
   type AuthorizedValidatorSet,
   type LinkAuthor,
   type ResolvedSigner,
@@ -38,7 +37,7 @@ export const validate: TeamStateValidator = (
   extendableLogger?: Logger
 ) => {
   const logger =
-    extendableLogger != null
+    extendableLogger !== undefined && extendableLogger !== null
       ? extendableLogger.extend('validate')
       : new Logger({ moduleName: 'auth:validate' })
 
@@ -253,10 +252,7 @@ const validators: AuthorizedValidatorSet = {
     if (link.body.type !== 'PUBLISH_USER_KEYS_TO_DEVICE') return VALID
 
     const { deviceId } = link.body.payload
-    if (
-      author.signer.kind !== SignerKind.DEVICE ||
-      author.signer.device.deviceId !== deviceId
-    ) {
+    if (author.signer.kind !== SignerKind.DEVICE || author.signer.device.deviceId !== deviceId) {
       return fail(
         'USER keys may be published only by the device that receives them',
         previousState,
@@ -349,9 +345,7 @@ const validators: AuthorizedValidatorSet = {
       const devices = member.devices ?? []
       const memberIsValid =
         keysetMatches(member.keys, KeyType.USER, member.userId, 0) &&
-        devices.every(
-          device => device.userId === member.userId && deviceIdentityIsValid(device)
-        )
+        devices.every(device => device.userId === member.userId && deviceIdentityIsValid(device))
       if (!memberIsValid) {
         return fail('New member or device key metadata is invalid', previousState, link, logger)
       }
@@ -402,10 +396,11 @@ const validators: AuthorizedValidatorSet = {
   /** The user who made these changes was a member with appropriate rights at the time */
   mustBeAdmin(previousState, link, author, extendableLogger) {
     const logger = extendableLogger.extend('mustBeAdmin')
-    if (isAdminOnlyAction(link.body)) {
-      if (!select.memberIsAdmin(previousState, author.member.userId)) {
-        return fail(`Member '${author.member.userId}' is not an admin`, previousState, link, logger)
-      }
+    if (
+      isAdminOnlyAction(link.body) &&
+      !select.memberIsAdmin(previousState, author.member.userId)
+    ) {
+      return fail(`Member '${author.member.userId}' is not an admin`, previousState, link, logger)
     }
 
     return VALID
@@ -579,7 +574,12 @@ const validators: AuthorizedValidatorSet = {
     const deviceId = claim?.device?.deviceId
     const userId = claim?.memberKeys?.name
     if (typeof deviceId !== 'string' || typeof userId !== 'string') {
-      return fail('Admission claim is missing the fields its member id derives from', previousState, link, logger)
+      return fail(
+        'Admission claim is missing the fields its member id derives from',
+        previousState,
+        link,
+        logger
+      )
     }
 
     if (userId !== deriveUserId(deviceId)) {

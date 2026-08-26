@@ -43,8 +43,8 @@ export const connectionErrors: Record<string, ErrorDefinition> = {
     remoteMessage: "This isn't the team the peer was invited to",
   },
   [ADMIT_MEMBER_LINK_MISSING]: {
-    localMessage: "Invite was accepted but member admission link was missing",
-    remoteMessage: "Peer received invite acceptance but found no member admission link",
+    localMessage: 'Invite was accepted but member admission link was missing',
+    remoteMessage: 'Peer received invite acceptance but found no member admission link',
   },
   [MEMBER_REMOVED]: {
     localMessage: 'The peer was removed from this team',

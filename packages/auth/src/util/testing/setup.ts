@@ -27,7 +27,11 @@ export const createTestUser = (
     deviceInfo,
   }: { deviceName?: string; seed?: string; deviceInfo?: any } = {}
 ): { user: UserWithSecrets; device: DeviceWithSecrets } => {
-  const laptop = devices.createFirstUseDevice({ deviceName, seed: `${seed}-${deviceName}`, deviceInfo })
+  const laptop = devices.createFirstUseDevice({
+    deviceName,
+    seed: `${seed}-${deviceName}`,
+    deviceInfo,
+  })
   const userId = deriveUserId(laptop.deviceId)
   return {
     user: createUser(userName, userId, seed),
@@ -90,7 +94,9 @@ export const setup = (..._config: SetupConfig) => {
   const founderContext = { user: testUsers[founder], device: laptops[founder] }
   const teamName = 'Spies Я Us'
   const randomSeed = teamName
-  const team = teams.createTeam(teamName, founderContext, randomSeed, { selfAssignableRoles: ['MEMBER'] })
+  const team = teams.createTeam(teamName, founderContext, randomSeed, {
+    selfAssignableRoles: ['MEMBER'],
+  })
   const teamKeys = team.teamKeys()
 
   // Add members

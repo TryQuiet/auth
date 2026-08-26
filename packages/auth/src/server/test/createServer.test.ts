@@ -31,9 +31,9 @@ describe('createServer', () => {
     expect(serverIdentityIsValid(rotated)).toBe(true)
 
     // Rotating them into someone else's name does not
-    expect(serverIdentityIsValid({ ...server, keys: { ...server.keys, name: other.serverId } })).toBe(
-      false
-    )
+    expect(
+      serverIdentityIsValid({ ...server, keys: { ...server.keys, name: other.serverId } })
+    ).toBe(false)
 
     // Nor does presenting another server's identity keys under this serverId
     expect(serverIdentityIsValid({ ...server, identityKeys: other.identityKeys })).toBe(false)

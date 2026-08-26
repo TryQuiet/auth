@@ -39,14 +39,19 @@ describe('a removed device racing its removal', () => {
 
   it('discards what the stolen device does while it is being removed', () => {
     const { alice, bob, thief, keys } = stolenPhone()
-    const shared = clone(alice.team.graph) as TeamGraph
+    const shared = clone(alice.team.graph)
 
     // 📱 The thief acts...
-    const thiefBranch = forge({ graph: shared, action: ADD_MANAGERS, signer: thief, teamKeys: keys })
+    const thiefBranch = forge({
+      graph: shared,
+      action: ADD_MANAGERS,
+      signer: thief,
+      teamKeys: keys,
+    })
 
     // ...while 👩🏾 Alice, who can't see that yet, removes the phone.
     const removalBranch = forge({
-      graph: clone(shared) as TeamGraph,
+      graph: clone(shared),
       action: removeDevice(bob.phone!.deviceId),
       signer: alice.signer,
       teamKeys: keys,
@@ -66,7 +71,7 @@ describe('a removed device racing its removal', () => {
 
   it('does not let the stolen device lock the owner out by removing his other device first', () => {
     const { alice, bob, thief, keys } = stolenPhone()
-    const shared = clone(alice.team.graph) as TeamGraph
+    const shared = clone(alice.team.graph)
 
     // 📱 The thief's first move is to remove 💻 Bob's laptop, so that Bob can't remove the phone...
     const thiefBranch = forge({
@@ -79,7 +84,7 @@ describe('a removed device racing its removal', () => {
     // ...and 💻 the laptop concurrently removes the phone. Both are legitimate REMOVE_DEVICE links
     // from a member's own devices; the tie has to be broken the same way on every replica.
     const laptopBranch = forge({
-      graph: clone(shared) as TeamGraph,
+      graph: clone(shared),
       action: removeDevice(bob.phone!.deviceId),
       signer: bob.signer,
       teamKeys: keys,
@@ -96,14 +101,19 @@ describe('a removed device racing its removal', () => {
 
   it('discards what the stolen device does when its owner is concurrently removed', () => {
     const { alice, bob, thief, keys } = stolenPhone()
-    const shared = clone(alice.team.graph) as TeamGraph
+    const shared = clone(alice.team.graph)
 
-    const thiefBranch = forge({ graph: shared, action: ADD_MANAGERS, signer: thief, teamKeys: keys })
+    const thiefBranch = forge({
+      graph: shared,
+      action: ADD_MANAGERS,
+      signer: thief,
+      teamKeys: keys,
+    })
 
     // 👩🏾 Alice removes 👨🏻‍🦲 Bob himself — she doesn't know about the phone, and shouldn't have to.
     // Removing a member has to reach every device that member ever registered.
     const removalBranch = forge({
-      graph: clone(shared) as TeamGraph,
+      graph: clone(shared),
       action: { type: 'REMOVE_MEMBER', payload: { userId: bob.userId } } as TeamAction,
       signer: alice.signer,
       teamKeys: keys,
@@ -124,7 +134,7 @@ describe('a removed device racing its removal', () => {
     // 📱 Bob's second device doing ordinary work, and it lands — which is what makes the test above
     // a test of the removal rule rather than of the phone being unable to sign at all.
     const phoneBranch = forge({
-      graph: clone(alice.team.graph) as TeamGraph,
+      graph: clone(alice.team.graph),
       action: ADD_MANAGERS,
       signer: thief,
       teamKeys: keys,

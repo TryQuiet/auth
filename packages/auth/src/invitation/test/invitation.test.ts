@@ -114,7 +114,7 @@ describe('invitations', () => {
     const proof = memberInvitationProof(seed, bob, bobsLaptop)
 
     expect(validate({ ...proof, extra: 'junk' } as any, invitation, claim)).not.toBeValid()
-    const { inviteeNonce, ...incomplete } = proof
+    const { inviteeNonce: _inviteeNonce, ...incomplete } = proof
     expect(validate(incomplete as any, invitation, claim)).not.toBeValid()
   })
 })
@@ -182,7 +182,7 @@ describe('validateClaim', () => {
     const claim = memberClaim(bob, bobsLaptop)
     expect(validateClaim({ ...claim, extra: 'junk' } as any)).not.toBeValid()
 
-    const { memberKeys, ...incomplete } = claim
+    const { memberKeys: _memberKeys, ...incomplete } = claim
     expect(validateClaim(incomplete as any)).not.toBeValid()
 
     expect(

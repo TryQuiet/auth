@@ -10,26 +10,25 @@ import { describe, expect, it } from 'vitest'
 const CHANNEL = 'committed-channel'
 
 describe('complete-keyset manifest authorization', () => {
-  it('permits redistribution only for the exact established keyset', () => {
-    const { alice } = setup('alice')
+  it('delivers only the exact established role keyset to a newly assigned member', () => {
+    const { alice, bob } = setup('alice', { user: 'bob', admin: false })
     alice.team.addRole(CHANNEL)
     const established = alice.team.roleKeys(CHANNEL)
-    const recipient = createKeyset({ type: 'TEST_RECIPIENT', name: 'reader' })
-    const redistributed = lockbox.create(established, recipient)
+    const redistributed = lockbox.create(established, bob.user.keys)
 
     alice.team.dispatch({
-      type: 'ADD_LOCKBOXES',
-      payload: { lockboxes: [redistributed] },
+      type: 'ADD_MEMBER_ROLE',
+      payload: { userId: bob.userId, roleName: CHANNEL, lockboxes: [redistributed] },
     })
 
     expect(
       alice.team.state.lockboxes.some(
         ({ contents, recipient: manifest }) =>
           contents.commitment === redistributed.contents.commitment &&
-          manifest.publicKey === recipient.encryption.publicKey
+          manifest.publicKey === bob.user.keys.encryption.publicKey
       )
     ).toBe(true)
-    expect(lockbox.open(redistributed, recipient)).toEqual(established)
+    expect(lockbox.open(redistributed, bob.user.keys)).toEqual(established)
   })
 
   it('drops a conflicting historical-generation redistribution', () => {
@@ -167,27 +166,26 @@ describe('complete-keyset manifest authorization', () => {
     const base = alice.team.graph
     const teamKeys = alice.team.teamKeys()
     const established = alice.team.roleKeys(CHANNEL)
-    const recipient = createKeyset({ type: 'TEST_RECIPIENT', name: 'ordered-reader' })
-    const exact = lockbox.create(established, recipient)
+    const exact = lockbox.create(established, bob.user.keys)
     const conflictingKeys = createKeyset({ type: KeyType.ROLE, name: CHANNEL }, 'ordered-conflict')
-    const conflicting = lockbox.create(conflictingKeys, recipient)
+    const conflicting = lockbox.create(conflictingKeys, bob.user.keys)
     conflicting.contents.publicKey = exact.contents.publicKey
 
     const post = (graph: TeamGraph, box: lockbox.Lockbox, signer: typeof alice.signer) =>
       append({
         graph,
         action: {
-          type: 'ADD_LOCKBOXES',
-          payload: { lockboxes: [box] },
+          type: 'ADD_MEMBER_ROLE',
+          payload: { userId: bob.userId, roleName: CHANNEL, lockboxes: [box] },
         } as TeamAction,
         signer,
         keys: teamKeys,
       })
 
     const exactBranch = post(base, exact, alice.signer)
-    const conflictingBranch = post(base, conflicting, bob.signer)
+    const conflictingBranch = post(base, conflicting, alice.signer)
     const orderedGraphs = [
-      post(exactBranch, conflicting, bob.signer),
+      post(exactBranch, conflicting, alice.signer),
       post(conflictingBranch, exact, alice.signer),
       merge(exactBranch, conflictingBranch),
       merge(conflictingBranch, exactBranch),
@@ -209,7 +207,7 @@ describe('complete-keyset manifest authorization', () => {
         loaded.state.lockboxes.some(
           ({ contents, recipient: manifest }) =>
             contents.commitment === exact.contents.commitment &&
-            manifest.publicKey === recipient.encryption.publicKey
+            manifest.publicKey === bob.user.keys.encryption.publicKey
         )
       ).toBe(true)
     }

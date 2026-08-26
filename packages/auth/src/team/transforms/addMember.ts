@@ -15,7 +15,7 @@ import { type NewMember, type Transform } from 'team/types.js'
 export const addMember =
   (newMember: NewMember, devices: Device[] = [], admittedAt: UnixTimestamp): Transform =>
   state => {
-    const deviceIds = devices.map(device => device.deviceId)
+    const deviceIds = new Set(devices.map(device => device.deviceId))
     return {
       ...state,
       members: [
@@ -27,7 +27,7 @@ export const addMember =
         },
       ],
       removedMembers: state.removedMembers.filter(member => member.userId !== newMember.userId),
-      removedDevices: state.removedDevices.filter(device => !deviceIds.includes(device.deviceId)),
+      removedDevices: state.removedDevices.filter(device => !deviceIds.has(device.deviceId)),
       pendingKeyRotations: state.pendingKeyRotations.filter(userId => userId !== newMember.userId),
     }
   }

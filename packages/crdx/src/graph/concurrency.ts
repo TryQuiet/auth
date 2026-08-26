@@ -30,7 +30,7 @@ export const getConcurrentHashes = (graph: Graph<any, any>, hash: Hash): Hash[] 
  */
 export const calculateConcurrency = memoize(<A extends Action, C>(graph: Graph<A, C>) => {
   const toVisit = [graph.root]
-  const visited: Set<Hash> = new Set()
+  const visited = new Set<Hash>()
   const concurrencyLookup: Record<Hash, Hash[]> = {}
 
   while (toVisit.length > 0) {
@@ -56,7 +56,7 @@ export const calculateConcurrency = memoize(<A extends Action, C>(graph: Graph<A
     }
 
     for (const c of getChildrenHashes(graph, current)) {
-        toVisit.push(c)
+      toVisit.push(c)
     }
     visited.add(current)
   }

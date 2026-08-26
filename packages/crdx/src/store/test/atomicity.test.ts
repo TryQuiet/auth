@@ -4,11 +4,7 @@ import { createStore } from 'store/index.js'
 import { type Reducer } from 'store/types.js'
 import { type Hash } from 'util/index.js'
 import { createTestSigner, TEST_GRAPH_KEYS as keys } from 'util/testing/setup.js'
-import {
-  counterReducer,
-  type CounterAction,
-  type CounterState,
-} from './shared/counterReducer.js'
+import { counterReducer, type CounterAction, type CounterState } from './shared/counterReducer.js'
 
 const alice = createTestSigner('alice')
 const eve = createTestSigner('eve')
@@ -24,7 +20,7 @@ const setupCounter = (reducer: Reducer<CounterState, CounterAction> = counterRed
 const tamper = (graph: Graph<CounterAction, Record<string, unknown>>, hash: Hash) => {
   const original = graph.encryptedLinks[hash]
   const encryptedBody = Uint8Array.from(original.encryptedBody)
-  encryptedBody[encryptedBody.length - 1] ^= 0xff
+  encryptedBody.set([255 - encryptedBody.at(-1)!], encryptedBody.length - 1)
   return {
     ...graph,
     encryptedLinks: { ...graph.encryptedLinks, [hash]: { ...original, encryptedBody } },
@@ -34,7 +30,7 @@ const tamper = (graph: Graph<CounterAction, Record<string, unknown>>, hash: Hash
 describe('a rejected input leaves the store untouched', () => {
   test('rejected merge', () => {
     const store = setupCounter()
-    const head = store.getGraph().head
+    const { head } = store.getGraph()
     const state = store.getState()
 
     // 🦹‍♀️ Eve appends a link and then tampers with its ciphertext
@@ -67,7 +63,7 @@ describe('a rejected input leaves the store untouched', () => {
     }
 
     const store = setupCounter(rejectFives)
-    const head = store.getGraph().head
+    const { head } = store.getGraph()
     const state = store.getState()
 
     expect(() => {

@@ -1,11 +1,6 @@
 import { append, createGraph, decryptGraph } from 'graph/index.js'
 import { type DecryptFn } from 'graph/decrypt.js'
-import {
-  DEFAULT_SYNC_LIMITS,
-  initSyncState,
-  receiveMessage,
-  type SyncMessage,
-} from 'sync/index.js'
+import { DEFAULT_SYNC_LIMITS, initSyncState, receiveMessage, type SyncMessage } from 'sync/index.js'
 import { createTestSigner, TEST_GRAPH_KEYS as keys } from 'util/testing/setup.js'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -35,13 +30,7 @@ describe('sync message hardening', () => {
       },
     }
 
-    const [nextGraph, state] = receiveMessage(
-      graph,
-      initSyncState(),
-      message,
-      keys,
-      decrypt
-    )
+    const [nextGraph, state] = receiveMessage(graph, initSyncState(), message, keys, decrypt)
 
     expect(nextGraph).toBe(graph)
     expect(state.failedSyncCount).toBe(1)

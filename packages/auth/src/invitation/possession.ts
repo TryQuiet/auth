@@ -44,7 +44,7 @@ export const createPossessionProof = ({
     possessionProofPayload(invitationId, claim),
     device.keys.signature.secretKey,
     DEVICE_POSSESSION
-  ) as Base58
+  )
 }
 
 /**

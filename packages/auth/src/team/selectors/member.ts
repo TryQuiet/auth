@@ -19,7 +19,11 @@ export const member = (state: TeamState, userId: string, options = { includeRemo
   return matchingMembers[0]
 }
 
-export const members = (state: TeamState, userIds: string[], options = { includeRemoved: false, throwOnMissing: true }) => {
+export const members = (
+  state: TeamState,
+  userIds: string[],
+  options = { includeRemoved: false, throwOnMissing: true }
+) => {
   const membersToSearch = [
     ...state.members,
     ...(options.includeRemoved ? state.removedMembers : []),

@@ -113,9 +113,11 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
     const result = await connectInvitee({
       acceptor: alice.connectionContext,
       invitee: { user: bob.user, device: bob.device, invitationSeed: seed, expectedTeamId: teamId },
-      rewrite: payload => {
+      rewrite(payload) {
         const encryptedAcceptance = payload.encryptedAcceptance.slice()
-        encryptedAcceptance[Math.floor(encryptedAcceptance.length / 2)] ^= 1
+        const index = Math.floor(encryptedAcceptance.length / 2)
+        const originalByte = encryptedAcceptance[index]
+        encryptedAcceptance[index] = originalByte % 2 === 0 ? originalByte + 1 : originalByte - 1
         return { ...payload, encryptedAcceptance }
       },
     })
@@ -193,7 +195,7 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
     const result = await connectInvitee({
       acceptor: withTeam(alice.connectionContext, acceptorTeam),
       invitee: { user: bob.user, device: bob.device, invitationSeed: seed, expectedTeamId: teamId },
-      rewrite: (payload, inviteeClaim) => {
+      rewrite(payload, inviteeClaim) {
         // Admit the live claim so every graph and admission check passes; only the sender is wrong.
         assert(inviteeClaim.claim.invitationKind === 'member')
         spoof.admitMember(
@@ -282,7 +284,7 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
     const result = await connectInvitee({
       acceptor: withTeam(alice.connectionContext, acceptorTeam),
       invitee: { user: bob.user, device: bob.device, invitationSeed: seed, expectedTeamId: teamId },
-      rewrite: (payload, inviteeClaim) => {
+      rewrite(payload, inviteeClaim) {
         const claim = memberClaim(bob.user, bob.device)
         const changedClaim = {
           ...claim,

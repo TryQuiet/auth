@@ -36,7 +36,8 @@ const rootPayload = (graph: TeamGraph) => {
   return rootLink.body.payload
 }
 
-const isFounder = (graph: TeamGraph, userId: string) => rootPayload(graph).rootMember.userId === userId
+const isFounder = (graph: TeamGraph, userId: string) =>
+  rootPayload(graph).rootMember.userId === userId
 
 const isFoundingDevice = (graph: TeamGraph, deviceId: string) =>
   rootPayload(graph).rootDevice.deviceId === deviceId

@@ -87,7 +87,7 @@ describe('security candidate PoCs: team and lockbox state', () => {
     expect(() => symmetric.decryptBytes(message.contents, attackerRoleKeys.secretKey)).toThrow()
   })
 
-  it('leaks the replacement role key to the principal removed by the rotation', () => {
+  it('does not deliver the replacement role key to the principal removed by the rotation', () => {
     const { alice, bob } = setup('alice', { user: 'bob', admin: false })
     alice.team.addRole(CHANNEL)
     alice.team.addMemberRole(bob.userId, CHANNEL)
@@ -107,31 +107,19 @@ describe('security candidate PoCs: team and lockbox state', () => {
         recipient.name === bob.userId
     )
 
-    expect(leaked).toBeDefined()
-    const leakedRoleKeys = lockbox.open(leaked!, bob.user.keys)
-    expect(leakedRoleKeys.secretKey).toBe(alice.team.roleKeys(CHANNEL).secretKey)
+    expect(leaked).toBeUndefined()
 
-    // The reducer hides Bob's box after applying REMOVE_MEMBER_ROLE, but that happens after the
-    // signed payload has crossed the wire. Bob can use the opened key against new ciphertext.
-    const futureMessage = alice.team.encrypt('removed principal can still read this', CHANNEL)
-    expect(symmetric.decryptBytes(futureMessage.contents, leakedRoleKeys.secretKey)).toBe(
-      'removed principal can still read this'
-    )
+    const futureMessage = alice.team.encrypt('removed principal cannot read this', CHANNEL)
+    expect(() => symmetric.decryptBytes(futureMessage.contents, oldRoleKeys.secretKey)).toThrow()
   })
 
-  it('accepts a committed rotation when one recipient ciphertext is not decryptable', () => {
-    const { alice, bob, charlie } = setup(
-      'alice',
-      { user: 'bob', admin: false },
-      { user: 'charlie', admin: false }
-    )
+  it('keeps a malformed rotation on the retired generic delivery channel inert', () => {
+    const { alice, charlie } = setup('alice', { user: 'charlie', admin: false })
     alice.team.addRole(CHANNEL)
-    alice.team.addMemberRole(bob.userId, CHANNEL)
     alice.team.addMemberRole(charlie.userId, CHANNEL)
 
     const base = serializeTeamGraph(alice.team.graph)
     const teamKeys = createKeyring(alice.team.teamKeys())
-    bob.team = teams.load(base, bob.localContext, teamKeys)
     charlie.team = teams.load(base, charlie.localContext, teamKeys)
 
     const nextRoleKeys = createKeyset({ type: KeyType.ROLE, name: CHANNEL }, 'split-rotation')
@@ -162,46 +150,35 @@ describe('security candidate PoCs: team and lockbox state', () => {
     alice.team.merge(rotation)
     charlie.team.merge(rotation)
 
-    // Authorization accepts the whole batch from public metadata. Each replica then selects a
-    // different generation based on whether its local recipient can decrypt its own ciphertext.
-    expect(alice.team.roleKeys(CHANNEL).generation).toBe(1)
+    // A retired generic link is not a carrier action, so it cannot establish a rotation from
+    // metadata that appears otherwise committed.
+    expect(alice.team.roleKeys(CHANNEL).generation).toBe(0)
     expect(charlie.team.roleKeys(CHANNEL).generation).toBe(0)
+    expect(
+      alice.team.state.lockboxes.some(
+        ({ contents }) => contents.commitment === nextRoleKeys.commitment
+      )
+    ).toBe(false)
   })
 
-  it('leaks the replacement TEAM key to a member removed by full removal', () => {
+  it('does not deliver replacement USER or TEAM keys to a fully removed member', () => {
     const { alice, bob } = setup('alice', { user: 'bob', admin: false })
     const beforeRemoval = serializeTeamGraph(alice.team.graph)
     bob.team = teams.load(beforeRemoval, bob.localContext, createKeyring(alice.team.teamKeys()))
     const oldTeamKeys = bob.team.teamKeys()
-    const oldDeviceKeys = bob.device.keys
-
     alice.team.remove(bob.userId)
     const removal = alice.team.graph.links[alice.team.graph.head[0]].body as TeamAction
     const replacementUserBox = removal.payload.lockboxes?.find(
-      ({ contents, recipient }) =>
+      ({ contents }) =>
         contents.type === KeyType.USER &&
         contents.name === bob.userId &&
-        contents.generation === oldTeamKeys.generation + 1 &&
-        recipient.publicKey === oldDeviceKeys.encryption.publicKey
+        contents.generation === oldTeamKeys.generation + 1
     )
 
-    expect(replacementUserBox).toBeDefined()
-    const replacementUserKeys = lockbox.open(replacementUserBox!, oldDeviceKeys)
-    const leaked = removal.payload.lockboxes?.find(
-      ({ contents, recipient }) =>
-        contents.type === KeyType.TEAM &&
-        contents.generation === oldTeamKeys.generation + 1 &&
-        recipient.publicKey === replacementUserKeys.encryption.publicKey
-    )
+    expect(replacementUserBox).toBeUndefined()
 
-    expect(leaked).toBeDefined()
-    const leakedTeamKeys = lockbox.open(leaked!, replacementUserKeys)
-    expect(leakedTeamKeys.secretKey).toBe(alice.team.teamKeys().secretKey)
-
-    const futureMessage = alice.team.encrypt('removed member can still read team traffic')
-    expect(symmetric.decryptBytes(futureMessage.contents, leakedTeamKeys.secretKey)).toBe(
-      'removed member can still read team traffic'
-    )
+    const futureMessage = alice.team.encrypt('removed member cannot read team traffic')
+    expect(() => symmetric.decryptBytes(futureMessage.contents, oldTeamKeys.secretKey)).toThrow()
   })
 
   it('can leave the target of a losing concurrent member removal with the winning team key', () => {
@@ -241,8 +218,7 @@ describe('security candidate PoCs: team and lockbox state', () => {
     expect(winningAction).toBeDefined()
     expect(losingAction).toBeDefined()
 
-    const removedByLosingAction = (losingAction as Extract<TeamAction, { type: 'REMOVE_MEMBER' }>)
-      .payload.userId
+    const removedByLosingAction = losingAction.payload.userId
     const loser = removedByLosingAction === bob.userId ? bob : charlie
     const winningTeamBoxForLoser = winningAction!.payload.lockboxes?.find(
       ({ contents, recipient }) =>
@@ -254,7 +230,7 @@ describe('security candidate PoCs: team and lockbox state', () => {
 
     expect(loaded.has(removedByLosingAction)).toBe(false)
     expect(winningTeamBoxForLoser).toBeDefined()
-    const currentTeamKeys = lockbox.open(winningTeamBoxForLoser!, loser.user.keys)
+    const currentTeamKeys = lockbox.open(winningTeamBoxForLoser, loser.user.keys)
     expect(currentTeamKeys.secretKey).toBe(loaded.teamKeys().secretKey)
 
     const futureMessage = loaded.encrypt('removed member still has current team access')

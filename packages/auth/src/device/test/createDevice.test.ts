@@ -78,13 +78,15 @@ describe('deviceIdentityIsValid', () => {
 
   test('rejects a keyset that is not a device keyset', () => {
     const userKeys = createKeyset({ type: KeyType.USER, name: 'alice' })
-    expect(
-      deviceIdentityIsValid({ deviceId: signerIdFromKeys(userKeys), keys: userKeys })
-    ).toBe(false)
+    expect(deviceIdentityIsValid({ deviceId: signerIdFromKeys(userKeys), keys: userKeys })).toBe(
+      false
+    )
   })
 
   test('rejects a keyset past generation 0', () => {
-    expect(deviceIdentityIsValid({ ...device, keys: { ...device.keys, generation: 1 } })).toBe(false)
+    expect(deviceIdentityIsValid({ ...device, keys: { ...device.keys, generation: 1 } })).toBe(
+      false
+    )
   })
 
   test('rejects a keyset whose name is not the deviceId', () => {

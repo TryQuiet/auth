@@ -1,9 +1,7 @@
 import type { SignerInfo } from '@localfirst/crdx'
 import { SignerKind, type ResolvedSigner, type TeamState } from 'team/types.js'
-import { allDeviceIds } from './device.js'
-import { allServerIds } from './server.js'
-import { device, hasDevice } from './device.js'
-import { hasServer, server } from './server.js'
+import { allDeviceIds, device, hasDevice } from './device.js'
+import { allServerIds, hasServer, server } from './server.js'
 
 /**
  * Resolves the identity named in a link's `body.signer` to the record we hold for it, or

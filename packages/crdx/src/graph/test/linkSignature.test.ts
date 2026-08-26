@@ -82,7 +82,7 @@ describe('link signatures', () => {
 
   it('rejects a missing or malformed signature', () => {
     const link = getHead(buildGraph())[0]
-    const publicKey = alice.keys.signature.publicKey
+    const { publicKey } = alice.keys.signature
 
     expect(verifyLinkSignature({ hash: link.hash, signature: undefined, publicKey })).toBe(false)
     expect(
@@ -100,7 +100,7 @@ describe('link signatures', () => {
 
     // 🦹‍♀️ Eve flips a byte of the ciphertext
     const tamperedBody = Uint8Array.from(original.encryptedBody)
-    tamperedBody[tamperedBody.length - 1] ^= 0xff
+    tamperedBody.set([255 - tamperedBody.at(-1)!], tamperedBody.length - 1)
 
     // the hash covers the ciphertext, so the link no longer hashes to the value the graph records
     expect(hashEncryptedLink(tamperedBody)).not.toBe(head.hash)

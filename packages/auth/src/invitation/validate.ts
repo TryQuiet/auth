@@ -128,7 +128,7 @@ export const validateClaim = (claim: InvitationClaim): ValidationResult => {
 }
 
 /** True if `value` has exactly the listed keys — no extras, none missing. */
-export const hasExactKeys = (value: object, expected: string[]) => {
+export const hasExactKeys = (value: Record<string, unknown>, expected: string[]) => {
   const actual = Object.keys(value).sort()
   const wanted = [...expected].sort()
   return actual.length === wanted.length && actual.every((key, index) => key === wanted[index])

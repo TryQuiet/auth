@@ -108,7 +108,9 @@ class TamperedSeedChannel extends TestChannel {
     const numberedMessage = unpack(message) as NumberedMessage<ConnectionMessage>
     if (senderId === this.senderToTamper && numberedMessage.type === 'SEED') {
       const encryptedSeed = numberedMessage.payload.encryptedSeed.slice()
-      encryptedSeed[Math.floor(encryptedSeed.length / 2)] ^= 1
+      const index = Math.floor(encryptedSeed.length / 2)
+      const originalByte = encryptedSeed[index]
+      encryptedSeed[index] = originalByte % 2 === 0 ? originalByte + 1 : originalByte - 1
       const tampered = pack({ ...numberedMessage, payload: { encryptedSeed } })
       super.write(
         senderId,

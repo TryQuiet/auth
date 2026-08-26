@@ -20,4 +20,4 @@ export const USER_ID_DOMAIN = 'USER_ID'
  * Uniform for founders and members: there is no invitation component and no founder special case.
  */
 export const deriveUserId = (foundingDeviceId: string): Base58 =>
-  hash(USER_ID_DOMAIN, foundingDeviceId) as Base58
+  hash(USER_ID_DOMAIN, foundingDeviceId)

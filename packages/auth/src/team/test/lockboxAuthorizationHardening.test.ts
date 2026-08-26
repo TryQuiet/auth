@@ -12,7 +12,7 @@ import { memberAdmission } from './helpers.js'
 const CHANNEL = 'authorization-hardening-channel'
 
 describe('lockbox authorization hardening', () => {
-  it.fails('rejects a same-generation redistribution to an unregistered recipient', () => {
+  it('keeps a retired generic delivery to an unregistered recipient inert', () => {
     const { alice, bob } = setup('alice', { user: 'bob', admin: false })
     alice.team.addRole(CHANNEL)
     alice.team.addMemberRole(bob.userId, CHANNEL)
@@ -37,7 +37,7 @@ describe('lockbox authorization hardening', () => {
     ).toBe(false)
   })
 
-  it.fails('does not carry a phantom recipient into a subsequent role rotation', () => {
+  it('does not carry a retired generic recipient into a subsequent role rotation', () => {
     const { alice, bob } = setup('alice', { user: 'bob', admin: false })
     alice.team.addRole(CHANNEL)
     alice.team.addMemberRole(bob.userId, CHANNEL)

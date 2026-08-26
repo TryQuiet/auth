@@ -9,7 +9,7 @@ import {
   type KeysetWithSecrets,
   type Signer,
 } from '@localfirst/crdx'
-import { asymmetric, signatures, LINK_AUTHORSHIP, type Base58 } from '@localfirst/crypto'
+import { asymmetric, signatures, LINK_AUTHORSHIP } from '@localfirst/crypto'
 import * as teams from 'team/index.js'
 import { serializeTeamGraph } from 'team/serialize.js'
 import {
@@ -171,6 +171,8 @@ export const expectRejectedEverywhere = ({
 
   const [loader] = peers
   const keyring = createKeyring(teamKeys)
-  expect(() => teams.load(serializeTeamGraph(forged), loader.localContext, keyring)).toThrow(message)
+  expect(() => teams.load(serializeTeamGraph(forged), loader.localContext, keyring)).toThrow(
+    message
+  )
   expect(() => teams.load(forged, loader.localContext, keyring)).toThrow(message)
 }

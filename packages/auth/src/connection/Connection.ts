@@ -139,7 +139,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
     const username = getUserName(context)
     const loggerModuleName = `auth:connection:${username}`
     let sharedLogger: SharedLogger | undefined
-    if (createLogger != null) {
+    if (createLogger !== undefined && createLogger !== null) {
       sharedLogger = createLogger(loggerModuleName)
     }
 
@@ -616,7 +616,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
         // EVENTS FOR EXTERNAL LISTENERS
 
-        onConnected: context => {
+        onConnected: _context => {
           this.logger.debug('emitting connected event')
           this.emit('connected')
           // this.#machine.send({ type: 'SYNC', payload: { head } }) // Send update event to local machine
@@ -799,7 +799,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
         },
       },
     }).createMachine({
-      context: initialContext as ConnectionContext,
+      context: initialContext,
 
       // ******* STATE MACHINE DEFINITION
 
@@ -1198,7 +1198,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
   #initializeMessageQueue(
     sendMessage: (message: Uint8Array) => void,
     extendableLogger?: Logger,
-    username?: string
+    _username?: string
   ) {
     // To send messages to our peer, we give them to the ordered message queue, which will deliver
     // them using the `sendMessage` function provided.

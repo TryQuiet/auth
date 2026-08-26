@@ -74,7 +74,10 @@ export class Store<
       this.graph = deserialize(graph, keys)
     }
 
-    this.logger = logger != null ? logger.extend('store') : new Logger({ moduleName: 'auth:store' })
+    this.logger =
+      logger !== null && logger !== undefined
+        ? logger.extend('store')
+        : new Logger({ moduleName: 'auth:store' })
     this.context = context
     this.initialState = initialState
     this.reducer = reducer

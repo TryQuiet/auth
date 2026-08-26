@@ -11,7 +11,10 @@ export const makeMachine = <S, A extends Action, C>({
 }: MachineParams<S, A, C>) => {
   return (graph: Graph<A, C>, extendableLogger?: Logger) => {
     // extend the logger or generate a new one if none was passed in
-    const logger = extendableLogger != null ? extendableLogger.extend('makeMachine') : new Logger({ moduleName: 'auth:makeMachine' })
+    const logger =
+      extendableLogger !== null && extendableLogger !== undefined
+        ? extendableLogger.extend('makeMachine')
+        : new Logger({ moduleName: 'auth:makeMachine' })
 
     // Validate the graph's integrity. An invalid graph must never reach the reducer.
     const validation = validate(graph, validators, logger)

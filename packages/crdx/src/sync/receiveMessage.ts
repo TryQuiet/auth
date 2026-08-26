@@ -42,7 +42,10 @@ export const receiveMessage = <A extends Action, C>(
   extendableLogger?: Logger,
   limits: SyncLimits = DEFAULT_SYNC_LIMITS
 ): [Graph<A, C>, SyncState] => {
-  const logger = extendableLogger != null ? extendableLogger.extend('receiveMessage') : new Logger({ moduleName: 'auth:receiveMessage' })
+  const logger =
+    extendableLogger !== null && extendableLogger !== undefined
+      ? extendableLogger.extend('receiveMessage')
+      : new Logger({ moduleName: 'auth:receiveMessage' })
   // if a keyset was provided, wrap it in a keyring
   const keyring = createKeyring(keys)
 
@@ -63,8 +66,8 @@ export const receiveMessage = <A extends Action, C>(
     their: {
       head: their.head,
       need: their.need ?? [],
-      encryptedLinks: { ...prevState.their.encryptedLinks, ...(their.links ?? {}) },
-      parentMap: { ...prevState.their.parentMap, ...(their.parentMap ?? {}) },
+      encryptedLinks: { ...prevState.their.encryptedLinks, ...their.links },
+      parentMap: { ...prevState.their.parentMap, ...their.parentMap },
     },
   }
 

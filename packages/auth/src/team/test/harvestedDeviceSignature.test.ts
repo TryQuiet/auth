@@ -14,7 +14,13 @@ import { KeyType } from 'util/index.js'
 import type { UserStuff } from 'util/testing/index.js'
 import { setup } from 'util/testing/index.js'
 import { describe, expect, it } from 'vitest'
-import { expectRejectedEverywhere, forge, impersonate, linkBody, withInjectedLink } from './forgeHelpers.js'
+import {
+  expectRejectedEverywhere,
+  forge,
+  impersonate,
+  linkBody,
+  withInjectedLink,
+} from './forgeHelpers.js'
 
 /**
  * SECURITY PoC (post-fix) — a harvested device-key signature can no longer defeat the

@@ -17,4 +17,4 @@ export const SIGNER_FINGERPRINT = 'SIGNER_FINGERPRINT'
  * keys, and servers can only rotate their encryption keys, never their identity keys.
  */
 export const fingerprint = (publicSigningKey: Base58): Base58 =>
-  hash(SIGNER_FINGERPRINT, publicSigningKey) as Base58
+  hash(SIGNER_FINGERPRINT, publicSigningKey)

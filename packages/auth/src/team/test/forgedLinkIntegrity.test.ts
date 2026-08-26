@@ -2,7 +2,7 @@ import { createKeyring, hashEncryptedLink } from '@localfirst/crdx'
 import { asymmetric, signatures, LINK_AUTHORSHIP } from '@localfirst/crypto'
 import * as teams from 'team/index.js'
 import { serializeTeamGraph } from 'team/serialize.js'
-import type { TeamAction, TeamGraph } from 'team/types.js'
+import type { TeamAction } from 'team/types.js'
 import { setup, type UserStuff } from 'util/testing/index.js'
 import { describe, expect, it } from 'vitest'
 import {
@@ -72,7 +72,8 @@ describe('forged link integrity', () => {
     const tampered = inFlight(alice, ADD_MANAGERS)
     const [head] = tampered.head
     const bytes = new Uint8Array(tampered.encryptedLinks[head].encryptedBody)
-    bytes[bytes.length - 5] ^= 0xff
+    const byteIndex = bytes.length - 5
+    bytes[byteIndex] = bytes[byteIndex] === 0 ? 1 : 0
     tampered.encryptedLinks[head].encryptedBody = bytes
 
     expectRejectedEverywhere({
@@ -111,7 +112,7 @@ describe('forged link integrity', () => {
     // The other side of the same coin: 👩🏾 Alice has already accepted this link, and the tampered
     // copy carries the same hash — so it isn't a new link at all, it's a second claim about one she
     // has. Her own bytes win, and the attacker's contents never appear.
-    const tampered = structuredClone(alice.team.graph) as TeamGraph
+    const tampered = structuredClone(alice.team.graph)
     const [head] = tampered.head
     const body = { ...tampered.links[head].body } as any
     body.payload = { ...body.payload, roleName: 'attacker-chosen-role' }
@@ -223,7 +224,7 @@ describe('forged link integrity', () => {
     // A graph arrives from a peer with its `links` already decrypted — a convenience the sender
     // controls entirely. Nothing here is malformed; the attacker just wrote a different body next
     // to the real bytes and hoped we'd read that one.
-    const withInjectedPlaintext = structuredClone(alice.team.graph) as TeamGraph
+    const withInjectedPlaintext = structuredClone(alice.team.graph)
     const [head] = withInjectedPlaintext.head
     const suppliedBody = withInjectedPlaintext.links[head].body
     if (suppliedBody.type !== 'SET_TEAM_NAME') throw new Error('expected SET_TEAM_NAME head')

@@ -30,7 +30,7 @@ import * as invitations from 'invitation/index.js'
 import { type InvitationClaim, type ProofOfInvitation } from 'invitation/index.js'
 import { normalize } from 'invitation/normalize.js'
 import * as lockbox from 'lockbox/index.js'
-import { AddRoleInput, ADMIN, type Role } from 'role/index.js'
+import { type AddRoleInput, ADMIN, type Role } from 'role/index.js'
 import { castServer } from 'server/castServer.js'
 import { type Host, type Server } from 'server/types.js'
 import { type LocalContext } from 'team/context.js'
@@ -74,7 +74,7 @@ export class Team extends EventEmitter<TeamEvents> {
   private readonly store: Store<TeamState, TeamAction>
   private readonly context: LocalContext
   private readonly seed: string
-  private logger: Logger
+  private readonly logger: Logger
 
   /** The identity this instance signs links with: our device, or — on a server — the server itself. */
   private readonly signer: Signer
@@ -112,7 +112,11 @@ export class Team extends EventEmitter<TeamEvents> {
     }
 
     const moduleName = `auth:team:${this.userName}`
-    this.logger = new Logger({ moduleName, sharedLogger: options.sharedLogger, extendSharedLogger: true })
+    this.logger = new Logger({
+      moduleName,
+      sharedLogger: options.sharedLogger,
+      extendSharedLogger: true,
+    })
     this.logger.debug('loading team')
 
     // Initialize a CRDX store for the team
@@ -262,17 +266,19 @@ export class Team extends EventEmitter<TeamEvents> {
   /** Returns true if the team has a member with the given userId */
   public has = (userId: string) => select.hasMember(this.state, userId)
 
-  /** Returns a list of all members on the team */
-  public members(): Member[] // Overload: all members
+  /** Returns all members, or the members with the supplied ids. */
+  public members(userIds?: string[], options?: LookupOptions): Member[]
   /** Returns the member with the given user name */
   public members(userId: string, options?: LookupOptions): Member // Overload: one member
-  public members(userIds: string[], options?: LookupOptions): Member[] // Overload: one member
   //
-  public members(userIdOrIds: string | string[] = ALL, options = { includeRemoved: true, throwOnMissing: true }): Member | Member[] {
+  public members(
+    userIdOrIds: string | string[] = ALL,
+    options = { includeRemoved: true, throwOnMissing: true }
+  ): Member | Member[] {
     if (typeof userIdOrIds === 'string') {
       return userIdOrIds === ALL //
-      ? this.state.members // All members
-      : select.member(this.state, userIdOrIds, options) // One member
+        ? this.state.members // All members
+        : select.member(this.state, userIdOrIds, options) // One member
     }
 
     return select.members(this.state, userIdOrIds, options) // Many members
@@ -383,7 +389,7 @@ export class Team extends EventEmitter<TeamEvents> {
     // rejected self-assignment that kills the connection). Aligning with #26's tests + A's design.
     this.dispatch({
       type: 'ADD_ROLE',
-      payload: { ...(role as Role), lockboxes },
+      payload: { ...role, lockboxes },
     })
   }
 
@@ -397,7 +403,7 @@ export class Team extends EventEmitter<TeamEvents> {
     })
   }
 
-  private _isRoleRemovable = (roleName: string, assertOnFalse: boolean): boolean => {
+  private readonly _isRoleRemovable = (roleName: string, assertOnFalse: boolean): boolean => {
     const anyRoleButAdmin = roleName !== ADMIN
     if (assertOnFalse) {
       assert(anyRoleButAdmin, 'Cannot remove admin role')
@@ -419,7 +425,9 @@ export class Team extends EventEmitter<TeamEvents> {
     // Make a lockbox for the role
     const member = this.members(userId)
     const allGenKeys = this.roleKeysAllGenerations(roleName, decryptionKeys)
-    const lockboxRoleKeysForMember = allGenKeys.map(roleKeys => lockbox.create(roleKeys, member.keys))
+    const lockboxRoleKeysForMember = allGenKeys.map(roleKeys =>
+      lockbox.create(roleKeys, member.keys)
+    )
 
     // Post the member role to the graph
     this._dispatchAddMemberRole(userId, roleName, lockboxRoleKeysForMember)
@@ -435,10 +443,14 @@ export class Team extends EventEmitter<TeamEvents> {
     roleName: string,
     roleKeys: KeysetWithSecrets | KeysetWithSecrets[]
   ) => {
-    assert(this.state.metadata.selfAssignableRoles.includes(roleName), `Cannot self-assign role ${roleName}`)
+    assert(
+      this.state.metadata.selfAssignableRoles.includes(roleName),
+      `Cannot self-assign role ${roleName}`
+    )
     const keysets = Array.isArray(roleKeys) ? roleKeys : [roleKeys]
     assert(
-      keysets.length > 0 && keysets.every(keys => keys.type === KeyType.ROLE && keys.name === roleName),
+      keysets.length > 0 &&
+        keysets.every(keys => keys.type === KeyType.ROLE && keys.name === roleName),
       `Expected ${roleName} role keys`
     )
     const member = this.members(this.userId)
@@ -470,7 +482,10 @@ export class Team extends EventEmitter<TeamEvents> {
   }
 
   /** Check if member is priveleged enough to perform a specific action */
-  private _memberHasPrivelegeToPerformAction(memberId: string, actionType: TeamAction['type']): boolean {
+  private _memberHasPrivelegeToPerformAction(
+    memberId: string,
+    actionType: TeamAction['type']
+  ): boolean {
     if (!isAdminOnlyActionType(actionType)) {
       return true
     }
@@ -509,7 +524,7 @@ export class Team extends EventEmitter<TeamEvents> {
     if (!this.memberHasRole(memberId, roleName)) {
       return false
     }
-    return this._isRoleRemovable(roleName, false) 
+    return this._isRoleRemovable(roleName, false)
   }
 
   /** ************** DEVICES */
@@ -919,7 +934,7 @@ export class Team extends EventEmitter<TeamEvents> {
     const { secretKey } = this.keys(message.recipient)
     return symmetric.decryptBytes(message.contents, secretKey)
   }
-  
+
   /**
    * Symmetrically encrypt a byte stream for the given scope using keys available to the current user.
    *
@@ -927,20 +942,27 @@ export class Team extends EventEmitter<TeamEvents> {
    * encrypt for scopes the current user has keys for (e.g. the whole team, or roles they belong
    * to). If we need to encrypt asymmetrically, we use the functions in the crypto module directly.
    */
-  public encryptStream = (stream: AsyncIterable<Uint8Array>, roleName?: string): EncryptStreamTeamPayload => {
+  public encryptStream = (
+    stream: AsyncIterable<Uint8Array>,
+    roleName?: string
+  ): EncryptStreamTeamPayload => {
     const scope = roleName ? { type: KeyType.ROLE, name: roleName } : TEAM_SCOPE
     const { secretKey, generation } = this.keys(scope)
-    
+
     const { header, encryptStream } = symmetric.encryptBytesStream(stream, secretKey)
     return {
       header,
       encryptStream,
-      recipient: { ...scope, generation }
+      recipient: { ...scope, generation },
     }
   }
 
   /** Decrypt a byte stream using keys available to the current user and a header generated during encryption. */
-  public decryptStream = (encryptedStream: AsyncIterable<Uint8Array>, header: Uint8Array, recipient: KeyMetadata): AsyncGenerator<any> => {
+  public decryptStream = (
+    encryptedStream: AsyncIterable<Uint8Array>,
+    header: Uint8Array,
+    recipient: KeyMetadata
+  ): AsyncGenerator<any> => {
     const { secretKey } = this.keys(recipient)
     return symmetric.decryptBytesStream(encryptedStream, header, secretKey)
   }
@@ -983,11 +1005,15 @@ export class Team extends EventEmitter<TeamEvents> {
    * get other members' public keys, look up the member - the `keys` property contains their public
    * keys.
    */
-  public keys = (scope: KeyMetadata | KeyScope, decryptionKeys: KeysetWithSecrets = this.lockboxKeys) =>
-    select.keys(this.state, decryptionKeys, scope)
+  public keys = (
+    scope: KeyMetadata | KeyScope,
+    decryptionKeys: KeysetWithSecrets = this.lockboxKeys
+  ) => select.keys(this.state, decryptionKeys, scope)
 
-  public keysAllGenerations = (scope: KeyMetadata | KeyScope, decryptionKeys: KeysetWithSecrets = this.lockboxKeys) =>
-    select.keysAllGen(this.state, decryptionKeys, scope)
+  public keysAllGenerations = (
+    scope: KeyMetadata | KeyScope,
+    decryptionKeys: KeysetWithSecrets = this.lockboxKeys
+  ) => select.keysAllGen(this.state, decryptionKeys, scope)
 
   public allKeys = (decryptionKeys: KeysetWithSecrets = this.lockboxKeys) =>
     select.allKeys(this.state, decryptionKeys)

@@ -3,7 +3,12 @@ import { assert } from '@localfirst/shared'
 import type { ConnectionMessage } from 'connection/message.js'
 import { castServer } from 'server/castServer.js'
 import { syncMessageSummary } from 'util/testing/messageSummary.js'
-import { type ConnectionContext, type Context, type ServerContext, isServerContext } from './types.js'
+import {
+  type ConnectionContext,
+  type Context,
+  type ServerContext,
+  isServerContext,
+} from './types.js'
 
 // HELPERS
 // FOR DEBUGGING

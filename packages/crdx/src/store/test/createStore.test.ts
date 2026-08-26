@@ -81,7 +81,11 @@ describe('createStore', () => {
     })
     graph.encryptedLinks[tamperedGraph.root] = {
       encryptedBody,
-      signature: signatures.sign(hashEncryptedLink(encryptedBody), eve.keys.signature.secretKey, LINK_AUTHORSHIP),
+      signature: signatures.sign(
+        hashEncryptedLink(encryptedBody),
+        eve.keys.signature.secretKey,
+        LINK_AUTHORSHIP
+      ),
       recipientPublicKey: keys.encryption.publicKey,
       senderPublicKey: eve.keys.encryption.publicKey,
     }

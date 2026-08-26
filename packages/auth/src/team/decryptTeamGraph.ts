@@ -58,7 +58,10 @@ export const decryptTeamGraph = ({
    */
   maxTraversalSteps?: number
 }): TeamGraph => {
-  const logger = extendableLogger != null ? extendableLogger.extend('decryptTeamGraph') : new Logger({ moduleName: 'auth:decryptTeamGraph' })
+  const logger =
+    extendableLogger !== undefined && extendableLogger !== null
+      ? extendableLogger.extend('decryptTeamGraph')
+      : new Logger({ moduleName: 'auth:decryptTeamGraph' })
   const keyring = createKeyring(teamKeys)
 
   const { encryptedLinks, childMap, root } = encryptedGraph
