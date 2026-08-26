@@ -1,4 +1,4 @@
-import { TeamMetadata, type Transform } from 'team/types.js'
+import { type TeamMetadata, type Transform } from 'team/types.js'
 
 export const setMetadata =
   (metadata: TeamMetadata): Transform =>
@@ -6,6 +6,6 @@ export const setMetadata =
     ...state,
     metadata: {
       ...state.metadata,
-      ...metadata
+      ...metadata,
     },
   })

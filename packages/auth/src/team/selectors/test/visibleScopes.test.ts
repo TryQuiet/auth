@@ -1,5 +1,6 @@
 import { createKeyset } from '@localfirst/crdx'
 import { ADMIN } from 'role/index.js'
+import * as lockbox from 'lockbox/index.js'
 import { KeyType } from 'util/index.js'
 import { setup } from 'util/testing/index.js'
 import { describe, expect, it } from 'vitest'
@@ -74,5 +75,47 @@ describe('visibleScopes', () => {
 
     changeUserKeys()
     expect(getUserScopes().length).toBe(2)
+  })
+
+  it('terminates self-loops and two-scope cycles without returning the starting scope', () => {
+    const first = createKeyset({ type: 'TEST', name: 'first' }, 'scope-cycle-first')
+    const second = createKeyset({ type: 'TEST', name: 'second' }, 'scope-cycle-second')
+    const { alice } = setup('alice')
+    const firstScope = { type: first.type, name: first.name }
+
+    const selfLoopState = {
+      ...alice.team.state,
+      lockboxes: [lockbox.create(first, first)],
+    }
+    expect(select.visibleScopes(selfLoopState, firstScope)).toEqual([])
+
+    const cycleState = {
+      ...alice.team.state,
+      lockboxes: [lockbox.create(second, first), lockbox.create(first, second)],
+    }
+    expect(select.visibleScopes(cycleState, firstScope)).toEqual([
+      { type: second.type, name: second.name },
+    ])
+  })
+
+  it('returns scopes from duplicate exact redistributions only once', () => {
+    const first = createKeyset({ type: 'TEST', name: 'first' }, 'scope-duplicate-first')
+    const second = createKeyset({ type: 'TEST', name: 'second' }, 'scope-duplicate-second')
+    const third = createKeyset({ type: 'TEST', name: 'third' }, 'scope-duplicate-third')
+    const { alice } = setup('alice')
+    const state = {
+      ...alice.team.state,
+      lockboxes: [
+        lockbox.create(second, first),
+        lockbox.create(second, first),
+        lockbox.create(third, second),
+        lockbox.create(third, second),
+      ],
+    }
+
+    expect(select.visibleScopes(state, { type: first.type, name: first.name })).toEqual([
+      { type: second.type, name: second.name },
+      { type: third.type, name: third.name },
+    ])
   })
 })

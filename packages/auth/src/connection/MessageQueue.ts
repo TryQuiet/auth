@@ -1,7 +1,6 @@
 import { EventEmitter } from '@herbcaudill/eventemitter42'
-import { debug, Logger } from '@localfirst/shared'
+import { Logger } from '@localfirst/shared'
 
-const log = debug.extend('message-queue')
 /**
  * Receives numbered inbound messages and emits them in order. If a message is missing after a delay, asks
  * for it to be sent (or resent).
@@ -28,7 +27,10 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
       sendMessage(message)
     }
     this.#timeout = timeout
-    this.logger = extendableLogger != null ? extendableLogger.extend('message-queue') : new Logger({ moduleName: 'auth:message-queue' })
+    this.logger =
+      extendableLogger !== undefined && extendableLogger !== null
+        ? extendableLogger.extend('message-queue')
+        : new Logger({ moduleName: 'auth:message-queue' })
   }
 
   /**
@@ -125,6 +127,8 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
       JSON.parse(JSON.stringify(message)),
       ['data', 'encryptedBody', 'encryptedPayload'],
       {
+        // This package also runs in browsers, where the demo bundlers provide Buffer as a global.
+        // eslint-disable-next-line n/prefer-global/buffer
         replacerFunc: (dataArray: any[]) => Buffer.from(dataArray).toString('base64'),
       }
     )
@@ -142,20 +146,22 @@ const findAllByKeyAndReplace = (
   keys: string[],
   replace: { newValue?: any; replacerFunc?: (originalValue: any) => any }
 ) => {
-  if (replace.newValue == null && replace.replacerFunc == null) {
+  const hasNewValue = replace.newValue !== undefined && replace.newValue !== null
+  const hasReplacerFunction = replace.replacerFunc !== undefined && replace.replacerFunc !== null
+  if (!hasNewValue && !hasReplacerFunction) {
     throw new Error(`Must provide a replacement value or a replacement function!`)
   }
 
-  const replacerFunc = replace.newValue
-    ? (originalValue: any) => replace.newValue
+  const replacerFunc = hasNewValue
+    ? (_originalValue: any) => replace.newValue
     : replace.replacerFunc!
 
   const newObject = { ...object }
   const looper = (obj: any) => {
-    for (let k in obj) {
+    for (const k in obj) {
       if (keys.includes(k)) {
         obj[k] = replacerFunc(obj[k])
-      } else if ('object' === typeof obj[k]) {
+      } else if (typeof obj[k] === 'object') {
         looper(obj[k])
       }
     }

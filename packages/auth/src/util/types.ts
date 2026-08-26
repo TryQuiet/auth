@@ -8,7 +8,14 @@ export const KeyType = {
   ROLE: 'ROLE',
   USER: 'USER',
   DEVICE: 'DEVICE',
+
+  /** A server's rotatable keys — the ones lockboxes are addressed to. */
   SERVER: 'SERVER',
+
+  /** A server's immutable signing identity, which authors its links. Kept in a separate scope from
+   * `SERVER` so that a rotatable keyset can never be mistaken for an identity keyset. */
+  SERVER_IDENTITY: 'SERVER_IDENTITY',
+
   EPHEMERAL: 'EPHEMERAL',
 } as const
 export type KeyType = (typeof KeyType)[keyof typeof KeyType]

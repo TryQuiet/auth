@@ -2,7 +2,7 @@ import sodium from 'libsodium-wrappers-sumo'
 import { describe, expect, test } from 'vitest'
 import { stretch, symmetric } from '../index.js'
 import { unpack } from 'msgpackr'
-import { Cipher } from '../types.js'
+import { type Cipher } from '../types.js'
 
 const { encrypt, decrypt } = symmetric
 
@@ -62,7 +62,10 @@ describe('crypto', () => {
 
       const encrypted = symmetric.encryptBytes(secret, password)
       const cipher = unpack(encrypted) as Cipher
-      const newTag = sodium.crypto_auth(new Uint8Array([...cipher.nonce, ...cipher.mac]), stretch(new Uint8Array([1, 2, 3, 4, 5])))
+      const newTag = sodium.crypto_auth(
+        new Uint8Array([...cipher.nonce, ...cipher.mac]),
+        stretch(new Uint8Array([1, 2, 3, 4, 5]))
+      )
       const fakeEncrypted = symmetric.packToUint8Array({ ...cipher, tag: newTag })
       const attemptToDecrypt = () => symmetric.decryptBytes(fakeEncrypted, password)
       expect(attemptToDecrypt).toThrow()

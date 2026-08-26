@@ -21,6 +21,12 @@ export type SignedMessage = {
   signature: Base58
   /** The signer's public key, encoded as a base58 string */
   publicKey: Base58
+  /**
+   * The domain-separation tag the signature was produced under (see `domains.ts`). Verification
+   * fails unless this matches the context passed to `signatures.sign`. Not part of the wire format:
+   * the verifier knows the expected context from the call site, it is not carried with the message.
+   */
+  context: string
 }
 
 export type Cipher = {
@@ -33,19 +39,11 @@ export type Cipher = {
 export type Encoder = (b: Uint8Array) => string
 export type Password = string | Uint8Array
 
-export type EncryptStreamResult = { encryptStream: AsyncGenerator<Uint8Array>, header: Uint8Array }
+export type EncryptStreamResult = { encryptStream: AsyncGenerator<Uint8Array>; header: Uint8Array }
 
-export class StreamEncryptError extends Error {
-  constructor (message: string, options?: ErrorOptions) {
-    super(message, options)
-  }
-}
+export class StreamEncryptError extends Error {}
 
-export class StreamDecryptError extends Error {
-  constructor (message: string, options?: ErrorOptions) {
-    super(message, options)
-  }
-}
+export class StreamDecryptError extends Error {}
 
 export const INVALID_STREAM_DECRYPT_ERROR_MSG = `Error while decrypting a byte stream
 
@@ -56,10 +54,6 @@ A decrypted chunk of this byte stream had an undefined tag.  This could mean:
 * The data in the encrypted stream was encrypted with a different protocol/format
 `
 
-export class DecryptError extends Error {
-  constructor (message: string, options?: ErrorOptions) {
-    super(message, options)
-  }
-}
+export class DecryptError extends Error {}
 
 export const INVALID_TAG_DECRYPT_ERROR_MSG = `Invalid tag found while decrypting`

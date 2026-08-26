@@ -60,6 +60,22 @@ describe('Team', () => {
       expect(teamKeys2.generation).toBe(1) // The team keys were rotated, so these are new
     })
 
+    it('has an admin rotate shared keys after a non-admin changes their USER keys', () => {
+      const { alice, bob } = setup('alice', { user: 'bob', admin: false })
+
+      bob.team.changeKeys(createKeyset({ type: USER, name: bob.userId }))
+
+      expect(bob.team.members(bob.userId).keys.generation).toBe(1)
+      expect(bob.team.teamKeys().generation).toBe(0)
+      expect(bob.team.state.pendingKeyRotations).toContain(bob.userId)
+
+      alice.team.merge(bob.team.graph)
+      bob.team.merge(alice.team.graph)
+
+      expect(bob.team.teamKeys().generation).toBe(1)
+      expect(bob.team.state.pendingKeyRotations).not.toContain(bob.userId)
+    })
+
     it("Alice can change Bob's keys", () => {
       const { alice, bob } = setup('alice', { user: 'bob', admin: false })
 

@@ -12,7 +12,6 @@ export const IKEY_LENGTH = 16
  */
 export const create = ({
   seed,
-  maxUses = 1, // By default an invitation can only be used once
   expiration = 0 as UnixTimestamp, // By default an invitation never expires
   userId,
 }: Params): Invitation => {
@@ -24,8 +23,9 @@ export const create = ({
   // The ephemeral public signature key will be used to verify Bob's proof of invitation
   const starterKeys = generateStarterKeys(seed)
   const { publicKey } = starterKeys.signature
+  const encryptionPublicKey = starterKeys.encryption.publicKey
 
-  return { id, publicKey, expiration, maxUses, userId }
+  return { id, publicKey, encryptionPublicKey, expiration, userId }
 }
 
 type Params = {
@@ -34,9 +34,6 @@ type Params = {
 
   /** Time when the invitation expires. If 0, the invitation does not expire. */
   expiration?: UnixTimestamp
-
-  /** Number of times the invitation can be used. If 0, the invitation can be used any number of times. By default, an invitation can only be used once. */
-  maxUses?: number
 
   /** (Device invitations only) User name the device will be associated with. */
   userId?: string

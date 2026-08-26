@@ -11,15 +11,23 @@ import type {
   Payload,
   ROOT,
   Sequence,
+  SignerInfo,
+  UnixTimestamp,
 } from '@localfirst/crdx'
 import type { Client, LocalContext } from 'team/context.js'
 import type { Device } from 'device/index.js'
-import type { Invitation, InvitationState } from 'invitation/types.js'
+import type {
+  DeviceInvitationClaim,
+  Invitation,
+  InvitationState,
+  MemberInvitationClaim,
+  ProofOfInvitation,
+} from 'invitation/types.js'
 import type { Lockbox } from 'lockbox/index.js'
 import type { PermissionsMap, Role } from 'role/index.js'
-import type { Host, Server } from 'server/index.js'
+import type { Server } from 'server/index.js'
 import type { ValidationResult } from 'util/index.js'
-import { Logger, SharedLogger } from '@localfirst/shared'
+import type { Logger, SharedLogger } from '@localfirst/shared'
 
 // ********* MEMBER
 
@@ -38,9 +46,36 @@ export type Member = {
   /** Array of role names that the member belongs to */
   roles: string[]
 
-  /** Devices that the member has added, along with their public */
-  devices?: Device[]
+  /** Devices that the member has registered */
+  devices?: DeviceRecord[]
 }
+
+/**
+ * A device as it appears in team state: the registered device plus when it was registered and, for
+ * tombstones, when it was removed. A removed device id is never registered again, so a tombstone is
+ * permanent — it's how we tell "this signer was removed" apart from "we've never heard of this
+ * signer", which are different answers to a peer trying to connect.
+ */
+export type DeviceRecord = Device & {
+  /** Timestamp of the link that registered this device */
+  admittedAt: UnixTimestamp
+
+  /** Timestamp of the link that removed this device (tombstones only) */
+  removedAt?: UnixTimestamp
+}
+
+/** A server as it appears in team state; see `DeviceRecord` for the timestamps. */
+export type ServerRecord = Server & {
+  admittedAt: UnixTimestamp
+  removedAt?: UnixTimestamp
+}
+
+/**
+ * A member as it appears in a link that registers one. Its devices are plain devices: the
+ * `admittedAt` stamp on the state record comes from the registering link, not from the payload, so
+ * nobody gets to choose their own registration time.
+ */
+export type NewMember = Omit<Member, 'devices'> & { devices?: Device[] }
 
 // ********* TEAM CONSTRUCTOR
 
@@ -86,50 +121,54 @@ export const isNewTeam = (options: NewOrExisting): options is NewTeamOptions =>
 
 // ********* ACTIONS
 
-type BasePayload = {
-  // Every action might include new lockboxes
+/**
+ * Lockboxes are capability-bearing deliveries, not incidental metadata. Only actions whose
+ * semantics explicitly describe a key transition include this shape in their payload.
+ */
+type LockboxPayload = {
   lockboxes?: Lockbox[]
 }
 
 export type RootAction = {
   type: typeof ROOT
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     name: string
     rootMember: Member
     rootDevice: Device
+    metadata?: TeamMetadata
   }
 }
 
 export type AddMemberAction = {
   type: 'ADD_MEMBER'
-  payload: BasePayload & {
-    member: Member
+  payload: LockboxPayload & {
+    member: NewMember
     roles?: string[]
   }
 }
 
 export type RemoveMemberAction = {
   type: 'REMOVE_MEMBER'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     userId: string
   }
 }
 
 export type AddRoleAction = {
   type: 'ADD_ROLE'
-  payload: BasePayload & Role
+  payload: LockboxPayload & Role
 }
 
 export type RemoveRoleAction = {
   type: 'REMOVE_ROLE'
-  payload: BasePayload & {
+  payload: {
     roleName: string
   }
 }
 
 export type AddMemberRoleAction = {
   type: 'ADD_MEMBER_ROLE'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     userId: string
     roleName: string
     permissions?: PermissionsMap
@@ -138,123 +177,145 @@ export type AddMemberRoleAction = {
 
 export type RemoveMemberRoleAction = {
   type: 'REMOVE_MEMBER_ROLE'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     userId: string
     roleName: string
   }
 }
 
-export type AddDeviceAction = {
-  type: 'ADD_DEVICE'
-  payload: BasePayload & {
-    device: Device
-  }
-}
-
 export type RemoveDeviceAction = {
   type: 'REMOVE_DEVICE'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     deviceId: string
   }
 }
 
 export type InviteMemberAction = {
   type: 'INVITE_MEMBER'
-  payload: BasePayload & {
+  payload: {
     invitation: Invitation
   }
 }
 
 export type InviteDeviceAction = {
   type: 'INVITE_DEVICE'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     invitation: Invitation
   }
 }
 
 export type RevokeInvitationAction = {
   type: 'REVOKE_INVITATION'
-  payload: BasePayload & {
+  payload: {
     id: string // Invitation ID
   }
 }
 
+/**
+ * Admits a new member and the device they'll use, in a single link.
+ *
+ * The payload carries the invitation proof and the claim it was signed over, so that every replica
+ * can re-derive the admitted identity from signed material rather than trusting the admitting
+ * peer's summary of it. The member and the device both come out of `claim`.
+ */
 export type AdmitMemberAction = {
   type: 'ADMIT_MEMBER'
-  payload: BasePayload & {
-    id: Base58 // Invitation ID
-    userName: string
-    memberKeys: Keyset // Member keys provided by the new member
+  payload: LockboxPayload & {
+    /** Invitation ID */
+    id: Base58
+
+    /** Proof that the invitee knows the invitation seed */
+    proof: ProofOfInvitation
+
+    /** The identity being registered; the reducer builds the member and their device from this */
+    claim: MemberInvitationClaim
+
+    /** The new device's signature over the claim — proof that whoever is being admitted actually
+     * holds the device keys. The inviter knows the seed and can forge `proof`; it can't forge
+     * this. */
+    possessionProof: Base58
   }
 }
 
+/** Admits an additional device for an existing member. The device's owner comes from the
+ * invitation record on the graph, never from the claim. */
 export type AdmitDeviceAction = {
   type: 'ADMIT_DEVICE'
-  payload: BasePayload & {
+  payload: {
     id: Base58 // Invitation ID
-    device: Device
+    proof: ProofOfInvitation
+    claim: DeviceInvitationClaim
+    possessionProof: Base58
   }
 }
 
 export type ChangeMemberKeysAction = {
   type: 'CHANGE_MEMBER_KEYS'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     keys: Keyset
   }
 }
 
 export type RotateKeysAction = {
   type: 'ROTATE_KEYS'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     userId: string
   }
 }
 
 export type AddServerAction = {
   type: 'ADD_SERVER'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     server: Server
   }
 }
 
 export type RemoveServerAction = {
   type: 'REMOVE_SERVER'
-  payload: BasePayload & {
-    host: Host
+  payload: LockboxPayload & {
+    /** A server is identified by its `serverId` (the fingerprint of its identity key), never by its
+     * host — a host is a mutable label. */
+    serverId: string
   }
 }
 
 export type ChangeServerKeysAction = {
   type: 'CHANGE_SERVER_KEYS'
-  payload: BasePayload & {
+  payload: LockboxPayload & {
     keys: Keyset
   }
 }
 
 export type MessageAction = {
   type: 'MESSAGE'
-  payload: BasePayload & {
+  payload: {
     message: unknown
   }
 }
 
 export type SetTeamNameAction = {
   type: 'SET_TEAM_NAME'
-  payload: BasePayload & {
+  payload: {
     teamName: string
   }
 }
 
-export type AddLockboxesAction = {
-  type: 'ADD_LOCKBOXES'
-  payload: BasePayload & {
+/**
+ * A newly admitted member publishes its USER keys to one of its already-registered devices.
+ * This replaces the ambient ADD_LOCKBOXES action: the device relationship is now explicit and
+ * can be checked from team state.
+ */
+export type PublishUserKeysToDeviceAction = {
+  type: 'PUBLISH_USER_KEYS_TO_DEVICE'
+  payload: {
+    deviceId: string
     lockboxes: Lockbox[]
   }
 }
 
 export type SetMetadataAction = {
   type: 'SET_METADATA'
-  payload: BasePayload & {
+  payload: {
     metadata: TeamMetadata
   }
 }
@@ -262,7 +323,6 @@ export type SetMetadataAction = {
 export type TeamAction =
   | RootAction
   | AddMemberAction
-  | AddDeviceAction
   | AddRoleAction
   | AddMemberRoleAction
   | RemoveMemberAction
@@ -281,13 +341,76 @@ export type TeamAction =
   | ChangeServerKeysAction
   | MessageAction
   | SetTeamNameAction
-  | AddLockboxesAction
+  | PublishUserKeysToDeviceAction
   | SetMetadataAction
 
+/** Actions whose public semantics include a lockbox delivery plan. */
+export type LockboxCarrierAction =
+  | RootAction
+  | AddMemberAction
+  | RemoveMemberAction
+  | AddRoleAction
+  | AddMemberRoleAction
+  | RemoveMemberRoleAction
+  | RemoveDeviceAction
+  | InviteDeviceAction
+  | AdmitMemberAction
+  | ChangeMemberKeysAction
+  | RotateKeysAction
+  | AddServerAction
+  | RemoveServerAction
+  | ChangeServerKeysAction
+  | PublishUserKeysToDeviceAction
+
+const lockboxCarrierTypes = [
+  'ROOT',
+  'ADD_MEMBER',
+  'REMOVE_MEMBER',
+  'ADD_ROLE',
+  'ADD_MEMBER_ROLE',
+  'REMOVE_MEMBER_ROLE',
+  'REMOVE_DEVICE',
+  'INVITE_DEVICE',
+  'ADMIT_MEMBER',
+  'CHANGE_MEMBER_KEYS',
+  'ROTATE_KEYS',
+  'ADD_SERVER',
+  'REMOVE_SERVER',
+  'CHANGE_SERVER_KEYS',
+  'PUBLISH_USER_KEYS_TO_DEVICE',
+] as const satisfies ReadonlyArray<LockboxCarrierAction['type']>
+
+/** Runtime boundary for deserialized/untyped action payloads. */
+export const isLockboxCarrierAction = (action: unknown): action is LockboxCarrierAction => {
+  if (!isActionRecord(action)) return false
+  return lockboxCarrierTypes.includes(action.type as LockboxCarrierAction['type'])
+}
+
+const isActionRecord = (value: unknown): value is { type: unknown } =>
+  typeof value === 'object' &&
+  value !== null &&
+  !Array.isArray(value) &&
+  Object.hasOwn(value, 'type')
+
+/**
+ * Application context added to every link. It deliberately says nothing about who authored the
+ * link: that's `body.signer`, which is bound to the link by a signature. Anything in here is an
+ * unauthenticated hint and must never be used for authorization.
+ */
 export type TeamContext = {
-  deviceId: string
   client?: Client
 }
+
+/** The kinds of signer that can author a team link. */
+export const SignerKind = { DEVICE: 'device', SERVER: 'server' } as const
+export type SignerKind = (typeof SignerKind)[keyof typeof SignerKind]
+
+/** A signer resolved against team state: the record it names, and what kind of thing that is. */
+export type ResolvedSigner =
+  | { kind: typeof SignerKind.DEVICE; device: DeviceRecord }
+  | { kind: typeof SignerKind.SERVER; server: ServerRecord }
+
+export type TeamSignerInfo = SignerInfo & { kind: SignerKind }
 
 export type TeamLinkBody = LinkBody<TeamAction, TeamContext>
 
@@ -299,7 +422,14 @@ export type TeamLinkMap = Record<Hash, TeamLink>
 export type TeamGraph = Graph<TeamAction, TeamContext>
 export type Branch = Sequence<TeamAction, TeamContext>
 export type TwoBranches = [Branch, Branch]
-export type MembershipRuleEnforcer = (links: TeamLink[], graph: TeamGraph) => TeamLink[]
+/** Maps each signer id known to a graph to the member it acts for. */
+export type SignerUserMap = Record<string, string>
+
+export type MembershipRuleEnforcer = (
+  links: TeamLink[],
+  graph: TeamGraph,
+  authors: SignerUserMap
+) => TeamLink[]
 
 // ********* TEAM STATE
 
@@ -307,10 +437,9 @@ export type TeamState = {
   head: Hash[]
 
   teamName: string
-  rootContext?: TeamContext
   members: Member[]
   roles: Role[]
-  servers: Server[]
+  servers: ServerRecord[]
   lockboxes: Lockbox[]
   invitations: InvitationMap
   messages: unknown[]
@@ -318,8 +447,8 @@ export type TeamState = {
   // We keep track of removed members and devices primarily so that we deliver the correct message
   // to them when we refuse to connect
   removedMembers: Member[]
-  removedDevices: Device[]
-  removedServers: Server[]
+  removedDevices: DeviceRecord[]
+  removedServers: ServerRecord[]
 
   // If a member's admission is reversed, we need to flag them as compromised so an admin can
   // rotate any keys they had access to at the first opportunity
@@ -331,11 +460,37 @@ export type InvitationMap = Record<string, InvitationState>
 
 // ********* VALIDATION
 
-export type TeamStateValidator = (previousState: TeamState, link: TeamLink, extendableLogger: Logger) => ValidationResult
+export type TeamStateValidator = (
+  previousState: TeamState,
+  link: TeamLink,
+  extendableLogger: Logger
+) => ValidationResult
 
 export type TeamStateValidatorSet = Record<string, TeamStateValidator>
 
-export type ValidationArgs = [TeamState, TeamLink, Logger | undefined]
+/**
+ * The authenticated author of a link, derived from `body.signer` after its signature has been
+ * verified against the registered record.
+ *
+ * Authorization rules take this rather than reading anything off the link body: a link body is
+ * whatever its author chose to write, and the whole point of the signature is that this isn't.
+ */
+export type LinkAuthor = {
+  /** The signer record the link's signature was verified against. */
+  signer: ResolvedSigner
+
+  /** The member the signer acts as: a device's owner, or a server's member projection. */
+  member: Member
+}
+
+export type AuthorizedValidator = (
+  previousState: TeamState,
+  link: TeamLink,
+  author: LinkAuthor,
+  extendableLogger: Logger
+) => ValidationResult
+
+export type AuthorizedValidatorSet = Record<string, AuthorizedValidator>
 
 // ********* CRYPTO
 
@@ -357,13 +512,22 @@ export type InviteResult = {
 
   /** The secret invitation key. (Returned in case it was generated randomly.) */
   seed: string
+
+  /** Immutable root hash identifying the team this invitation belongs to. */
+  teamId: Base58
 }
 export type LookupIdentityResult =
   | 'VALID_DEVICE'
   | 'MEMBER_REMOVED'
   | 'DEVICE_UNKNOWN'
   | 'DEVICE_REMOVED'
+  | 'VALID_SERVER'
+  | 'SERVER_REMOVED'
 
-export type EncryptStreamTeamPayload = { recipient: KeyMetadata, encryptStream: AsyncGenerator<Uint8Array>, header: Uint8Array }
+export type EncryptStreamTeamPayload = {
+  recipient: KeyMetadata
+  encryptStream: AsyncGenerator<Uint8Array>
+  header: Uint8Array
+}
 
 export type TeamMetadata = { selfAssignableRoles: string[] }

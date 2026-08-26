@@ -1,5 +1,6 @@
 export const DEVICE_REMOVED = 'DEVICE_REMOVED' as const
 export const DEVICE_UNKNOWN = 'DEVICE_UNKNOWN' as const
+export const ACCEPTANCE_INVALID = 'ACCEPTANCE_INVALID' as const
 export const ENCRYPTION_FAILURE = 'ENCRYPTION_FAILURE' as const
 export const IDENTITY_PROOF_INVALID = 'IDENTITY_PROOF_INVALID' as const
 export const INVITATION_PROOF_INVALID = 'INVITATION_PROOF_INVALID' as const
@@ -7,11 +8,17 @@ export const JOINED_WRONG_TEAM = 'JOINED_WRONG_TEAM' as const
 export const ADMIT_MEMBER_LINK_MISSING = 'ADMIT_MEMBER_LINK_MISSING' as const
 export const MEMBER_REMOVED = 'MEMBER_REMOVED' as const
 export const NEITHER_IS_MEMBER = 'NEITHER_IS_MEMBER' as const
+export const PROTOCOL_VERSION_UNSUPPORTED = 'PROTOCOL_VERSION_UNSUPPORTED' as const
 export const SERVER_REMOVED = 'SERVER_REMOVED' as const
+export const SERVER_UNKNOWN = 'SERVER_UNKNOWN' as const
 export const TIMEOUT = 'TIMEOUT' as const
 export const UNHANDLED = 'UNHANDLED' as const
 
 export const connectionErrors: Record<string, ErrorDefinition> = {
+  [ACCEPTANCE_INVALID]: {
+    localMessage: 'The invitation acceptance could not be authenticated',
+    remoteMessage: 'The invitation acceptance could not be authenticated',
+  },
   [DEVICE_REMOVED]: {
     localMessage: "The peer's device was removed from this team",
     remoteMessage: 'Your device was removed from this team',
@@ -36,8 +43,8 @@ export const connectionErrors: Record<string, ErrorDefinition> = {
     remoteMessage: "This isn't the team the peer was invited to",
   },
   [ADMIT_MEMBER_LINK_MISSING]: {
-    localMessage: "Invite was accepted but member admission link was missing",
-    remoteMessage: "Peer received invite acceptance but found no member admission link",
+    localMessage: 'Invite was accepted but member admission link was missing',
+    remoteMessage: 'Peer received invite acceptance but found no member admission link',
   },
   [MEMBER_REMOVED]: {
     localMessage: 'The peer was removed from this team',
@@ -46,9 +53,17 @@ export const connectionErrors: Record<string, ErrorDefinition> = {
   [NEITHER_IS_MEMBER]: {
     localMessage: 'The peer is also holding an invitation and cannot admit you to the team',
   },
+  [PROTOCOL_VERSION_UNSUPPORTED]: {
+    localMessage: 'The peer sent an unsupported connection protocol message',
+    remoteMessage: 'Your connection protocol version is not supported',
+  },
   [SERVER_REMOVED]: {
     localMessage: 'The server was removed from this team',
     remoteMessage: 'You (a server) were removed from this team',
+  },
+  [SERVER_UNKNOWN]: {
+    localMessage: "The peer's server isn't listed on this team",
+    remoteMessage: "Your server isn't listed on this team",
   },
   [TIMEOUT]: {
     localMessage: "We didn't hear back from the peer; giving up",

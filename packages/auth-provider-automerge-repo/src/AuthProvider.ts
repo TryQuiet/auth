@@ -62,8 +62,12 @@ const log = debug.extend('auth-provider')
  * ```
  */
 export class AuthProvider extends EventEmitter<AuthProviderEvents> {
-  readonly #device: Auth.DeviceWithSecrets
+  readonly #device?: Auth.DeviceWithSecrets
   #user?: Auth.UserWithSecrets
+
+  /** Set instead of `#device`/`#user` when we're a sync server rather than someone's device. */
+  readonly #serverIdentity?: Auth.ServerWithSecrets
+
   readonly storage: StorageAdapterInterface
 
   readonly #adapters: Array<AuthNetworkAdapter<NetworkAdapter>> = []
@@ -77,21 +81,25 @@ export class AuthProvider extends EventEmitter<AuthProviderEvents> {
 
   #log = log
 
-  constructor({ device, user, storage, server = [] }: Config) {
+  constructor({ device, user, serverIdentity, storage, server = [] }: Config) {
     super()
 
-    // We always are given the local device's info & keys
+    // We're either someone's device or a sync server, and either way we have a signing identity
     this.#device = device
+    this.#serverIdentity = serverIdentity
 
     // We might already have our user info, unless we're a new device using an invitation
     if (user?.userName) {
       this.#user = user
       this.#log = log.extend(user.userName)
+    } else if (serverIdentity) {
+      this.#log = log.extend(serverIdentity.host)
     }
 
     this.#log('instantiating %o', {
       userName: user?.userName,
-      deviceId: device.deviceId,
+      deviceId: device?.deviceId,
+      serverId: serverIdentity?.serverId,
     })
 
     this.#server = asArray(server)
@@ -211,10 +219,9 @@ export class AuthProvider extends EventEmitter<AuthProviderEvents> {
    * Creates a team and registers it with all of our sync servers.
    */
   public async createTeam(teamName: string) {
-    const team = await Auth.createTeam(teamName, {
-      device: this.#device,
-      user: this.#user,
-    })
+    const context = this.#localContext()
+    if (!('user' in context)) throw new Error(`A sync server can't create a team`)
+    const team = await Auth.createTeam(teamName, context)
 
     await this.registerTeam(team)
     return team
@@ -232,12 +239,12 @@ export class AuthProvider extends EventEmitter<AuthProviderEvents> {
     const registrations = this.#server.map(async server => {
       const { origin, hostname } = buildServerUrl(server)
 
-      // get the server's public keys
+      // get the server's public record (its id, its immutable identity keys, and its lockbox keys)
       const response = await fetch(`${origin}/keys`)
-      const keys = await response.json()
+      const serverRecord = (await response.json()) as Auth.Server
 
-      // add the server's public keys to the team
-      team.addServer({ host: hostname, keys })
+      // register it under the host we actually reach it at; the server's own `host` is a label
+      team.addServer({ ...serverRecord, host: hostname })
 
       // register the team with the server
       await fetch(`${origin}/teams`, {
@@ -413,6 +420,13 @@ export class AuthProvider extends EventEmitter<AuthProviderEvents> {
     return this.#storedMessages.get([shareId, peerId]) ?? []
   }
 
+  /** Once a connection has taken over its buffered messages, the buffer must not linger: it's a
+   * one-shot handoff for a single handshake, and leftover messages would be replayed into the next
+   * connection we make to the same peer. */
+  #clearStoredMessages(shareId: ShareId, peerId: PeerId) {
+    this.#storedMessages.delete([shareId, peerId])
+  }
+
   /**
    * TODO: note that this can also be an anonymous share
    * An Auth.Connection executes the localfirst/auth protocol to authenticate a peer, negotiate a
@@ -533,8 +547,28 @@ export class AuthProvider extends EventEmitter<AuthProviderEvents> {
 
     connection.start()
 
-    // If we already had messages for this peer, pass them to the connection
-    for (const message of this.#getStoredMessages(shareId, peerId)) connection.deliver(message)
+    // Hand over any messages that arrived before this connection object existed. That buffer only
+    // ever holds the opening messages of a *single* handshake, whose queue numbering starts at 0.
+    //
+    // A previous connection to this same peer may have been torn down (e.g. the peer was removed
+    // from the team), and its in-flight messages can still land on the same ordered transport
+    // afterwards. Those carry mid-session indices, so delivering them into the fresh queue would
+    // open a phantom gap and make it demand resends of messages the peer's new session never sent —
+    // a request the peer answers by throwing. So we only replay the contiguous run starting at 0
+    // that genuinely belongs to this handshake, and drop anything left over from an earlier session.
+    //
+    // Only `Auth.Connection` numbers its messages. An `AnonymousConnection` — what a public share
+    // gets — sends bare `JOIN`/`WELCOME` objects through no queue at all, so there is no ordering
+    // to reconstruct and nothing to be confused by: those replay verbatim. Gating them on an
+    // `index` they never carry silently dropped the opening `JOIN` of every public share.
+    let expectedIndex = 0
+    for (const message of this.#getStoredMessages(shareId, peerId)) {
+      const { index } = unpack(message) as { index?: number }
+      if (index !== undefined && index !== expectedIndex) continue
+      if (index !== undefined) expectedIndex++
+      connection.deliver(message)
+    }
+    this.#clearStoredMessages(shareId, peerId)
 
     // Track the connection
     this.#connections.set([shareId, peerId], connection)
@@ -643,7 +677,7 @@ export class AuthProvider extends EventEmitter<AuthProviderEvents> {
             encryptedTeam: share.team.save(),
             encryptedTeamKeys: encryptBytes(
               { ...share.teamKeyring, ...share.team.teamKeyring() },
-              this.#device.keys.secretKey
+              this.#storageKey()
             ),
             documentIds,
           } as SerializedShare)
@@ -669,12 +703,10 @@ export class AuthProvider extends EventEmitter<AuthProviderEvents> {
 
           const teamKeys = decryptBytes(
             encryptedTeamKeys,
-            this.#device.keys.secretKey
+            this.#storageKey()
           ) as Auth.KeysetWithSecrets
 
-          const context = { device: this.#device, user: this.#user }
-
-          const team = await Auth.loadTeam(encryptedTeam, context, teamKeys)
+          const team = await Auth.loadTeam(encryptedTeam, this.#localContext(), teamKeys)
           return this.addTeam(team)
         } else {
           return this.joinPublicShare(share.shareId)
@@ -696,6 +728,22 @@ export class AuthProvider extends EventEmitter<AuthProviderEvents> {
     return peers
   }
 
+  /** The local identity we load and create teams with. */
+  #localContext(): Auth.LocalContext {
+    if (this.#serverIdentity) return { server: this.#serverIdentity }
+    return { device: this.#device!, user: this.#user! }
+  }
+
+  /**
+   * The symmetric key our persisted state is encrypted with. It has to be one that never rotates,
+   * or we'd lose the ability to read what we saved: a device's keys, or a server's identity keys.
+   */
+  #storageKey() {
+    return this.#serverIdentity
+      ? this.#serverIdentity.identityKeys.secretKey
+      : this.#device!.keys.secretKey
+  }
+
   #getContextForShare(shareId: ShareId) {
     const device = this.#device
     const user = this.#user
@@ -707,6 +755,10 @@ export class AuthProvider extends EventEmitter<AuthProviderEvents> {
       }
 
       // this is a share we're already a member of
+      if (this.#serverIdentity) {
+        return { server: this.#serverIdentity, team: share.team } as Auth.ServerContext
+      }
+
       return {
         device,
         user,
@@ -788,13 +840,26 @@ const hashShareId = memoize((shareId: ShareId) => {
 
 // TYPES
 
-type Config = {
-  /** We always have the local device's info and keys */
-  device: Auth.DeviceWithSecrets
+/** We're either a member's device or a sync server; the two identities are mutually exclusive. */
+type Identity =
+  | {
+      /** The local device's info and keys */
+      device: Auth.DeviceWithSecrets
 
-  /** We have our user info, unless we're a new device using an invitation */
-  user?: Auth.UserWithSecrets
+      /** We have our user info, unless we're a new device using an invitation */
+      user?: Auth.UserWithSecrets
 
+      serverIdentity?: never
+    }
+  | {
+      /** This provider is a sync server, which signs and authenticates as itself */
+      serverIdentity: Auth.ServerWithSecrets
+
+      device?: never
+      user?: never
+    }
+
+type Config = Identity & {
   /** We need to be given some way to persist our state */
   storage: StorageAdapterInterface
 

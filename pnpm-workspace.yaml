@@ -1,3 +1,16 @@
 packages:
   - 'packages/*'
   - 'demos/*'
+allowBuilds:
+  '@ibm/plex@6.4.1': false
+  '@parcel/watcher@2.0.4': true
+  '@swc/core@1.5.24': true
+  'cbor-extract@2.2.0': true
+  'classic-level@1.4.1': true
+  'cypress@13.10.0': false
+  'electron@23.3.13': false
+  'esbuild@0.19.12 || 0.20.2': true
+  'inquirer-select-pro@1.0.0-alpha.6': false
+  'msgpackr-extract@3.0.2': true
+  'node-datachannel@0.10.1': false
+  'nx@16.10.0': true

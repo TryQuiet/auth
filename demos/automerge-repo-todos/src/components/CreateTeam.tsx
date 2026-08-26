@@ -1,11 +1,10 @@
-import * as Auth from '@localfirst/auth'
 import cx from 'classnames'
 import { useState } from 'react'
 import type { SharedState } from '../types'
 import { initializeAuthRepo } from '../util/initializeAuthRepo'
 import { storeRootDocumentIdOnTeam } from '../util/storeRootDocumentIdOnTeam'
 import { type SetupCallback } from './FirstUseSetup'
-import { createDevice } from '../util/createDevice'
+import { createUserAndDevice } from '../util/createDevice'
 
 export const CreateTeam = ({ userName, onSetup }: Props) => {
   const [teamName, setTeamName] = useState<string>('')
@@ -13,9 +12,8 @@ export const CreateTeam = ({ userName, onSetup }: Props) => {
   const createTeam = async () => {
     if (!teamName || teamName.length === 0) return
 
-    // Create new user and device
-    const user = Auth.createUser(userName)
-    const device = createDevice(user.userId)
+    // A founding user's id derives from their founding device.
+    const { user, device } = createUserAndDevice(userName)
 
     // Create repo and auth provider
     const { auth, repo } = await initializeAuthRepo({ user, device })
