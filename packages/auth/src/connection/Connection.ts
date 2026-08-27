@@ -273,6 +273,17 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           const admit = () => {
             if (isInviteeMemberClaim(theirIdentityClaim)) {
               this.logger.debug('handling member invite action')
+              // A server cannot grant `member` itself. Verify the admin-authored invitation grant
+              // is complete and current before admission, using only public manifests; otherwise a
+              // stale invite could commit this identity and then strand it when self-assignment
+              // fails on the invitee.
+              if (
+                context.server !== undefined &&
+                team.hasRole(MEMBER_ROLE) &&
+                !team.hasCurrentInvitationRoleGrant(proofOfInvitation.id, MEMBER_ROLE)
+              ) {
+                throw new Error(`Invitation does not contain a current ${MEMBER_ROLE} role grant`)
+              }
               // New member, along with the first device they'll sign links with
               team.admitMember(proofOfInvitation, theirIdentityClaim.claim, possessionProof)
               const userId = theirIdentityClaim.claim.memberKeys.name
@@ -381,6 +392,18 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           // device, so we can rehydrate the team on our own later. This has to happen before we
           // merge anything, since merging re-decrypts the incoming graph with our device keys.
           team.join(teamKeyring)
+
+          // A user-scoped acceptor grants the conventional member role during admission. A server
+          // intentionally cannot author that role change, so an invitee admitted by a relay claims
+          // the admin-authored, invitation-encrypted grant for itself. The server carries the
+          // ciphertext in the graph but never has the seed-derived key needed to open it.
+          if (
+            context.user !== undefined &&
+            team.hasRole(MEMBER_ROLE) &&
+            !team.memberHasRole(user.userId, MEMBER_ROLE)
+          ) {
+            team.addMemberRoleFromInvitation(MEMBER_ROLE, invitationSeed)
+          }
 
           // Note that we do *not* emit `joined` here. The peer that handed us this graph hasn't
           // proved anything yet — it has only claimed an identity. `joined` is what tells the

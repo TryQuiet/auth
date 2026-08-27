@@ -8,6 +8,7 @@ import {
   type RecipientManifest,
 } from 'lockbox/index.js'
 import { ADMIN } from 'role/index.js'
+import { INVITATION_ROLE_GRANT_KEY_TYPE } from 'invitation/index.js'
 import { KeyType } from 'util/index.js'
 import * as select from './selectors/index.js'
 import {
@@ -363,6 +364,24 @@ const actionPolicyReason = (
         return undefined
       }
       return 'ADD_MEMBER_ROLE may deliver existing keys of that role only to the assigned member'
+    }
+
+    case 'INVITE_MEMBER': {
+      const { invitation } = action.payload
+      if (
+        contents.type === KeyType.ROLE &&
+        contents.name !== ADMIN &&
+        invitation.roleNames?.includes(contents.name) === true &&
+        previousState.metadata.selfAssignableRoles.includes(contents.name) &&
+        knownContents(previousState, contents) &&
+        recipient.type === INVITATION_ROLE_GRANT_KEY_TYPE &&
+        recipient.name === invitation.id &&
+        recipient.generation === 0 &&
+        recipient.publicKey === invitation.roleGrantPublicKey
+      ) {
+        return undefined
+      }
+      return 'INVITE_MEMBER may deliver only declared existing self-assignable ROLE keys to that invitation grant key'
     }
 
     case 'INVITE_DEVICE': {

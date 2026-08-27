@@ -609,28 +609,92 @@ export class Team extends EventEmitter<TeamEvents> {
   public inviteMember({
     seed = invitations.randomSeed(),
     expiration,
+    roleNames = [],
   }: {
     /** A secret to be passed to the invitee via a side channel. If not provided, one will be randomly generated. */
     seed?: string
 
     /** Time when the invitation expires. If not provided, the invitation does not expire. */
     expiration?: UnixTimestamp
+
+    /** Existing self-assignable roles whose keys the invitation holder may claim after admission. */
+    roleNames?: string[]
   } = {}): InviteResult {
+    assert(!this.isServer, "Servers can't invite a member")
+
     // Normalize the seed (all lower case, strip spaces & punctuation)
     seed = normalize(seed)
 
+    const uniqueRoleNames = [...new Set(roleNames)]
+    for (const roleName of uniqueRoleNames) {
+      assert(roleName !== ADMIN, 'The admin role cannot be granted through an invitation')
+      assert(this.hasRole(roleName), `Cannot grant unknown role ${roleName} through an invitation`)
+      assert(
+        this.state.metadata.selfAssignableRoles.includes(roleName),
+        `Cannot grant non-self-assignable role ${roleName} through an invitation`
+      )
+    }
+
     // Generate invitation
-    const invitation = invitations.create({ seed, expiration })
+    const invitation = invitations.create({ seed, expiration, roleNames: uniqueRoleNames })
+    const roleGrantKeys = invitations.generateRoleGrantKeys(seed)
+    const lockboxes = uniqueRoleNames.flatMap(roleName =>
+      this.roleKeysAllGenerations(roleName).map(keys => lockbox.create(keys, roleGrantKeys))
+    )
     const { id } = invitation
 
     // Post invitation to graph
     this.dispatch({
       type: 'INVITE_MEMBER',
-      payload: { invitation },
+      payload: { invitation, lockboxes },
     })
 
     // Return the secret invitation seed (to pass on to invitee) and the invitation id (which could be used to revoke later)
     return { id, seed, teamId: this.id }
+  }
+
+  /**
+   * Claims a self-assignable role whose existing keys were attached to a member invitation.
+   *
+   * Returns false for legacy invitations or invitations that did not declare this role. Once a
+   * role is declared, an incomplete or stale delivery is rejected before membership is changed.
+   */
+  public addMemberRoleFromInvitation = (roleName: string, seed: string): boolean => {
+    assert(!this.isServer, "Servers can't claim invitation role grants")
+    seed = normalize(seed)
+
+    const invitationId = invitations.deriveId(seed)
+    const invitation = this.getInvitation(invitationId)
+    if (invitation.kind !== 'member' || !invitation.roleNames?.includes(roleName)) return false
+    assert(
+      this.hasCurrentInvitationRoleGrant(invitationId, roleName),
+      `Invitation role grant for ${roleName} is incomplete or stale`
+    )
+
+    const roleGrantKeys = invitations.generateRoleGrantKeys(seed)
+    assert(
+      invitation.roleGrantPublicKey === roleGrantKeys.encryption.publicKey,
+      'Invitation role grant key does not match the invitation seed'
+    )
+
+    const openedRoleKeys = select
+      .visibleKeys(this.state, roleGrantKeys)
+      .filter(keys => keys.type === KeyType.ROLE && keys.name === roleName)
+      .sort((a, b) => a.generation - b.generation)
+    const currentGeneration = select.lockboxesInScope(this.state, {
+      type: KeyType.ROLE,
+      name: roleName,
+    })[0]?.contents.generation
+
+    assert(currentGeneration !== undefined, `Role ${roleName} has no established keys`)
+    assert(
+      openedRoleKeys.length === currentGeneration + 1 &&
+        openedRoleKeys.every((keys, generation) => keys.generation === generation),
+      `Invitation role grant for ${roleName} is incomplete or stale`
+    )
+
+    this.addMemberRoleToSelf(roleName, openedRoleKeys)
+    return true
   }
 
   /**
@@ -702,6 +766,58 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** Gets the invitation corresponding to the given id. If it does not exist, throws an error. */
   public getInvitation = (id: Base58) => select.getInvitation(this.state, id)
+
+  /**
+   * Checks an invitation role grant using only its public lockbox manifests.
+   *
+   * This lets a server reject a stale or incomplete grant before admitting an identity, without
+   * learning the role keys. The invitee still authenticates and opens every ciphertext later.
+   */
+  public hasCurrentInvitationRoleGrant = (invitationId: Base58, roleName: string): boolean => {
+    if (
+      roleName === ADMIN ||
+      !this.hasRole(roleName) ||
+      !this.state.metadata.selfAssignableRoles.includes(roleName)
+    ) {
+      return false
+    }
+    if (!this.hasInvitation(invitationId)) return false
+    const invitation = this.getInvitation(invitationId)
+    if (
+      invitation.kind !== 'member' ||
+      !invitation.roleNames?.includes(roleName) ||
+      invitation.roleGrantPublicKey === undefined
+    ) {
+      return false
+    }
+
+    const currentGeneration = select.lockboxesInScope(this.state, {
+      type: KeyType.ROLE,
+      name: roleName,
+    })[0]?.contents.generation
+    if (currentGeneration === undefined) return false
+
+    const deliveredGenerations = new Set(
+      this.state.lockboxes
+        .filter(
+          ({ contents, recipient }) =>
+            contents.type === KeyType.ROLE &&
+            contents.name === roleName &&
+            recipient.type === invitations.INVITATION_ROLE_GRANT_KEY_TYPE &&
+            recipient.name === invitation.id &&
+            recipient.generation === 0 &&
+            recipient.publicKey === invitation.roleGrantPublicKey
+        )
+        .map(({ contents }) => contents.generation)
+    )
+
+    return (
+      deliveredGenerations.size === currentGeneration + 1 &&
+      Array.from({ length: currentGeneration + 1 }, (_, generation) => generation).every(
+        generation => deliveredGenerations.has(generation)
+      )
+    )
+  }
 
   /**
    * Check that the invitation is still usable, that the proof of invitation checks out against the

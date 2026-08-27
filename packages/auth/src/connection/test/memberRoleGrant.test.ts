@@ -1,7 +1,10 @@
 import { eventPromise } from '@localfirst/shared'
-import { joinTestChannel, setup, TestChannel } from 'util/testing/index.js'
+import { deriveId } from 'invitation/index.js'
+import { createServer, redactServer } from 'server/index.js'
+import * as teams from 'team/index.js'
+import { createTestUser, joinTestChannel, setup, TestChannel } from 'util/testing/index.js'
 import { describe, expect, it } from 'vitest'
-import type { InviteeDeviceContext } from '../types.js'
+import type { InviteeDeviceContext, InviteeMemberContext, ServerContext } from '../types.js'
 
 describe('granting the member role on admission', () => {
   it("doesn't try to grant the role to our own user when the peer is our own device", async () => {
@@ -37,4 +40,130 @@ describe('granting the member role on admission', () => {
 
     expect(phoneConnection.team!.hasDevice(phone.deviceId)).toBe(true)
   })
+
+  it('lets a server relay an encrypted grant without learning the member key', async () => {
+    const alice = createTestUser('alice')
+    const bob = createTestUser('bob')
+    const team = teams.createTeam('server-relayed-member-grant', alice, undefined, {
+      selfAssignableRoles: ['member'],
+    })
+    team.addRole('member')
+    team.addMemberRole(alice.user.userId, 'member')
+
+    const server = createServer({ host: 'qss.example', seed: 'qss-role-grant-test' })
+    team.addServer(redactServer(server))
+    const { seed, teamId } = team.inviteMember({ roleNames: ['member'] })
+    const serverTeam = teams.load(team.save(), { server }, team.teamKeyring())
+
+    // QSS can read the team graph and the public role manifest, but its keys cannot open the
+    // invitation-bound ciphertext.
+    expect(() => serverTeam.roleKeys('member')).toThrow()
+
+    const serverContext: ServerContext = { server, team: serverTeam }
+    const inviteeContext: InviteeMemberContext = {
+      user: bob.user,
+      device: bob.device,
+      invitationSeed: seed,
+      expectedTeamId: teamId,
+    }
+    const join = joinTestChannel(new TestChannel())
+    const serverConnection = join(serverContext)
+    const inviteeConnection = join(inviteeContext)
+    const connected = Promise.all([
+      eventPromise(serverConnection, 'connected'),
+      eventPromise(inviteeConnection, 'connected'),
+    ])
+
+    serverConnection.start()
+    inviteeConnection.start()
+    await connected
+
+    const inviteeTeam = inviteeConnection.team!
+    expect(inviteeTeam.memberHasRole(bob.user.userId, 'member')).toBe(true)
+    expect(inviteeTeam.roleKeys('member')).toEqual(team.roleKeys('member'))
+
+    const encrypted = inviteeTeam.encrypt('member-only message', 'member')
+    expect(team.decrypt(encrypted)).toBe('member-only message')
+    expect(() => serverConnection.team!.roleKeys('member')).toThrow()
+    expect(() => serverConnection.team!.decrypt(encrypted)).toThrow()
+  })
+
+  it('rejects a stale grant before the server admits the invitee', async () => {
+    const alice = createTestUser('stale-alice')
+    const bob = createTestUser('stale-bob')
+    const team = teams.createTeam('stale-server-relayed-member-grant', alice, undefined, {
+      selfAssignableRoles: ['member'],
+    })
+    team.addRole('member')
+    team.addMemberRole(alice.user.userId, 'member')
+
+    const server = createServer({ host: 'stale-qss.example', seed: 'stale-qss-role-grant-test' })
+    team.addServer(redactServer(server))
+    const { seed, teamId } = team.inviteMember({ roleNames: ['member'] })
+
+    // Rotation makes the invitation grant stale after creation but before redemption.
+    team.removeMemberRole(alice.user.userId, 'member')
+    const serverTeam = teams.load(team.save(), { server }, team.teamKeyring())
+    expect(serverTeam.hasCurrentInvitationRoleGrant(invitationId(seed), 'member')).toBe(false)
+
+    const serverContext: ServerContext = { server, team: serverTeam }
+    const inviteeContext: InviteeMemberContext = {
+      user: bob.user,
+      device: bob.device,
+      invitationSeed: seed,
+      expectedTeamId: teamId,
+    }
+    const join = joinTestChannel(new TestChannel())
+    const serverConnection = join(serverContext)
+    const inviteeConnection = join(inviteeContext)
+    const rejected = eventPromise(inviteeConnection, 'remoteError')
+
+    serverConnection.start()
+    inviteeConnection.start()
+
+    await expect(rejected).resolves.toMatchObject({ type: 'INVITATION_PROOF_INVALID' })
+    expect(serverConnection.team!.has(bob.user.userId)).toBe(false)
+  })
+
+  it('rejects a grant whose role is no longer self-assignable before admission', async () => {
+    const alice = createTestUser('policy-alice')
+    const bob = createTestUser('policy-bob')
+    const team = teams.createTeam('revoked-self-assignment-policy', alice, undefined, {
+      selfAssignableRoles: ['member'],
+    })
+    team.addRole('member')
+    team.addMemberRole(alice.user.userId, 'member')
+
+    const server = createServer({ host: 'policy-qss.example', seed: 'policy-qss-role-grant-test' })
+    team.addServer(redactServer(server))
+    const { seed, teamId } = team.inviteMember({ roleNames: ['member'] })
+
+    team.dispatch({
+      type: 'SET_METADATA',
+      payload: { metadata: { selfAssignableRoles: [] } },
+    })
+    const serverTeam = teams.load(team.save(), { server }, team.teamKeyring())
+    expect(serverTeam.hasCurrentInvitationRoleGrant(invitationId(seed), 'member')).toBe(false)
+
+    const serverContext: ServerContext = { server, team: serverTeam }
+    const inviteeContext: InviteeMemberContext = {
+      user: bob.user,
+      device: bob.device,
+      invitationSeed: seed,
+      expectedTeamId: teamId,
+    }
+    const join = joinTestChannel(new TestChannel())
+    const serverConnection = join(serverContext)
+    const inviteeConnection = join(inviteeContext)
+    const rejected = eventPromise(inviteeConnection, 'remoteError')
+
+    serverConnection.start()
+    inviteeConnection.start()
+
+    await expect(rejected).resolves.toMatchObject({ type: 'INVITATION_PROOF_INVALID' })
+    expect(serverConnection.team!.has(bob.user.userId)).toBe(false)
+  })
 })
+
+/** Test-only shorthand for deriving the graph id of an invitation seed. */
+const invitationId = (seed: string) => deriveId(seed)
