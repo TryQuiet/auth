@@ -49,7 +49,7 @@ export const validate: TeamStateValidator = (
   const resolution = resolveAuthor(previousState, link, logger)
   if (!resolution.isValid) return resolution
 
-  for (const key in validators) {
+  for (const key of Object.keys(validators)) {
     const validation = validators[key](previousState, link, resolution.author, logger)
     if (!validation.isValid) return validation
   }
