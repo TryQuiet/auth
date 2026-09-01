@@ -341,8 +341,8 @@ describe('security candidate PoCs: team and lockbox state', () => {
     const previous = Object.getOwnPropertyDescriptor(Object, '0')
 
     try {
-      alice.team.addRole('constructor')
-      alice.team.roleKeys('constructor')
+      expect(() => alice.team.addRole('constructor')).toThrow(/Role name .* is reserved/)
+      expect(alice.team.hasRole('constructor')).toBe(false)
       expect(Object.hasOwn(Object, '0')).toBe(false)
     } finally {
       if (previous === undefined) Reflect.deleteProperty(Object, '0')

@@ -1,6 +1,7 @@
 import { type KeysetWithSecrets } from '@localfirst/crdx'
 import { visibleKeys } from './visibleKeys.js'
 import { type TeamState } from 'team/types.js'
+import { isUnsafeScopeName } from 'team/unsafeScopeName.js'
 
 /** Returns all keysets from the current device's lockboxes in a structure that looks like this:
  * ```js
@@ -22,14 +23,14 @@ export const keyMap = (state: TeamState, deviceKeys: KeysetWithSecrets): KeyMap 
   const allVisibleKeys = visibleKeys(state, deviceKeys)
 
   // Structure these keys as described above
-  return allVisibleKeys.reduce(organizeKeysIntoMap, Object.create(null) as KeyMap)
+  return allVisibleKeys.reduce<KeyMap>(organizeKeysIntoMap, Object.create(null))
 }
 
 const organizeKeysIntoMap = (result: KeyMap, keys: KeysetWithSecrets) => {
   const { type, name, generation } = keys
   // Scope names are ultimately action-controlled. Keep the map safe even if a
   // legacy graph contains a JavaScript meta-property name.
-  if (isReservedPropertyName(type) || isReservedPropertyName(name)) return result
+  if (isUnsafeScopeName(type) || isUnsafeScopeName(name)) return result
   const keysetsForScope = Object.hasOwn(result, type)
     ? result[type]
     : (result[type] = Object.create(null) as Record<string, KeysetWithSecrets[]>)
@@ -45,8 +46,5 @@ const organizeKeysIntoMap = (result: KeyMap, keys: KeysetWithSecrets) => {
   keysetHistory[generation] = keys
   return result
 }
-
-const isReservedPropertyName = (value: string) =>
-  value === '__proto__' || value === 'constructor' || value === 'prototype'
 
 export type KeyMap = Record<string, Record<string, KeysetWithSecrets[]>>

@@ -6,6 +6,7 @@ import { invitationCanBeUsed } from 'invitation/index.js'
 import { castServer, serverIdentityIsValid } from 'server/index.js'
 import { KeyType, VALID, ValidationError, actionFingerprint, deriveUserId } from 'util/index.js'
 import { isAdminOnlyAction } from './isAdminOnlyAction.js'
+import { isUnsafeScopeName } from './unsafeScopeName.js'
 import * as select from './selectors/index.js'
 import {
   SignerKind,
@@ -229,6 +230,22 @@ const signingKeyOf = (record: ResolvedSigner) =>
       record.server.identityKeys.signature
 
 const validators: AuthorizedValidatorSet = {
+  /** Graph-controlled role names must never alias JavaScript inherited/meta-properties. */
+  roleNamesAreSafe(previousState, link, _author, extendableLogger) {
+    const logger = extendableLogger.extend('roleNamesAreSafe')
+    const roleName =
+      link.body.type === 'ADD_ROLE' ||
+      link.body.type === 'REMOVE_ROLE' ||
+      link.body.type === 'ADD_MEMBER_ROLE' ||
+      link.body.type === 'REMOVE_MEMBER_ROLE'
+        ? link.body.payload.roleName
+        : undefined
+
+    if (roleName !== undefined && isUnsafeScopeName(roleName)) {
+      return fail(`Role name '${roleName}' is reserved`, previousState, link, logger)
+    }
+    return VALID
+  },
   /**
    * A device invitation may only name the authenticated member who authored it. The invitation
    * record is the sole source of the admitted device's owner, so without this check any member
