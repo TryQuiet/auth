@@ -1,4 +1,12 @@
-import { append, createKeyring, createKeyset, getChildMap, merge, validate } from '@localfirst/crdx'
+import {
+  append,
+  createKeyring,
+  createKeyset,
+  getChildMap,
+  merge,
+  redactKeys,
+  validate,
+} from '@localfirst/crdx'
 import { symmetric } from '@localfirst/crypto'
 import * as lockbox from 'lockbox/index.js'
 import * as teams from 'team/index.js'
@@ -9,7 +17,13 @@ import type { TeamAction, TeamState } from 'team/types.js'
 import { KeyType } from 'util/index.js'
 import { setup } from 'util/testing/index.js'
 import { describe, expect, it } from 'vitest'
-import { buildEncryptedLink, linkBody, withInjectedLink } from './forgeHelpers.js'
+import {
+  buildEncryptedLink,
+  expectRejectedEverywhere,
+  forge,
+  linkBody,
+  withInjectedLink,
+} from './forgeHelpers.js'
 
 const CHANNEL = 'security-poc-channel'
 
@@ -240,24 +254,36 @@ describe('security candidate PoCs: team and lockbox state', () => {
     )
   })
 
-  it('throws when two valid same-generation member key changes are merged', () => {
+  it('rejects an admin-authored cross-user key replacement on live merge and cold load', () => {
     const { alice, bob } = setup('alice', 'bob')
-    const base = serializeTeamGraph(alice.team.graph)
-    const teamKeys = createKeyring(alice.team.teamKeys())
-    bob.team = teams.load(base, bob.localContext, teamKeys)
-
-    alice.team.changeKeys(
-      createKeyset({ type: KeyType.USER, name: bob.userId }, 'alice-rotates-bob')
+    const teamKeys = alice.team.teamKeys()
+    const replacement = createKeyset(
+      { type: KeyType.USER, name: bob.userId },
+      'alice-rotates-bob'
     )
-    bob.team.changeKeys(createKeyset({ type: KeyType.USER, name: bob.userId }, 'bob-rotates-bob'))
+    replacement.generation = bob.team.members(bob.userId).keys.generation + 1
 
-    expect(() =>
-      teams.load(
-        serializeTeamGraph(merge(alice.team.graph, bob.team.graph)),
-        alice.localContext,
-        createKeyring(alice.team.teamKeyring())
-      )
-    ).toThrow()
+    // Build the exact graph a modified administrator would publish, bypassing the public API's
+    // local dispatch validation. Remote replicas and serialized cold load must independently
+    // reject it at the replicated authorization boundary.
+    // @ts-expect-error Exercise the attacker's ability to reproduce the exported rotation data.
+    const lockboxes = alice.team.rotateKeys(replacement)
+    const attack = forge({
+      graph: alice.team.graph,
+      action: {
+        type: 'CHANGE_MEMBER_KEYS',
+        payload: { keys: redactKeys(replacement), lockboxes },
+      },
+      signer: alice.signer,
+      teamKeys,
+    })
+
+    expectRejectedEverywhere({
+      forged: attack,
+      teamKeys,
+      peers: [alice, bob],
+      message: /Can't change another user's keys/,
+    })
   })
 
   it('can fail to recover a descendant written under a losing concurrent team rotation', () => {
