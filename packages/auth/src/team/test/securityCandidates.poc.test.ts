@@ -316,7 +316,7 @@ describe('security candidate PoCs: team and lockbox state', () => {
     ).not.toThrow()
   })
 
-  it('mutates Object.prototype when a visible keyset uses the __proto__ scope name', () => {
+  it('does not mutate Object.prototype when a visible keyset uses the __proto__ scope name', () => {
     const { alice } = setup('alice')
     const keyset = createKeyset({ type: KeyType.ROLE, name: '__proto__' }, 'prototype-pollution')
     const state = {
@@ -327,22 +327,23 @@ describe('security candidate PoCs: team and lockbox state', () => {
     const previous = prototype[0]
 
     try {
-      keyMap(state, alice.user.keys)
-      expect(prototype[0]).toBeDefined()
+      const keys = keyMap(state, alice.user.keys)
+      expect(prototype[0]).toBe(previous)
+      expect(Object.hasOwn(keys, KeyType.ROLE)).toBe(false)
     } finally {
       if (previous === undefined) delete prototype[0]
       else prototype[0] = previous
     }
   })
 
-  it('mutates another shared built-in when an ordinary role uses an inherited property name', () => {
+  it('does not mutate a shared built-in when a role uses an inherited property name', () => {
     const { alice } = setup('alice')
     const previous = Object.getOwnPropertyDescriptor(Object, '0')
 
     try {
       alice.team.addRole('constructor')
       alice.team.roleKeys('constructor')
-      expect(Object.hasOwn(Object, '0')).toBe(true)
+      expect(Object.hasOwn(Object, '0')).toBe(false)
     } finally {
       if (previous === undefined) Reflect.deleteProperty(Object, '0')
       else Object.defineProperty(Object, '0', previous)

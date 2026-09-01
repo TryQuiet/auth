@@ -27,6 +27,9 @@ export const keyMap = (state: TeamState, deviceKeys: KeysetWithSecrets): KeyMap 
 
 const organizeKeysIntoMap = (result: KeyMap, keys: KeysetWithSecrets) => {
   const { type, name, generation } = keys
+  // Scope names are ultimately action-controlled. Keep the map safe even if a
+  // legacy graph contains a JavaScript meta-property name.
+  if (isReservedPropertyName(type) || isReservedPropertyName(name)) return result
   const keysetsForScope = Object.hasOwn(result, type)
     ? result[type]
     : (result[type] = Object.create(null) as Record<string, KeysetWithSecrets[]>)
@@ -42,5 +45,8 @@ const organizeKeysIntoMap = (result: KeyMap, keys: KeysetWithSecrets) => {
   keysetHistory[generation] = keys
   return result
 }
+
+const isReservedPropertyName = (value: string) =>
+  value === '__proto__' || value === 'constructor' || value === 'prototype'
 
 export type KeyMap = Record<string, Record<string, KeysetWithSecrets[]>>
