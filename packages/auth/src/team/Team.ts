@@ -500,7 +500,9 @@ export class Team extends EventEmitter<TeamEvents> {
     if (!this.memberHasRole(memberId, roleName)) {
       return false
     }
-    return canUserAddMemberToRole(roleName, memberId, this.state)
+    // This predicate answers whether `memberId` may add other members. Self-assignment has its own
+    // explicit API and validation path.
+    return canUserAddMemberToRole(roleName, memberId, undefined, this.state)
   }
 
   /** Check if member has permissions to reevoke membership from a role */

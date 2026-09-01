@@ -88,6 +88,40 @@ describe('granting the member role on admission', () => {
     expect(() => serverConnection.team!.decrypt(encrypted)).toThrow()
   })
 
+  it('lets an invitee self-claim member when admitted by a non-admin peer', async () => {
+    const { alice, bob } = setup('alice', { user: 'bob', admin: false })
+    alice.team.dispatch({
+      type: 'SET_METADATA',
+      payload: { metadata: { selfAssignableRoles: ['member'] } },
+    })
+    alice.team.addRole('member')
+    alice.team.addMemberRole(bob.userId, 'member')
+    const charlie = createTestUser('non-admin-admission-charlie')
+    const { seed, teamId } = alice.team.inviteMember({ roleNames: ['member'] })
+    bob.team.merge(alice.team.graph)
+
+    const inviteeContext: InviteeMemberContext = {
+      user: charlie.user,
+      device: charlie.device,
+      invitationSeed: seed,
+      expectedTeamId: teamId,
+    }
+    const join = joinTestChannel(new TestChannel())
+    const bobConnection = join(bob.connectionContext)
+    const charlieConnection = join(inviteeContext)
+    const connected = Promise.all([
+      eventPromise(bobConnection, 'connected'),
+      eventPromise(charlieConnection, 'connected'),
+    ])
+
+    bobConnection.start()
+    charlieConnection.start()
+    await connected
+
+    expect(charlieConnection.team!.memberHasRole(charlie.user.userId, 'member')).toBe(true)
+    expect(charlieConnection.team!.roleKeys('member')).toEqual(alice.team.roleKeys('member'))
+  })
+
   it('rejects a stale grant before the server admits the invitee', async () => {
     const alice = createTestUser('stale-alice')
     const bob = createTestUser('stale-bob')

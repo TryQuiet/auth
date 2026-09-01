@@ -1266,6 +1266,9 @@ export class Connection extends EventEmitter<ConnectionEvents> {
     if (server !== undefined) return
     if (!team.hasRole(MEMBER_ROLE)) return
     if (team.hasServer(userId)) return
+    // A non-admin acceptor cannot grant a self-assignable role to its peer. New invitees claim the
+    // invitation-encrypted grant for themselves after admission instead.
+    if (user === undefined || !team.memberIsAdmin(user.userId)) return
 
     // Never grant the role to ourselves. When the peer is another device of our own user, this is
     // a self-assignment, and `canOnlySelfAddCertainRoles` rejects `member` — a throw that escapes
