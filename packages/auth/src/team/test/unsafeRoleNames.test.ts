@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { forge } from './forgeHelpers.js'
 
 describe('unsafe role names', () => {
-  it.each(['__proto__', 'constructor', 'toString'])(
+  it.each(['__proto__', 'constructor', 'prototype'])(
     'rejects a signed and encrypted %s role on another replica without mutating state',
     roleName => {
       const { alice, bob } = setup('alice', 'bob')
