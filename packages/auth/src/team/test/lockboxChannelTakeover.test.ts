@@ -28,6 +28,11 @@ import { describe, expect, it } from 'vitest'
  */
 const CHANNEL = 'private-channel-role'
 
+const ATTACK_SCOPES = [
+  { label: 'team', type: KeyType.TEAM, name: KeyType.TEAM },
+  { label: 'private-channel', type: KeyType.ROLE, name: CHANNEL },
+] as const
+
 /** A link the attacker signs honestly as herself, carrying lockboxes for a key she minted. */
 const rideLockboxesOnHonestLink = (attacker: UserStuff, lockboxes: lockbox.Lockbox[]) =>
   append({
@@ -36,6 +41,43 @@ const rideLockboxesOnHonestLink = (attacker: UserStuff, lockboxes: lockbox.Lockb
     signer: attacker.signer, // no lie — she signs with her own device
     keys: attacker.team.teamKeys(),
   })
+
+const setupSharedScopes = () => {
+  const users = setup('alice', { user: 'bob', admin: false }, { user: 'charlie', admin: false })
+  users.alice.team.addRole(CHANNEL)
+  users.alice.team.addMemberRole(users.bob.userId, CHANNEL)
+  users.alice.team.addMemberRole(users.charlie.userId, CHANNEL)
+  return users
+}
+
+const recipientsAtGenerationZero = (alice: UserStuff, scope: (typeof ATTACK_SCOPES)[number]) =>
+  alice.team.state.lockboxes
+    .filter(
+      ({ contents }) =>
+        contents.type === scope.type && contents.name === scope.name && contents.generation === 0
+    )
+    .map(({ recipient }) => recipient)
+
+const generationFor = (alice: UserStuff, scope: (typeof ATTACK_SCOPES)[number]) =>
+  scope.type === KeyType.TEAM
+    ? alice.team.teamKeys().generation
+    : alice.team.roleKeys(scope.name).generation
+
+const expectNoGeneration = (
+  alice: UserStuff,
+  scope: (typeof ATTACK_SCOPES)[number],
+  generation: number
+) => {
+  expect(generationFor(alice, scope)).toBe(0)
+  expect(
+    alice.team.state.lockboxes.filter(
+      ({ contents }) =>
+        contents.type === scope.type &&
+        contents.name === scope.name &&
+        contents.generation === generation
+    )
+  ).toHaveLength(0)
+}
 
 describe('honest lockbox private-channel takeover (#61)', () => {
   it('drops a re-key of a private channel by a member who is not in it', () => {
@@ -155,6 +197,68 @@ describe('honest lockbox private-channel takeover (#61)', () => {
     const envelope = alice.team.encrypt('charlie is still on this team')
     expect(charlie.team.decrypt(envelope)).toEqual('charlie is still on this team')
   })
+
+  for (const scope of ATTACK_SCOPES) {
+    it(`drops an honestly signed ${scope.label} re-key that skips a generation`, () => {
+      const { alice } = setupSharedScopes()
+      const recipients = recipientsAtGenerationZero(alice, scope)
+      const skippedKeys = createKeyset(
+        { type: scope.type, name: scope.name },
+        `${scope.label}-generation-skip`
+      )
+      skippedKeys.generation = 2
+
+      const attack = rideLockboxesOnHonestLink(
+        alice,
+        recipients.map(recipient => lockbox.create(skippedKeys, recipient))
+      )
+
+      expect(() => alice.team.merge(attack)).not.toThrow()
+      expectNoGeneration(alice, scope, 2)
+    })
+
+    it(`drops an honestly signed ${scope.label} re-key that omits an authorized recipient`, () => {
+      const { alice } = setupSharedScopes()
+      const recipients = recipientsAtGenerationZero(alice, scope)
+      const nextKeys = createKeyset(
+        { type: scope.type, name: scope.name },
+        `${scope.label}-omitted-recipient`
+      )
+      nextKeys.generation = 1
+
+      // The missing final delivery is the exclusion attack from #61: the advertised generation
+      // must not become current merely because some of its legitimate holders received it.
+      const attack = rideLockboxesOnHonestLink(
+        alice,
+        recipients.slice(0, -1).map(recipient => lockbox.create(nextKeys, recipient))
+      )
+
+      expect(() => alice.team.merge(attack)).not.toThrow()
+      expectNoGeneration(alice, scope, 1)
+    })
+
+    it(`drops an honestly signed ${scope.label} re-key that adds an unauthorized recipient`, () => {
+      const { alice } = setupSharedScopes()
+      const recipients = recipientsAtGenerationZero(alice, scope)
+      const nextKeys = createKeyset(
+        { type: scope.type, name: scope.name },
+        `${scope.label}-unauthorized-recipient`
+      )
+      nextKeys.generation = 1
+      const outsiderKeys = createKeyset(
+        { type: KeyType.USER, name: `${scope.label}-outsider` },
+        `${scope.label}-outsider`
+      )
+
+      const attack = rideLockboxesOnHonestLink(alice, [
+        ...recipients.map(recipient => lockbox.create(nextKeys, recipient)),
+        lockbox.create(nextKeys, outsiderKeys),
+      ])
+
+      expect(() => alice.team.merge(attack)).not.toThrow()
+      expectNoGeneration(alice, scope, 1)
+    })
+  }
 
   it('still lets an admin rotate the channel key when removing a member from it', () => {
     const { alice, bob, charlie } = setup(
