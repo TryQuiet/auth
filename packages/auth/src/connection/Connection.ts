@@ -273,12 +273,16 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           const admit = () => {
             if (isInviteeMemberClaim(theirIdentityClaim)) {
               this.logger.debug('handling member invite action')
-              // A server cannot grant `member` itself. Verify the admin-authored invitation grant
-              // is complete and current before admission, using only public manifests; otherwise a
-              // stale invite could commit this identity and then strand it when self-assignment
-              // fails on the invitee.
+              // Servers and non-admin peers cannot grant `member` themselves. Verify the
+              // admin-authored invitation grant is complete and current before admission, using
+              // only public manifests; otherwise a stale or missing grant could commit this
+              // identity and then strand it when self-assignment fails on the invitee.
+              const acceptorCanGrantMemberRole =
+                context.server === undefined &&
+                context.user !== undefined &&
+                team.memberIsAdmin(context.user.userId)
               if (
-                context.server !== undefined &&
+                !acceptorCanGrantMemberRole &&
                 team.hasRole(MEMBER_ROLE) &&
                 !team.hasCurrentInvitationRoleGrant(proofOfInvitation.id, MEMBER_ROLE)
               ) {
