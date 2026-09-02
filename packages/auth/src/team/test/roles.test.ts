@@ -239,6 +239,23 @@ describe('Team', () => {
       expect(alice.team.memberIsAdmin(charlie.userId)).toBe(false)
     })
 
+    it(`a non-admin can't grant a self-assignable role to another member`, () => {
+      const { alice, bob, charlie } = setup(
+        'alice',
+        { user: 'bob', admin: false },
+        { user: 'charlie', admin: false }
+      )
+      alice.team.addRole('MEMBER')
+      alice.team.addMemberRole(bob.userId, 'MEMBER')
+      bob.team.merge(alice.team.graph)
+      const graphBefore = bob.team.graph
+
+      expect(bob.team.memberCanAddMembersToRole('MEMBER', bob.userId)).toBe(false)
+      expect(() => bob.team.addMemberRole(charlie.userId, 'MEMBER')).toThrow(/illegally/)
+      expect(bob.team.graph).toEqual(graphBefore)
+      expect(bob.team.memberHasRole(charlie.userId, 'MEMBER')).toBe(false)
+    })
+
     it('removes a role', () => {
       const { alice } = setup('alice')
 

@@ -273,12 +273,16 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           const admit = () => {
             if (isInviteeMemberClaim(theirIdentityClaim)) {
               this.logger.debug('handling member invite action')
-              // A server cannot grant `member` itself. Verify the admin-authored invitation grant
-              // is complete and current before admission, using only public manifests; otherwise a
-              // stale invite could commit this identity and then strand it when self-assignment
-              // fails on the invitee.
+              // Servers and non-admin peers cannot grant `member` themselves. Verify the
+              // admin-authored invitation grant is complete and current before admission, using
+              // only public manifests; otherwise a stale or missing grant could commit this
+              // identity and then strand it when self-assignment fails on the invitee.
+              const acceptorCanGrantMemberRole =
+                context.server === undefined &&
+                context.user !== undefined &&
+                team.memberIsAdmin(context.user.userId)
               if (
-                context.server !== undefined &&
+                !acceptorCanGrantMemberRole &&
                 team.hasRole(MEMBER_ROLE) &&
                 !team.hasCurrentInvitationRoleGrant(proofOfInvitation.id, MEMBER_ROLE)
               ) {
@@ -1266,6 +1270,9 @@ export class Connection extends EventEmitter<ConnectionEvents> {
     if (server !== undefined) return
     if (!team.hasRole(MEMBER_ROLE)) return
     if (team.hasServer(userId)) return
+    // A non-admin acceptor cannot grant a self-assignable role to its peer. New invitees claim the
+    // invitation-encrypted grant for themselves after admission instead.
+    if (user === undefined || !team.memberIsAdmin(user.userId)) return
 
     // Never grant the role to ourselves. When the peer is another device of our own user, this is
     // a self-assignment, and `canOnlySelfAddCertainRoles` rejects `member` — a throw that escapes

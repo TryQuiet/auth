@@ -66,18 +66,15 @@ export const validate: TeamStateValidator = (
 export const canUserAddMemberToRole = (
   roleName: string,
   assigningUserId: string,
+  targetUserId: string | undefined,
   previousState: TeamState
 ): boolean => {
-  const metadata = select.getMetadata(previousState)
-  if (metadata.selfAssignableRoles.includes(roleName)) {
-    return true
-  }
-
   if (select.memberIsAdmin(previousState, assigningUserId)) {
     return true
   }
 
-  return false
+  const metadata = select.getMetadata(previousState)
+  return targetUserId === assigningUserId && metadata.selfAssignableRoles.includes(roleName)
 }
 
 /** Confirms the root link was signed by the very device it names as the founding device. */
@@ -617,8 +614,8 @@ const validators: AuthorizedValidatorSet = {
     if (link.body.type !== 'ADD_MEMBER_ROLE') return VALID
 
     const assigningUserId = author.member.userId
-    const { roleName } = link.body.payload
-    if (canUserAddMemberToRole(roleName, assigningUserId, previousState)) return VALID
+    const { roleName, userId: targetUserId } = link.body.payload
+    if (canUserAddMemberToRole(roleName, assigningUserId, targetUserId, previousState)) return VALID
 
     return fail(
       `User ${assigningUserId} attempted to assign role ${roleName} illegally`,

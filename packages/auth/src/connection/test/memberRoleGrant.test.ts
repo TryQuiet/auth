@@ -88,6 +88,102 @@ describe('granting the member role on admission', () => {
     expect(() => serverConnection.team!.decrypt(encrypted)).toThrow()
   })
 
+  it('lets an invitee self-claim member when admitted by a non-admin peer', async () => {
+    const { alice, bob } = setup('alice', { user: 'bob', admin: false })
+    alice.team.dispatch({
+      type: 'SET_METADATA',
+      payload: { metadata: { selfAssignableRoles: ['member'] } },
+    })
+    alice.team.addRole('member')
+    alice.team.addMemberRole(bob.userId, 'member')
+    const charlie = createTestUser('non-admin-admission-charlie')
+    const { seed, teamId } = alice.team.inviteMember({ roleNames: ['member'] })
+    bob.team.merge(alice.team.graph)
+
+    const inviteeContext: InviteeMemberContext = {
+      user: charlie.user,
+      device: charlie.device,
+      invitationSeed: seed,
+      expectedTeamId: teamId,
+    }
+    const join = joinTestChannel(new TestChannel())
+    const bobConnection = join(bob.connectionContext)
+    const charlieConnection = join(inviteeContext)
+    const connected = Promise.all([
+      eventPromise(bobConnection, 'connected'),
+      eventPromise(charlieConnection, 'connected'),
+    ])
+
+    bobConnection.start()
+    charlieConnection.start()
+    await connected
+
+    expect(charlieConnection.team!.memberHasRole(charlie.user.userId, 'member')).toBe(true)
+    expect(charlieConnection.team!.roleKeys('member')).toEqual(alice.team.roleKeys('member'))
+  })
+
+  it('rejects a missing member grant before a non-admin peer admits the invitee', async () => {
+    const { alice, bob } = setup('alice', { user: 'bob', admin: false })
+    alice.team.dispatch({
+      type: 'SET_METADATA',
+      payload: { metadata: { selfAssignableRoles: ['member'] } },
+    })
+    alice.team.addRole('member')
+    alice.team.addMemberRole(bob.userId, 'member')
+    const charlie = createTestUser('missing-grant-charlie')
+    const { seed, teamId } = alice.team.inviteMember({ roleNames: [] })
+    bob.team.merge(alice.team.graph)
+
+    const join = joinTestChannel(new TestChannel())
+    const bobConnection = join(bob.connectionContext)
+    const charlieConnection = join({
+      user: charlie.user,
+      device: charlie.device,
+      invitationSeed: seed,
+      expectedTeamId: teamId,
+    } satisfies InviteeMemberContext)
+    const rejected = eventPromise(charlieConnection, 'remoteError')
+
+    bobConnection.start()
+    charlieConnection.start()
+
+    await expect(rejected).resolves.toMatchObject({ type: 'INVITATION_PROOF_INVALID' })
+    expect(bobConnection.team!.has(charlie.user.userId)).toBe(false)
+  })
+
+  it('rejects a stale member grant before a non-admin peer admits the invitee', async () => {
+    const { alice, bob } = setup('alice', { user: 'bob', admin: false })
+    alice.team.dispatch({
+      type: 'SET_METADATA',
+      payload: { metadata: { selfAssignableRoles: ['member'] } },
+    })
+    alice.team.addRole('member')
+    alice.team.addMemberRole(bob.userId, 'member')
+    const charlie = createTestUser('stale-peer-charlie')
+    const { seed, teamId } = alice.team.inviteMember({ roleNames: ['member'] })
+
+    // Rotate the member role after issuing the invitation, making its encrypted grant stale.
+    alice.team.removeMemberRole(alice.userId, 'member')
+    bob.team.merge(alice.team.graph)
+    expect(bob.team.hasCurrentInvitationRoleGrant(invitationId(seed), 'member')).toBe(false)
+
+    const join = joinTestChannel(new TestChannel())
+    const bobConnection = join(bob.connectionContext)
+    const charlieConnection = join({
+      user: charlie.user,
+      device: charlie.device,
+      invitationSeed: seed,
+      expectedTeamId: teamId,
+    } satisfies InviteeMemberContext)
+    const rejected = eventPromise(charlieConnection, 'remoteError')
+
+    bobConnection.start()
+    charlieConnection.start()
+
+    await expect(rejected).resolves.toMatchObject({ type: 'INVITATION_PROOF_INVALID' })
+    expect(bobConnection.team!.has(charlie.user.userId)).toBe(false)
+  })
+
   it('rejects a stale grant before the server admits the invitee', async () => {
     const alice = createTestUser('stale-alice')
     const bob = createTestUser('stale-bob')
