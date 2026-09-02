@@ -58,6 +58,63 @@ const recipientsAtGenerationZero = (alice: UserStuff, scope: (typeof ATTACK_SCOP
     )
     .map(({ recipient }) => recipient)
 
+const rotationRecipientsFor = (
+  alice: UserStuff,
+  removed: UserStuff,
+  scope: (typeof ATTACK_SCOPES)[number]
+) => {
+  const current = recipientsAtGenerationZero(alice, scope)
+  const removedRecipients = current.filter(
+    recipient =>
+      recipient.type === removed.user.keys.type &&
+      recipient.name === removed.user.keys.name &&
+      recipient.generation === removed.user.keys.generation &&
+      recipient.publicKey === removed.user.keys.encryption.publicKey
+  )
+  const expected = current.filter(recipient => !removedRecipients.includes(recipient))
+
+  // These are the preconditions for the exact-recipient tests. If the fixture stops making Bob a
+  // holder, or stops having other holders, omission/extra-recipient cases must fail loudly rather
+  // than pass because they accidentally supplied the right set.
+  expect(removedRecipients).toHaveLength(1)
+  expect(expected.length).toBeGreaterThan(1)
+  expect(current).toHaveLength(expected.length + 1)
+
+  return { expected, removed: removedRecipients[0] }
+}
+
+const dispatchDeclaredRotation = (
+  alice: UserStuff,
+  removed: UserStuff,
+  scope: (typeof ATTACK_SCOPES)[number],
+  lockboxes: lockbox.Lockbox[]
+) => {
+  if (scope.type === KeyType.TEAM) {
+    alice.team.dispatch({
+      type: 'REMOVE_MEMBER',
+      payload: { userId: removed.userId, lockboxes },
+    })
+    return
+  }
+
+  alice.team.dispatch({
+    type: 'REMOVE_MEMBER_ROLE',
+    payload: { userId: removed.userId, roleName: scope.name, lockboxes },
+  })
+}
+
+const expectDeclaredRemovalApplied = (
+  alice: UserStuff,
+  removed: UserStuff,
+  scope: (typeof ATTACK_SCOPES)[number]
+) => {
+  if (scope.type === KeyType.TEAM) {
+    expect(alice.team.has(removed.userId)).toBe(false)
+  } else {
+    expect(alice.team.memberHasRole(removed.userId, scope.name)).toBe(false)
+  }
+}
+
 const generationFor = (alice: UserStuff, scope: (typeof ATTACK_SCOPES)[number]) =>
   scope.type === KeyType.TEAM
     ? alice.team.teamKeys().generation
@@ -199,27 +256,28 @@ describe('honest lockbox private-channel takeover (#61)', () => {
   })
 
   for (const scope of ATTACK_SCOPES) {
-    it(`drops an honestly signed ${scope.label} re-key that skips a generation`, () => {
-      const { alice } = setupSharedScopes()
-      const recipients = recipientsAtGenerationZero(alice, scope)
+    it(`drops an admin-signed ${scope.label} rotation that skips a generation`, () => {
+      const { alice, bob } = setupSharedScopes()
+      const { expected } = rotationRecipientsFor(alice, bob, scope)
       const skippedKeys = createKeyset(
         { type: scope.type, name: scope.name },
         `${scope.label}-generation-skip`
       )
       skippedKeys.generation = 2
 
-      const attack = rideLockboxesOnHonestLink(
-        alice,
-        recipients.map(recipient => lockbox.create(skippedKeys, recipient))
-      )
+      const lockboxes = expected.map(recipient => lockbox.create(skippedKeys, recipient))
+      expect(lockboxes).toHaveLength(expected.length)
 
-      expect(() => alice.team.merge(attack)).not.toThrow()
+      // REMOVE_MEMBER and REMOVE_MEMBER_ROLE are declared rotation carriers. Every recipient is
+      // correct, so this batch is rejected specifically because generation 2 skips generation 1.
+      expect(() => dispatchDeclaredRotation(alice, bob, scope, lockboxes)).not.toThrow()
+      expectDeclaredRemovalApplied(alice, bob, scope)
       expectNoGeneration(alice, scope, 2)
     })
 
-    it(`drops an honestly signed ${scope.label} re-key that omits an authorized recipient`, () => {
-      const { alice } = setupSharedScopes()
-      const recipients = recipientsAtGenerationZero(alice, scope)
+    it(`drops an admin-signed ${scope.label} rotation that omits an authorized recipient`, () => {
+      const { alice, bob } = setupSharedScopes()
+      const { expected } = rotationRecipientsFor(alice, bob, scope)
       const nextKeys = createKeyset(
         { type: scope.type, name: scope.name },
         `${scope.label}-omitted-recipient`
@@ -228,37 +286,52 @@ describe('honest lockbox private-channel takeover (#61)', () => {
 
       // The missing final delivery is the exclusion attack from #61: the advertised generation
       // must not become current merely because some of its legitimate holders received it.
-      const attack = rideLockboxesOnHonestLink(
-        alice,
-        recipients.slice(0, -1).map(recipient => lockbox.create(nextKeys, recipient))
-      )
+      const lockboxes = expected.slice(0, -1).map(recipient => lockbox.create(nextKeys, recipient))
+      expect(lockboxes).toHaveLength(expected.length - 1)
 
-      expect(() => alice.team.merge(attack)).not.toThrow()
+      expect(() => dispatchDeclaredRotation(alice, bob, scope, lockboxes)).not.toThrow()
+      expectDeclaredRemovalApplied(alice, bob, scope)
       expectNoGeneration(alice, scope, 1)
     })
 
-    it(`drops an honestly signed ${scope.label} re-key that adds an unauthorized recipient`, () => {
-      const { alice } = setupSharedScopes()
-      const recipients = recipientsAtGenerationZero(alice, scope)
+    it(`drops an admin-signed ${scope.label} rotation that retains the removed recipient`, () => {
+      const { alice, bob } = setupSharedScopes()
+      const { expected, removed } = rotationRecipientsFor(alice, bob, scope)
       const nextKeys = createKeyset(
         { type: scope.type, name: scope.name },
         `${scope.label}-unauthorized-recipient`
       )
       nextKeys.generation = 1
-      const outsiderKeys = createKeyset(
-        { type: KeyType.USER, name: `${scope.label}-outsider` },
-        `${scope.label}-outsider`
-      )
 
-      const attack = rideLockboxesOnHonestLink(alice, [
-        ...recipients.map(recipient => lockbox.create(nextKeys, recipient)),
-        lockbox.create(nextKeys, outsiderKeys),
-      ])
+      // This is the revocation-defeat case from #61: the generation reaches every post-action
+      // holder, but it also reaches Bob after the declared removal says he is no longer authorized.
+      const lockboxes = [...expected, removed].map(recipient => lockbox.create(nextKeys, recipient))
+      expect(lockboxes).toHaveLength(expected.length + 1)
 
-      expect(() => alice.team.merge(attack)).not.toThrow()
+      expect(() => dispatchDeclaredRotation(alice, bob, scope, lockboxes)).not.toThrow()
+      expectDeclaredRemovalApplied(alice, bob, scope)
       expectNoGeneration(alice, scope, 1)
     })
   }
+
+  it('still lets an admin rotate the team key when removing a member', () => {
+    const { alice, bob, charlie } = setupSharedScopes()
+    const teamKeys = alice.team.teamKeys()
+
+    expect(() => alice.team.remove(bob.userId)).not.toThrow()
+    expect(alice.team.has(bob.userId)).toBe(false)
+    expect(alice.team.teamKeys().generation).toBe(1)
+
+    const graph1 = serializeTeamGraph(alice.team.graph)
+    charlie.team = teams.load(graph1, charlie.localContext, createKeyring(teamKeys))
+    bob.team = teams.load(graph1, bob.localContext, createKeyring(teamKeys))
+
+    const message = 'generation 1 reaches exactly the remaining team members'
+    const envelope = alice.team.encrypt(message)
+    expect(envelope.recipient.generation).toBe(1)
+    expect(charlie.team.decrypt(envelope)).toEqual(message)
+    expect(() => bob.team.decrypt(envelope)).toThrow()
+  })
 
   it('still lets an admin rotate the channel key when removing a member from it', () => {
     const { alice, bob, charlie } = setup(
