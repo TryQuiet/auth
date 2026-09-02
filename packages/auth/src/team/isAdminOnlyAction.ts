@@ -24,7 +24,6 @@ export const isAdminOnlyActionType = (actionType: TeamAction['type']): boolean =
     'INVITE_DEVICE',
     'REMOVE_DEVICE',
     'CHANGE_MEMBER_KEYS',
-    'CHANGE_SERVER_KEYS',
     'ADMIT_MEMBER',
     'ADMIT_DEVICE',
     'ADD_MEMBER_ROLE',

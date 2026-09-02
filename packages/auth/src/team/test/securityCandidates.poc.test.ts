@@ -1,4 +1,12 @@
-import { append, createKeyring, createKeyset, merge } from '@localfirst/crdx'
+import {
+  append,
+  createKeyring,
+  createKeyset,
+  getChildMap,
+  merge,
+  redactKeys,
+  validate,
+} from '@localfirst/crdx'
 import { symmetric } from '@localfirst/crypto'
 import * as lockbox from 'lockbox/index.js'
 import * as teams from 'team/index.js'
@@ -9,6 +17,13 @@ import type { TeamAction, TeamState } from 'team/types.js'
 import { KeyType } from 'util/index.js'
 import { setup } from 'util/testing/index.js'
 import { describe, expect, it } from 'vitest'
+import {
+  buildEncryptedLink,
+  expectRejectedEverywhere,
+  forge,
+  linkBody,
+  withInjectedLink,
+} from './forgeHelpers.js'
 
 const CHANNEL = 'security-poc-channel'
 
@@ -239,24 +254,36 @@ describe('security candidate PoCs: team and lockbox state', () => {
     )
   })
 
-  it('throws when two valid same-generation member key changes are merged', () => {
+  it('rejects an admin-authored cross-user key replacement on live merge and cold load', () => {
     const { alice, bob } = setup('alice', 'bob')
-    const base = serializeTeamGraph(alice.team.graph)
-    const teamKeys = createKeyring(alice.team.teamKeys())
-    bob.team = teams.load(base, bob.localContext, teamKeys)
-
-    alice.team.changeKeys(
-      createKeyset({ type: KeyType.USER, name: bob.userId }, 'alice-rotates-bob')
+    const teamKeys = alice.team.teamKeys()
+    const replacement = createKeyset(
+      { type: KeyType.USER, name: bob.userId },
+      'alice-rotates-bob'
     )
-    bob.team.changeKeys(createKeyset({ type: KeyType.USER, name: bob.userId }, 'bob-rotates-bob'))
+    replacement.generation = bob.team.members(bob.userId).keys.generation + 1
 
-    expect(() =>
-      teams.load(
-        serializeTeamGraph(merge(alice.team.graph, bob.team.graph)),
-        alice.localContext,
-        createKeyring(alice.team.teamKeyring())
-      )
-    ).toThrow()
+    // Build the exact graph a modified administrator would publish, bypassing the public API's
+    // local dispatch validation. Remote replicas and serialized cold load must independently
+    // reject it at the replicated authorization boundary.
+    // @ts-expect-error Exercise the attacker's ability to reproduce the exported rotation data.
+    const lockboxes = alice.team.rotateKeys(replacement)
+    const attack = forge({
+      graph: alice.team.graph,
+      action: {
+        type: 'CHANGE_MEMBER_KEYS',
+        payload: { keys: redactKeys(replacement), lockboxes },
+      },
+      signer: alice.signer,
+      teamKeys,
+    })
+
+    expectRejectedEverywhere({
+      forged: attack,
+      teamKeys,
+      peers: [alice, bob],
+      message: /Can't change another user's keys/,
+    })
   })
 
   it('can fail to recover a descendant written under a losing concurrent team rotation', () => {
@@ -306,6 +333,49 @@ describe('security candidate PoCs: team and lockbox state', () => {
       if (previous === undefined) delete prototype[0]
       else prototype[0] = previous
     }
+  })
+
+  it('mutates another shared built-in when an ordinary role uses an inherited property name', () => {
+    const { alice } = setup('alice')
+    const previous = Object.getOwnPropertyDescriptor(Object, '0')
+
+    try {
+      alice.team.addRole('constructor')
+      alice.team.roleKeys('constructor')
+      expect(Object.hasOwn(Object, '0')).toBe(true)
+    } finally {
+      if (previous === undefined) Reflect.deleteProperty(Object, '0')
+      else Object.defineProperty(Object, '0', previous)
+    }
+  })
+
+  it('accepts an inherited property name as a missing parent before child-map construction crashes', () => {
+    const { alice, bob } = setup('alice', 'bob')
+    const body = linkBody(
+      alice.team.graph,
+      { type: 'ADD_ROLE', payload: { roleName: 'prototype-parent-poc' } } as TeamAction,
+      alice.signer.info
+    )
+    body.prev = ['__proto__']
+
+    const poisonedGraph = withInjectedLink(
+      alice.team.graph,
+      buildEncryptedLink({
+        body,
+        teamKeys: alice.team.teamKeys(),
+        senderKeys: alice.device.keys,
+        signWith: alice.device.keys,
+      })
+    )
+
+    // The graph validator mistakes Object.prototype for a link with this hash because it uses
+    // `hash in graph.links` instead of checking for an own property.
+    expect(validate(poisonedGraph)).toEqual({ isValid: true })
+
+    // Normal merge/load paths derive a child map before team-level validation. The inherited
+    // Object.prototype value is treated as the parent's child array and crashes the operation.
+    expect(() => getChildMap(poisonedGraph)).toThrow(TypeError)
+    expect(() => bob.team.merge(poisonedGraph)).toThrow(TypeError)
   })
 
   it('overflows the call stack on a deep acyclic lockbox scope chain', () => {

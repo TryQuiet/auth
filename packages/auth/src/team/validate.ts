@@ -426,20 +426,15 @@ const validators: AuthorizedValidatorSet = {
     return VALID
   },
 
-  /** Unless I'm an admin, I can't change anyone's keys but my own */
+  /** A member's USER keys can only be replaced by that member. */
   canOnlyChangeYourOwnKeys(previousState, link, author, extendableLogger) {
     const logger = extendableLogger.extend('canOnlyChangeYourOwnKeys')
     const { type, payload } = link.body
-    if (type !== 'CHANGE_MEMBER_KEYS' && type !== 'CHANGE_SERVER_KEYS') return VALID
+    if (type !== 'CHANGE_MEMBER_KEYS') return VALID
 
-    if (select.memberIsAdmin(previousState, author.member.userId)) return VALID
-
-    // Both keysets are named for the identity they belong to, which for a server is its serverId —
-    // the same id its author record is keyed on.
     const target = payload.keys.name
     if (author.member.userId !== target) {
-      const subject = type === 'CHANGE_MEMBER_KEYS' ? 'user' : 'server'
-      return fail(`Can't change another ${subject}'s keys.`, previousState, link, logger)
+      return fail(`Can't change another user's keys.`, previousState, link, logger)
     }
 
     return VALID
