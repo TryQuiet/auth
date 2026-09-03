@@ -174,6 +174,68 @@ describe('connection', () => {
         expect(pair.invitee.team).toBeUndefined()
       })
 
+      /**
+       * What the gate does NOT cover (private#203 audit L-1). `team.admitMember` emits `updated`
+       * synchronously, and every connection already listening to that same `Team` sends a SYNC
+       * straight away — before, and independently of, the admitting peer's durable write. So the
+       * gate withholds the acceptance from the invitee, not the new head from established peers.
+       *
+       * This is current, deliberate behaviour, not a team-wide durable-head barrier. It is pinned
+       * here so the claim in the docstrings stays honest: those peers receive the head early and
+       * persist it through their own gates. Nothing an unadmitted invitee can read is released.
+       */
+      it('still syncs the new head to peers that are already connected', async () => {
+        const { alice, bob, charlie } = setup('alice', 'bob', { user: 'charlie', member: false })
+        const { seed } = alice.team.inviteMember()
+        const inviteeContext: InviteeMemberContext = {
+          user: charlie.user,
+          device: charlie.device,
+          invitationSeed: seed,
+          expectedTeamId: alice.team.id,
+        }
+
+        // An ordinary established connection between two members, sharing Alice's Team object.
+        const peerChannel = new TestChannel()
+        const peerMessages: Array<{ senderId: string; message: ConnectionMessage }> = []
+        peerChannel.addListener('data', (senderId, message) => {
+          peerMessages.push({ senderId, message: unpack(message) as ConnectionMessage })
+        })
+        const peerJoin = joinTestChannel(peerChannel)
+        const aliceToBob = peerJoin(alice.connectionContext)
+        const bobToAlice = peerJoin(bob.connectionContext)
+        aliceToBob.start()
+        bobToAlice.start()
+        await waitUntil(() => aliceToBob.state === 'connected' && bobToAlice.state === 'connected')
+        await pause(50)
+
+        const alicesSyncs = () =>
+          peerMessages.filter(m => m.senderId === alice.deviceId && m.message.type === 'SYNC')
+        const before = alicesSyncs().length
+
+        const gate = deferred()
+        const pair = connectInvitee({
+          admitterContext: alice.connectionContext,
+          inviteeContext,
+          async persistAdmission() {
+            return gate.promise
+          },
+        })
+
+        await waitUntil(() => gate.calls === 1)
+        await pause(50)
+
+        // The invitee is told nothing while the write is outstanding...
+        expect(pair.wire.from(alice.deviceId, 'ACCEPT_INVITATION')).toHaveLength(0)
+        // ...but Bob already has the admission.
+        expect(alicesSyncs().length).toBeGreaterThan(before)
+        expect(bobToAlice.team!.has(charlie.userId)).toBe(true)
+
+        gate.resolve()
+        await pair.bothConnected()
+        aliceToBob.stop()
+        bobToAlice.stop()
+      })
+
       it('behaves exactly as before when no hook is supplied', async () => {
         const { alice, charlie, inviteeContext } = invite()
 

@@ -191,13 +191,19 @@ export class Connection extends EventEmitter<ConnectionEvents> {
          * record of their admission on the peer that admitted them. The adversary is the joiner:
          * a peer holding a valid invitation is entitled to join but not to join unrecorded, and
          * it is exactly the party that cannot be relied on to report its own admission
-         * afterwards. `Team.dispatch` emits
-         * `updated` synchronously and every consumer of that event persists asynchronously, so an
-         * admission exists in memory long before it exists on disk. Until this resolves, the
-         * admitting side has appended ADMIT_MEMBER / ADMIT_DEVICE to its in-memory graph and
-         * nothing else: no graph, no keyring, no acceptance has left the machine. If it rejects,
-         * the invitee is told nothing rather than being handed keys to an admission that may not
-         * survive a restart, which would be a member with keys but no record.
+         * afterwards. `Team.dispatch` emits `updated` synchronously and every consumer of that
+         * event persists asynchronously, so an admission exists in memory long before it exists
+         * on disk. If this rejects, the invitee is told nothing rather than being handed keys to
+         * an admission that may not survive a restart, which would be a member with keys but no
+         * record.
+         *
+         * What is gated is exactly the acceptance to the invitee — the team graph and the team
+         * keyring, the only things an unadmitted peer cannot already have. It is not a team-wide
+         * barrier on the admission itself. `admitInvitee` has already appended the link, and the
+         * same `updated` event makes every connection already sharing this `Team` send the new
+         * head to its peer, before and independently of this promise. Those peers are established
+         * members that could read the graph anyway, and each persists what it receives through
+         * its own gate. See private#203 audit finding L-1, and the test that pins this.
          *
          * With no hook this resolves immediately, which is the pre-existing behaviour.
          *
@@ -1097,10 +1103,11 @@ export class Connection extends EventEmitter<ConnectionEvents> {
              * The durable-admission gate (private#203 / QSS-006, threat-model C3 "Option A"): the
              * admitting side has validated, signed and appended the ADMIT link, and now waits for
              * the application to tell it that write is durable. Only then does the acceptance —
-             * the team graph and the team keyring — go out, so membership and its record are
-             * released together. If the write fails we fail closed: nothing is queued, nothing is
-             * sent, and the invitee is left holding only its invitation, which it can present
-             * again.
+             * the team graph and the team keyring — go out to the invitee, so membership and its
+             * record are released together. If the write fails we fail closed: nothing is queued,
+             * nothing is sent to the invitee, and it is left holding only its invitation, which it
+             * can present again. Established peers are a separate matter: they already have the
+             * new head, because appending it told them. See the actor's own note.
              */
             persistingAdmission: {
               invoke: {

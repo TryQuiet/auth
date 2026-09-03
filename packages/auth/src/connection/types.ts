@@ -39,12 +39,16 @@ export type ConnectionParams = {
    * their admission on the peer that admitted them. The adversary is the joiner: a peer holding
    * a valid invitation is entitled to join but not to join unrecorded, and it is exactly the
    * party that cannot be relied on to report its own admission afterwards. Called on the
-   * admitting side after
-   * ADMIT_MEMBER / ADMIT_DEVICE has been appended to the in-memory team and BEFORE
-   * ACCEPT_INVITATION is queued. Must resolve only once the team graph and the current team
-   * keyring are durably persisted. If it rejects, the connection fails with
+   * admitting side after ADMIT_MEMBER / ADMIT_DEVICE has been appended to the in-memory team and
+   * BEFORE ACCEPT_INVITATION is queued. Must resolve only once the team graph and the current
+   * team keyring are durably persisted. If it rejects, the connection fails with
    * ADMISSION_NOT_PERSISTED and no acceptance is sent. Optional so upstream consumers and tests
    * keep working unchanged; Quiet's adapters always supply it.
+   *
+   * What this gates is the acceptance to the invitee, not the admission itself. Appending the
+   * link already told every peer this `Team` is connected to, so established members receive the
+   * new head before this resolves and persist it through their own gates. Holding it back from
+   * them would take a team-wide durable-head barrier, which this is not.
    *
    * `signal` aborts if the connection is torn down while the write is outstanding. Honouring it
    * is a courtesy — the connection discards whatever the promise eventually produces either way —
