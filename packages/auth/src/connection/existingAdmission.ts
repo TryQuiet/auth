@@ -35,18 +35,23 @@ import type { TeamLink } from 'team/types.js'
  * invitee's own device key, so an exact claim match is what makes this idempotent rather than
  * merely similar.
  *
- * FORMER GAP, now closed — kept here because it explains why rule 6 reads the way it does.
- * `validateInvitationAcceptance` used to require the delivered graph to contain an effective
- * admission carrying *this* handshake's exact proof. The link this function matches carries the
- * earlier handshake's, so an invitee retrying against an admitter that still held the failed
- * attempt in memory refused the acceptance with ADMIT_MEMBER_LINK_MISSING. Safe, but that
- * admitter could then never admit that invitee again — the ids are unique, so it could not append
- * a second admission either — and for a community whose only reachable admitter is the sync
- * server, the invitee stayed stranded until that server restarted. Rule 6 now matches on the
- * invitation id and the exact claim, which is what makes the retry above complete; the reasoning
- * is on `memberAdmissionMatches` in validateInvitationAcceptance.ts. The other recovery,
- * an admitter that crashed before the write and restarts without the link, works either way.
- * Both are covered in test/persistAdmission.test.ts.
+ * THE OTHER HALF OF THE RETRY, on the invitee's side. Skipping the dispatch here means the link
+ * the invitee is eventually shown carries the *earlier* handshake's proof, and rule 6 of
+ * `validateInvitationAcceptance` requires this handshake's. So an invitee retrying against an
+ * admitter that still holds the failed attempt in memory refuses the acceptance with
+ * ADMIT_MEMBER_LINK_MISSING unless it is told to expect that older proof.
+ *
+ * Relaxing rule 6 for everyone was tried and rejected: dropping the proof comparison lets an
+ * acceptor wrap an older graph — one in which the invitee was admitted and has since been removed
+ * — in a correctly bound new envelope, since only the team root is pinned and not the head
+ * (invariant G5). The mechanism instead is `ConnectionContext.priorInvitationProofs`: the
+ * application reads `Connection.invitationAttempt` after a failed attempt and hands that one
+ * proof back on the retry, where it counts only for an acceptance sent by the same peer. Nothing
+ * else about rule 6 moves.
+ *
+ * The other recovery — an admitter that crashed before the write and restarts without the link —
+ * needs none of this, because it admits cleanly under the new proof. Both are covered in
+ * test/persistAdmission.test.ts.
  */
 export const findExistingAdmission = ({
   team,

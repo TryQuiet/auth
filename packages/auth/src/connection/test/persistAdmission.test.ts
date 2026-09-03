@@ -1,9 +1,9 @@
 import { getSequence } from '@localfirst/crdx'
 import { pause } from '@localfirst/shared'
-import { ADMISSION_NOT_PERSISTED } from 'connection/errors.js'
+import { ADMISSION_NOT_PERSISTED, ADMIT_MEMBER_LINK_MISSING } from 'connection/errors.js'
 import { findExistingAdmission } from 'connection/existingAdmission.js'
 import type { ConnectionMessage } from 'connection/message.js'
-import type { InviteeMemberContext, ServerContext } from 'connection/types.js'
+import type { InviteeMemberContext, PriorInvitationProof, ServerContext } from 'connection/types.js'
 import { deriveId, generateProof, type MemberInvitationClaim } from 'invitation/index.js'
 import { unpack } from 'msgpackr'
 import { createServer, redactServer, type Server, type ServerWithSecrets } from 'server/index.js'
@@ -237,10 +237,11 @@ describe('connection', () => {
        * admitter could then never admit this invitee again. It runs the durable write instead,
        * which is the step that failed, and sends the acceptance.
        *
-       * The invitee accepts it. That took relaxing rule 6 of `validateInvitationAcceptance` from
-       * "an admission carrying this handshake's exact proof" to "an admission that consumed this
-       * invitation carrying this exact claim"; before that change the invitee refused with
-       * ADMIT_MEMBER_LINK_MISSING because the link on the graph belongs to the first handshake.
+       * The invitee only accepts that acceptance because it was told to expect the older proof.
+       * Rule 6 of `validateInvitationAcceptance` requires this handshake's proof, which is what
+       * stops an acceptor wrapping a stale graph in a fresh envelope; the application carries
+       * `Connection.invitationAttempt` across from the failed attempt to widen it by that one
+       * link, scoped to the peer it was presented to.
        */
       it('completes the admission when the write is retried against the same in-memory team', async () => {
         const { alice, charlie, inviteeContext } = invite()
@@ -254,13 +255,18 @@ describe('connection', () => {
           },
         })
         expect(await first.firstLocalError('admitter')).toBe(ADMISSION_NOT_PERSISTED)
+
+        // What the application remembers about the attempt that failed.
+        const attempt = first.invitee.invitationAttempt
+        expect(attempt).toBeDefined()
+        expect(attempt!.presentedTo).toBe(alice.deviceId)
         first.stop()
 
         expect(alice.team.has(charlie.userId)).toBe(true)
 
         const second = connectInvitee({
           admitterContext: alice.connectionContext,
-          inviteeContext: retryContext(inviteeContext),
+          inviteeContext: retryContext(inviteeContext, attempt!),
           async persistAdmission(team: Team) {
             persisted.push(team)
           },
@@ -279,6 +285,62 @@ describe('connection', () => {
 
         // ...and nothing new was appended: the identity is registered exactly once.
         expect(effectiveAdmissions(alice.team, charlie.userId)).toHaveLength(1)
+      })
+
+      // Without the remembered proof the same retry fails closed rather than silently accepting a
+      // graph whose admission belongs to another handshake. This is the property audit finding M-1
+      // is about, checked from the side that has to live with it.
+      it('refuses the same retry when the application remembered nothing', async () => {
+        const { alice, charlie, inviteeContext } = invite()
+
+        const first = connectInvitee({
+          admitterContext: alice.connectionContext,
+          inviteeContext,
+          async persistAdmission() {
+            throw new Error('disk on fire')
+          },
+        })
+        expect(await first.firstLocalError('admitter')).toBe(ADMISSION_NOT_PERSISTED)
+        first.stop()
+
+        const second = connectInvitee({
+          admitterContext: alice.connectionContext,
+          inviteeContext: retryContext(inviteeContext),
+          async persistAdmission() {},
+        })
+
+        expect(await second.firstLocalError('invitee')).toBe(ADMIT_MEMBER_LINK_MISSING)
+        expect(second.invitee.team).toBeUndefined()
+        expect(effectiveAdmissions(alice.team, charlie.userId)).toHaveLength(1)
+      })
+
+      // The memory is scoped to the peer the proof was presented to, so it cannot be handed to
+      // anyone else — that scoping is what keeps it from reopening the rollback M-1 describes.
+      it('refuses a remembered proof presented to a different peer', async () => {
+        const { alice, charlie, inviteeContext } = invite()
+
+        const first = connectInvitee({
+          admitterContext: alice.connectionContext,
+          inviteeContext,
+          async persistAdmission() {
+            throw new Error('disk on fire')
+          },
+        })
+        expect(await first.firstLocalError('admitter')).toBe(ADMISSION_NOT_PERSISTED)
+        const attempt = first.invitee.invitationAttempt!
+        first.stop()
+
+        const second = connectInvitee({
+          admitterContext: alice.connectionContext,
+          inviteeContext: retryContext(inviteeContext, {
+            ...attempt,
+            presentedTo: charlie.deviceId,
+          }),
+          async persistAdmission() {},
+        })
+
+        expect(await second.firstLocalError('invitee')).toBe(ADMIT_MEMBER_LINK_MISSING)
+        expect(second.invitee.team).toBeUndefined()
       })
     })
 
@@ -402,8 +464,18 @@ const invite = () => {
 /**
  * The same invitee reconnecting: same seed, same user, same device — so the same claim, signed
  * again. Only the handshake nonces differ, and those are chosen inside the connection.
+ *
+ * `priorInvitationProofs` is what an application carries across from a failed attempt, exactly as
+ * the Quiet adapters do: read `Connection.invitationAttempt`, keep it for the retry, drop it once
+ * a join succeeds.
  */
-const retryContext = (context: InviteeMemberContext): InviteeMemberContext => ({ ...context })
+const retryContext = (
+  context: InviteeMemberContext,
+  ...priorInvitationProofs: PriorInvitationProof[]
+): InviteeMemberContext => ({
+  ...context,
+  ...(priorInvitationProofs.length > 0 && { priorInvitationProofs }),
+})
 
 type ServerStuff = {
   host: string

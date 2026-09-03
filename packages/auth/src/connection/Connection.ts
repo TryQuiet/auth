@@ -74,6 +74,7 @@ import type {
   ConnectionEvents,
   ConnectionParams,
   IdentityClaim,
+  PriorInvitationProof,
 } from './types.js'
 import {
   isInviteeClaim,
@@ -412,7 +413,8 @@ export class Connection extends EventEmitter<ConnectionEvents> {
         receiveInvitationAcceptance: assign(({ context, event }) => {
           assertEvent(event, 'ACCEPT_INVITATION')
           this.logger.debug('received invitation acceptance')
-          const { invitationSeed, expectedTeamId, ourIdentityClaim } = context
+          const { invitationSeed, expectedTeamId, ourIdentityClaim, priorInvitationProofs } =
+            context
           assert(invitationSeed)
           assert(expectedTeamId)
           // We only receive ACCEPT_INVITATION in the awaitingInvitationAcceptance state, which we
@@ -427,6 +429,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
             proof: proofOfInvitation,
             claim,
             logger: this.logger,
+            priorInvitationProofs,
           })
           return { invitationAcceptanceResult }
         }),
@@ -1319,6 +1322,40 @@ export class Connection extends EventEmitter<ConnectionEvents> {
    */
   get team() {
     return this._context.team
+  }
+
+  /**
+   * The invitation proof this connection presented, and the peer it was presented to — what an
+   * application remembers about an attempt that ended without a durable admission (private#203 /
+   * QSS-006).
+   *
+   * Feeding it back as `priorInvitationProofs` on the next attempt lets the invitee accept an
+   * admission that peer already appended but could not persist; without it that admitter can
+   * never admit this invitee again, because registered ids are unique so it cannot append a
+   * second admission. See `ConnectionContext.priorInvitationProofs` for why the widening is safe
+   * and `acceptableProofs` in validateInvitationAcceptance.ts for exactly what it widens.
+   *
+   * The library stores nothing. Retention, lifetime and clearing on success are the
+   * application's: keep a handful, for minutes, and drop them once a join succeeds.
+   *
+   * Undefined unless this connection presented an invitation and has learned who its peer is.
+   */
+  get invitationAttempt(): PriorInvitationProof | undefined {
+    if (!this.#started) return undefined
+    const { ourIdentityClaim, theirIdentityClaim } = this.#machine.getSnapshot().context
+    if (ourIdentityClaim === undefined || !isInviteeClaim(ourIdentityClaim)) return undefined
+    if (theirIdentityClaim === undefined) return undefined
+
+    const presentedTo = isServerClaim(theirIdentityClaim)
+      ? theirIdentityClaim.serverId
+      : isMemberClaim(theirIdentityClaim)
+        ? theirIdentityClaim.deviceId
+        : undefined
+    // Two invitees can't admit each other, so a peer that presented an invitation is not somebody
+    // an admission could have come from.
+    if (presentedTo === undefined) return undefined
+
+    return { proof: ourIdentityClaim.proofOfInvitation, presentedTo }
   }
 
   // PRIVATE

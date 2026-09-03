@@ -13,6 +13,7 @@ import {
   openInvitationAcceptance,
 } from './invitationAcceptance.js'
 import type { AcceptInvitationPayload, InvitationAcceptanceEnvelope } from './message.js'
+import type { PriorInvitationProof } from './types.js'
 
 /**
  * How an invitee decides whether to trust the team it has just been handed.
@@ -30,8 +31,9 @@ import type { AcceptInvitationPayload, InvitationAcceptanceEnvelope } from './me
  * 3. the graph's root hash is the expected team id — else WRONG_TEAM
  * 4. the graph validates and contains this invitation with the claimed kind — else WRONG_TEAM
  * 5. the acceptance's sender is an active device in that graph — else SENDER_UNKNOWN
- * 6. exactly one effective (resolver-surviving) admission consumed this invitation id carrying
- *    this exact claim — else ADMISSION_INVALID
+ * 6. exactly one effective (resolver-surviving) admission consumed this invitation with this
+ *    handshake's exact proof and claim — or, if the application remembered one, with a proof this
+ *    invitee presented to this same sender in an earlier failed attempt — else ADMISSION_INVALID
  * 7. the final state registers exactly the claimed identity — else ADMISSION_INVALID
  *
  * Merely appearing in the final state proves nothing — presence is not provenance. The specific
@@ -69,6 +71,9 @@ type ValidateInvitationAcceptanceOptions = {
   claim: InvitationClaim
   expectedTeamId: Base58
   logger?: Logger
+
+  /** Proofs from this invitee's earlier failed attempts; see `acceptableProofs`. */
+  priorInvitationProofs?: PriorInvitationProof[]
 }
 
 type ProcessInvitationAcceptanceOptions = Omit<
@@ -86,6 +91,7 @@ export const processInvitationAcceptance = ({
   claim,
   expectedTeamId,
   logger,
+  priorInvitationProofs,
 }: ProcessInvitationAcceptanceOptions): InvitationAcceptanceValidationResult => {
   let acceptance: InvitationAcceptanceEnvelope
   try {
@@ -110,6 +116,7 @@ export const processInvitationAcceptance = ({
     claim,
     expectedTeamId,
     logger,
+    priorInvitationProofs,
   })
 }
 
@@ -117,8 +124,8 @@ export const processInvitationAcceptance = ({
  * Validates the graph returned to an invitee against independently authenticated handshake data.
  *
  * Merely finding the invitee in final state is insufficient: the graph must belong to the expected
- * team and contain exactly one effective admission that consumed this invitation carrying this
- * exact claim.
+ * team and contain exactly one effective admission carrying this handshake's exact proof and claim
+ * (or a remembered prior proof; see `acceptableProofs`).
  */
 export const validateInvitationAcceptance = ({
   acceptance,
@@ -127,6 +134,7 @@ export const validateInvitationAcceptance = ({
   claim,
   expectedTeamId,
   logger,
+  priorInvitationProofs,
 }: ValidateInvitationAcceptanceOptions): InvitationAcceptanceValidationResult => {
   try {
     const graph = deserializeTeamGraph(acceptance.serializedGraph, acceptance.teamKeyring)
@@ -156,10 +164,14 @@ export const validateInvitationAcceptance = ({
       )
     }
 
+    // Rule 5 has just established who sent this acceptance, which is what a remembered proof is
+    // scoped to; that ordering is why this comes after the sender check and not before.
+    const proofs = acceptableProofs(proof, priorInvitationProofs, payload.senderDeviceId)
+
     const admissionLinks = effectiveLinks.filter(link =>
       claim.invitationKind === 'member'
-        ? memberAdmissionMatches(link, proof, claim)
-        : deviceAdmissionMatches(link, proof, claim, invitation.userId)
+        ? memberAdmissionMatches(link, proofs, claim)
+        : deviceAdmissionMatches(link, proofs, claim, invitation.userId)
     )
 
     if (admissionLinks.length !== 1) {
@@ -198,48 +210,60 @@ export const validateInvitationAcceptance = ({
 }
 
 /**
- * What makes an admission *mine*: it consumed the invitation I am redeeming, and it registers the
- * exact identity I signed.
+ * Which `ProofOfInvitation` values an admission may carry and still count as mine.
  *
- * The `ProofOfInvitation` is deliberately not compared. Binding the admission to this handshake's
- * nonces looks like a replay defence, but it buys no security property that the surrounding rules
- * don't already provide:
+ * Normally exactly one: the proof I made for this handshake. That is what makes the delivered
+ * graph *fresh* rather than merely *valid*. Without it an acceptor can wrap an older graph — one
+ * in which I was admitted and have since been removed — in a correctly bound new envelope, and I
+ * would install a state the team no longer authorizes. Envelope freshness (rule 2) says nothing
+ * about the age of the graph inside it, and only the team root is pinned (rule 3), not the head.
  *
- *  - The acceptance envelope is still bound to this handshake's nonces (rule 2), so an old
- *    *welcome* can't be replayed at me.
- *  - The graph root is pinned to the team I was invited to (rule 3).
- *  - The graph has already been fully validated (rule 4), and that validation verifies every
- *    ADMIT link's `possessionProof` against the signature key inside the link's own claim
- *    (team/validate.ts, `cantAdmitWithInvalidInvitation`). That signature can only be produced by
- *    the device being registered.
- *  - The claim names exactly my own keys, and rule 7 requires the final state to register exactly
- *    that identity.
+ * The exception is narrow and application-driven. When a durable write fails on the admitting
+ * side, that peer keeps the admission it already appended and cannot append a second one, since
+ * registered ids are unique. Its next handshake with me therefore offers an admission carrying my
+ * *previous* proof. If my application remembered that attempt (`Connection.invitationAttempt`), I
+ * accept that one specific proof, and only from the same peer I presented it to. It buys the
+ * attacker nothing: a proof only reaches this list by my having made it moments earlier for a
+ * handshake that produced no admission I could use, so no older, revoked state exists under it.
  *
- * So an effective admission carrying my exact claim under my invitation id is necessarily one I
- * initiated myself, in some handshake. Demanding that it be *this* handshake bought nothing and
- * cost real availability: an admitter whose durable write failed still holds the admission in
- * memory, cannot append a second one (ids are unique), and so could never admit that invitee again
- * — permanently, and for a QSS-only community with no other admitter reachable, until the server
- * restarts. See private#203 / QSS-006 and invariant D5.
+ * Everything else is unchanged — invitation id, exact claim, effective-after-resolution, sender
+ * active in the delivered graph, and a live exact identity in final state. See private#203 /
+ * QSS-006, invariants D5 and G5.
  */
+const acceptableProofs = (
+  proof: ProofOfInvitation,
+  priorInvitationProofs: PriorInvitationProof[] | undefined,
+  senderId: string
+): ProofOfInvitation[] => [
+  proof,
+  ...(priorInvitationProofs ?? [])
+    .filter(prior => prior.presentedTo === senderId && prior.proof.id === proof.id)
+    .map(prior => prior.proof),
+]
+
+const proofMatches = (linkProof: unknown, proofs: ProofOfInvitation[]): boolean =>
+  proofs.some(candidate => isEqual(linkProof, candidate))
+
 const memberAdmissionMatches = (
   link: TeamLink,
-  proof: ProofOfInvitation,
+  proofs: ProofOfInvitation[],
   claim: Extract<InvitationClaim, { invitationKind: 'member' }>
 ): boolean =>
   link.body.type === 'ADMIT_MEMBER' &&
-  link.body.payload.id === proof.id &&
+  link.body.payload.id === proofs[0].id &&
+  proofMatches(link.body.payload.proof, proofs) &&
   isEqual(link.body.payload.claim, claim)
 
 const deviceAdmissionMatches = (
   link: TeamLink,
-  proof: ProofOfInvitation,
+  proofs: ProofOfInvitation[],
   claim: Extract<InvitationClaim, { invitationKind: 'device' }>,
   invitationUserId?: string
 ): boolean =>
   invitationUserId !== undefined &&
   link.body.type === 'ADMIT_DEVICE' &&
-  link.body.payload.id === proof.id &&
+  link.body.payload.id === proofs[0].id &&
+  proofMatches(link.body.payload.proof, proofs) &&
   isEqual(link.body.payload.claim, claim)
 
 const finalMemberIsExact = (
