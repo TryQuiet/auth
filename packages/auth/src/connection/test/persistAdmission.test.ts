@@ -8,12 +8,7 @@ import {
 } from 'connection/errors.js'
 import { findExistingAdmission } from 'connection/existingAdmission.js'
 import { CONNECTION_PROTOCOL_VERSION, type ConnectionMessage } from 'connection/message.js'
-import type {
-  ConnectionParams,
-  InviteeMemberContext,
-  PriorInvitationProof,
-  ServerContext,
-} from 'connection/types.js'
+import type { ConnectionParams, InviteeMemberContext, ServerContext } from 'connection/types.js'
 import { deriveId, generateProof, type MemberInvitationClaim } from 'invitation/index.js'
 import { pack, unpack } from 'msgpackr'
 import { createServer, redactServer, type Server, type ServerWithSecrets } from 'server/index.js'
@@ -301,11 +296,11 @@ describe('connection', () => {
 
     /**
      * Invariant D5: a failed attempt must leave the invitee able to reach the next complete valid
-     * state by retrying. The two ways a durable write can fail leave the admitter in different
-     * places, so they're tested separately.
+     * state by retrying. With rule 6 strict, that turns entirely on whether the admitting side
+     * still holds the admission it could not persist.
      */
     describe('retrying after a failed durable write', () => {
-      it('admits the invitee when the admitter restarts from its last durable graph', async () => {
+      it('admits the invitee when the admitter restores its last durable state', async () => {
         const { alice, charlie, inviteeContext } = invite()
 
         // Whatever the admitter last got onto disk. The admission below never joins it — that is
@@ -324,8 +319,10 @@ describe('connection', () => {
         expect(first.wire.from(alice.deviceId, 'ACCEPT_INVITATION')).toHaveLength(0)
         first.stop()
 
-        // The admitter restarts and rebuilds its team from durable storage, which never saw the
-        // admission. The invitee still holds nothing but its invitation, so it just reconnects.
+        // The admitter comes back to its last durable state, which never saw the admission —
+        // either because it crashed and reloaded, or because the adapter rolled back as
+        // `persistAdmission`'s contract requires. Either way the retry is admitted afresh, under
+        // this handshake's own proof. The invitee holds nothing but its invitation.
         const restarted = loadTeam(durableGraph, alice.localContext, teamKeyring)
         expect(restarted.has(charlie.userId)).toBe(false)
 
@@ -342,22 +339,22 @@ describe('connection', () => {
 
       /**
        * The other failure mode: the durable write failed but the process survived, so the ADMIT
-       * link is still on the admitter's in-memory graph.
+       * link is still on the admitter's in-memory graph, carrying the proof from that handshake.
        *
-       * The retry recognizes that earlier admission of this exact claim and appends nothing — a
-       * re-dispatch would throw `The id '…' is already in use`, and since ids are unique this
-       * admitter could then never admit this invitee again. It runs the durable write instead,
-       * which is the step that failed, and sends the acceptance.
+       * The retry fails closed. Rule 6 requires the delivered graph to contain an admission
+       * carrying *this* handshake's proof, and the admitter cannot append one — registered ids are
+       * unique, so the identity it already holds blocks a second admission. That strictness is not
+       * negotiable: it is the only thing stopping an acceptor from wrapping an older, pre-removal
+       * graph in a fresh envelope (private#203 audit M-1, invariant G5).
        *
-       * The invitee only accepts that acceptance because it was told to expect the older proof.
-       * Rule 6 of `validateInvitationAcceptance` requires this handshake's proof, which is what
-       * stops an acceptor wrapping a stale graph in a fresh envelope; the application carries
-       * `Connection.invitationAttempt` across from the failed attempt to widen it by that one
-       * link, scoped to the peer it was presented to.
+       * Convergence therefore depends on the adapter honouring the contract on
+       * `ConnectionParams.persistAdmission`: a hook that rejects must restore the team to its last
+       * durable state before this team accepts another handshake, which is what the test above
+       * exercises. This one pins what happens when it does not — nothing is released, and the
+       * invitee is told the admission link is missing rather than being handed a stale graph.
        */
-      it('completes the admission when the write is retried against the same in-memory team', async () => {
+      it('fails closed if the admitter keeps an unpersisted admission in memory', async () => {
         const { alice, charlie, inviteeContext } = invite()
-        const persisted: Team[] = []
 
         const first = connectInvitee({
           admitterContext: alice.connectionContext,
@@ -367,55 +364,10 @@ describe('connection', () => {
           },
         })
         expect(await first.firstLocalError('admitter')).toBe(ADMISSION_NOT_PERSISTED)
-
-        // What the application remembers about the attempt that failed. The admitter's error can
-        // land before the invitee has processed the admitter's own identity claim, and the
-        // attempt names the peer, so wait for it rather than sampling mid-handshake.
-        await waitUntil(() => first.invitee.invitationAttempt !== undefined)
-        const attempt = first.invitee.invitationAttempt!
-        expect(attempt.presentedTo).toBe(alice.deviceId)
         first.stop()
 
+        // The adapter did not roll back, so the stale admission is still here.
         expect(alice.team.has(charlie.userId)).toBe(true)
-
-        const second = connectInvitee({
-          admitterContext: alice.connectionContext,
-          inviteeContext: retryContext(inviteeContext, attempt),
-          async persistAdmission(team: Team) {
-            persisted.push(team)
-          },
-        })
-
-        // The durable write is retried, and this time the acceptance goes out...
-        await second.bothConnected()
-        expect(second.wire.from(alice.deviceId, 'ACCEPT_INVITATION')).toHaveLength(1)
-        expect(persisted).toHaveLength(1)
-        expect(persisted[0].has(charlie.userId)).toBe(true)
-
-        // ...the invitee joins...
-        expect(second.log.joined).toBe(1)
-        expect(second.invitee.team!.has(charlie.userId)).toBe(true)
-        expect(second.log.localErrors.invitee).toEqual([])
-
-        // ...and nothing new was appended: the identity is registered exactly once.
-        expect(effectiveAdmissions(alice.team, charlie.userId)).toHaveLength(1)
-      })
-
-      // Without the remembered proof the same retry fails closed rather than silently accepting a
-      // graph whose admission belongs to another handshake. This is the property audit finding M-1
-      // is about, checked from the side that has to live with it.
-      it('refuses the same retry when the application remembered nothing', async () => {
-        const { alice, charlie, inviteeContext } = invite()
-
-        const first = connectInvitee({
-          admitterContext: alice.connectionContext,
-          inviteeContext,
-          async persistAdmission() {
-            throw new Error('disk on fire')
-          },
-        })
-        expect(await first.firstLocalError('admitter')).toBe(ADMISSION_NOT_PERSISTED)
-        first.stop()
 
         const second = connectInvitee({
           admitterContext: alice.connectionContext,
@@ -425,37 +377,8 @@ describe('connection', () => {
 
         expect(await second.firstLocalError('invitee')).toBe(ADMIT_MEMBER_LINK_MISSING)
         expect(second.invitee.team).toBeUndefined()
+        // And still exactly one admission: the retry appended nothing.
         expect(effectiveAdmissions(alice.team, charlie.userId)).toHaveLength(1)
-      })
-
-      // The memory is scoped to the peer the proof was presented to, so it cannot be handed to
-      // anyone else — that scoping is what keeps it from reopening the rollback M-1 describes.
-      it('refuses a remembered proof presented to a different peer', async () => {
-        const { alice, charlie, inviteeContext } = invite()
-
-        const first = connectInvitee({
-          admitterContext: alice.connectionContext,
-          inviteeContext,
-          async persistAdmission() {
-            throw new Error('disk on fire')
-          },
-        })
-        expect(await first.firstLocalError('admitter')).toBe(ADMISSION_NOT_PERSISTED)
-        await waitUntil(() => first.invitee.invitationAttempt !== undefined)
-        const attempt = first.invitee.invitationAttempt!
-        first.stop()
-
-        const second = connectInvitee({
-          admitterContext: alice.connectionContext,
-          inviteeContext: retryContext(inviteeContext, {
-            ...attempt,
-            presentedTo: charlie.deviceId,
-          }),
-          async persistAdmission() {},
-        })
-
-        expect(await second.firstLocalError('invitee')).toBe(ADMIT_MEMBER_LINK_MISSING)
-        expect(second.invitee.team).toBeUndefined()
       })
     })
 
@@ -663,19 +586,10 @@ const invite = () => {
 
 /**
  * The same invitee reconnecting: same seed, same user, same device — so the same claim, signed
- * again. Only the handshake nonces differ, and those are chosen inside the connection.
- *
- * `priorInvitationProofs` is what an application carries across from a failed attempt, exactly as
- * the Quiet adapters do: read `Connection.invitationAttempt`, keep it for the retry, drop it once
- * a join succeeds.
+ * again. Only the handshake nonces differ, and those are chosen inside the connection, which is
+ * why a retry needs the admitter to have discarded any admission it failed to persist.
  */
-const retryContext = (
-  context: InviteeMemberContext,
-  ...priorInvitationProofs: PriorInvitationProof[]
-): InviteeMemberContext => ({
-  ...context,
-  ...(priorInvitationProofs.length > 0 && { priorInvitationProofs }),
-})
+const retryContext = (context: InviteeMemberContext): InviteeMemberContext => ({ ...context })
 
 type ServerStuff = {
   host: string

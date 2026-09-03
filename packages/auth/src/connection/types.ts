@@ -124,9 +124,6 @@ export type InviteeIdentityClaim = {
   possessionProof: Base58
 }
 
-/** A proof this invitee presented in an earlier handshake that ended without a durable admission (private#203 retry memory). */
-export type PriorInvitationProof = { proof: ProofOfInvitation; presentedTo: string }
-
 export type IdentityClaim = MemberIdentityClaim | ServerIdentityClaim | InviteeIdentityClaim
 
 // CONTEXT
@@ -142,9 +139,6 @@ export type InviteeMemberContext = {
   device: DeviceWithSecrets
   invitationSeed: string
   expectedTeamId: Base58
-
-  /** See `ConnectionContext.priorInvitationProofs`. */
-  priorInvitationProofs?: PriorInvitationProof[]
 }
 
 export type InviteeDeviceContext = {
@@ -152,9 +146,6 @@ export type InviteeDeviceContext = {
   device: FirstUseDeviceWithSecrets
   invitationSeed: string
   expectedTeamId: Base58
-
-  /** See `ConnectionContext.priorInvitationProofs`. */
-  priorInvitationProofs?: PriorInvitationProof[]
 }
 
 export type InviteeContext = InviteeMemberContext | InviteeDeviceContext
@@ -203,27 +194,6 @@ export type ConnectionContext = {
 
   /** Independently supplied immutable root of the team an invitation is expected to join. */
   expectedTeamId?: Base58
-
-  /**
-   * Proofs this invitee presented in earlier handshakes that ended without a durable admission
-   * (private#203 / QSS-006 retry memory).
-   *
-   * An admission is normally required to carry *this* handshake's proof, which is what stops an
-   * acceptor from wrapping an older graph in a fresh envelope and rolling the invitee back to a
-   * state that has since been revoked. But an admitter whose durable write failed already holds
-   * the admission it made in the previous handshake and cannot append a second one, so a retry
-   * would otherwise be refused forever.
-   *
-   * Each remembered proof widens the rule by exactly one link: an admission carrying that proof
-   * counts, and only when the acceptance was sent by the same peer the proof was presented to.
-   * Everything else still applies — the team root, the invitation id, the exact claim, the
-   * sender being active in the delivered graph, and the final identity being live and exact.
-   *
-   * The library never persists these. The application decides what to remember and for how long;
-   * `Connection.invitationAttempt` is what it reads after a failed attempt, and it should keep a
-   * handful for minutes at most and drop them once a join succeeds.
-   */
-  priorInvitationProofs?: PriorInvitationProof[]
 
   /** Challenge we sent with `REQUEST_IDENTITY`; an invitee's proof to us must be bound to it. */
   identityNonce: Base58

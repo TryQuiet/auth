@@ -1,4 +1,4 @@
-import { merge } from '@localfirst/crdx'
+import { getSequence, merge } from '@localfirst/crdx'
 import { signatures } from '@localfirst/crypto'
 import { assert, eventPromise } from '@localfirst/shared'
 import type { ConnectionMessage } from 'connection/message.js'
@@ -16,6 +16,7 @@ import { redactDevice, redactFirstUseDevice } from 'device/index.js'
 import { createPossessionProof, generateProof } from 'invitation/index.js'
 import { pack, unpack } from 'msgpackr'
 import * as teams from 'team/index.js'
+import { membershipResolver } from 'team/membershipResolver.js'
 import { serializeTeamGraph } from 'team/serialize.js'
 import type { Team } from 'team/Team.js'
 import type { TeamGraph } from 'team/types.js'
@@ -308,6 +309,13 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
    * it, only the team root is pinned and not the head, and the delivered graph contains no removal
    * to notice. The one rule that catches it is proof equality: the admission in the old graph
    * belongs to an old handshake.
+   *
+   * A first attempt at private#203's retry problem let the invitee also accept a proof it had
+   * presented to this same sender moments earlier. That reopened exactly this attack, because the
+   * peer most likely to be holding a stale graph is the peer the proof was presented to, and
+   * because such a proof can follow an admission that was durably written before the invitee's own
+   * local write failed. A fresh invitee has no anti-rollback anchor, so no exception here can be
+   * made safe; retry coherence lives on the admitting side instead.
    */
   it('rejects a fresh envelope wrapping a pre-removal graph (member)', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
@@ -392,138 +400,46 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
   })
 
   /**
-   * The one narrow widening: an admitter whose durable write failed keeps the admission it already
-   * appended and cannot append a second one, so its next handshake offers an admission carrying
-   * the invitee's PREVIOUS proof. An application that remembered that attempt
-   * (`Connection.invitationAttempt`) hands the proof back, and only then does that one link count
-   * — and only for a welcome sent by the same peer it was presented to.
+   * The compositional case: everything rule 6 checks lines up except the proof.
+   *
+   * The sender is an active member of the delivered graph, the admission consumed the very
+   * invitation being redeemed, and it registers the invitee's exact signed claim — the assertions
+   * inside the rewrite prove all three against the live handshake rather than assuming them. Only
+   * the proof differs, because that admission was made in an earlier handshake. It must still be
+   * rejected, or every other rule can be satisfied by an old graph.
    */
-  it('accepts an admission carrying a remembered proof from the same sender', async () => {
+  it('rejects an older-handshake admission from an active sender when id and claim both match', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
     const { seed, teamId } = alice.team.inviteMember()
-    const priorAdmission = memberAdmission(seed, bob)
-    const spoof = cloneTeam(alice.team, alice.connectionContext)
-    spoof.admitMember(...priorAdmission)
 
-    const result = await connectInvitee({
-      acceptor: withTeam(alice.connectionContext, cloneTeam(alice.team, alice.connectionContext)),
-      invitee: {
-        user: bob.user,
-        device: bob.device,
-        invitationSeed: seed,
-        expectedTeamId: teamId,
-        priorInvitationProofs: [{ proof: priorAdmission[0], presentedTo: alice.deviceId }],
-      },
-      rewrite: acceptanceFrom(spoof, alice.device),
-    })
-
-    expect(result.outcome.kind).toBe('joined')
-    expect(result.invitee.team?.has(bob.userId)).toBe(true)
-  })
-
-  it('accepts an admission carrying a remembered proof from the same server', async () => {
-    const { alice, bob } = setup('alice', { user: 'bob', member: false })
-    const serverWithSecrets = createServer({ host: 'example.com', seed: 'example.com' })
-    const server = redactServer(serverWithSecrets)
-    alice.team.addServer(server)
-    const { seed, teamId } = alice.team.inviteMember()
-    const priorAdmission = memberAdmission(seed, bob)
-    const spoof = cloneTeam(alice.team, alice.connectionContext)
-    spoof.admitMember(...priorAdmission)
-
-    const result = await connectInvitee({
-      acceptor: withTeam(alice.connectionContext, cloneTeam(alice.team, alice.connectionContext)),
-      invitee: {
-        user: bob.user,
-        device: bob.device,
-        invitationSeed: seed,
-        expectedTeamId: teamId,
-        priorInvitationProofs: [{ proof: priorAdmission[0], presentedTo: server.serverId }],
-      },
-      rewrite: acceptanceFrom(spoof, serverWithSecrets),
-    })
-
-    expect(result.outcome.kind).toBe('joined')
-  })
-
-  // The scoping is what keeps the widening from becoming the rollback above: only the peer the
-  // proof was presented to can be holding the admission it produced. Anyone else offering that
-  // same old link is serving state they had no part in creating.
-  it('rejects a remembered proof when the welcome comes from a different sender', async () => {
-    const { alice, bob, eve } = setup('alice', 'eve', { user: 'bob', member: false })
-    const { seed, teamId } = alice.team.inviteMember()
-    const priorAdmission = memberAdmission(seed, bob)
-    const spoof = cloneTeam(alice.team, alice.connectionContext)
-    spoof.admitMember(...priorAdmission)
-
-    const result = await connectInvitee({
-      acceptor: withTeam(alice.connectionContext, cloneTeam(alice.team, alice.connectionContext)),
-      invitee: {
-        user: bob.user,
-        device: bob.device,
-        invitationSeed: seed,
-        expectedTeamId: teamId,
-        // Remembered against Eve; the welcome arrives from Alice.
-        priorInvitationProofs: [{ proof: priorAdmission[0], presentedTo: eve.deviceId }],
-      },
-      rewrite: acceptanceFrom(spoof, alice.device),
-    })
-
-    expect(result.outcome).toMatchObject({
-      kind: 'rejected',
-      error: { type: 'ADMIT_MEMBER_LINK_MISSING' },
-    })
-  })
-
-  it('rejects a remembered proof that belongs to a different invitation', async () => {
-    const { alice, bob } = setup('alice', { user: 'bob', member: false })
-    const first = alice.team.inviteMember()
-    const second = alice.team.inviteMember()
-    const priorAdmission = memberAdmission(first.seed, bob)
-    const spoof = cloneTeam(alice.team, alice.connectionContext)
-    spoof.admitMember(...priorAdmission)
-
-    const result = await connectInvitee({
-      acceptor: withTeam(alice.connectionContext, cloneTeam(alice.team, alice.connectionContext)),
-      invitee: {
-        user: bob.user,
-        device: bob.device,
-        invitationSeed: second.seed,
-        expectedTeamId: second.teamId,
-        priorInvitationProofs: [{ proof: priorAdmission[0], presentedTo: alice.deviceId }],
-      },
-      rewrite: acceptanceFrom(spoof, alice.device),
-    })
-
-    expect(result.outcome).toMatchObject({
-      kind: 'rejected',
-      error: { type: 'ADMIT_MEMBER_LINK_MISSING' },
-    })
-  })
-
-  it('rejects a remembered proof when the delivered admission is of someone else', async () => {
-    const { alice, bob, eve } = setup(
-      'alice',
-      { user: 'bob', member: false },
-      { user: 'eve', member: false }
+    const stale = cloneTeam(alice.team, alice.connectionContext)
+    stale.admitMember(...memberAdmission(seed, bob))
+    const staleAdmission = getSequence(stale.graph, membershipResolver).find(
+      link => !link.isInvalid && link.body.type === 'ADMIT_MEMBER'
     )
-    const { seed, teamId } = alice.team.inviteMember()
-    const priorAdmission = memberAdmission(seed, bob)
-    const spoof = cloneTeam(alice.team, alice.connectionContext)
-    spoof.admitMember(...memberAdmission(seed, eve))
+    assert(staleAdmission !== undefined && staleAdmission.body.type === 'ADMIT_MEMBER')
+    const stalePayload = staleAdmission.body.payload
 
+    // The team removes Bob after that admission, so the delivered graph is now a rollback.
+    const current = cloneTeam(stale, alice.connectionContext)
+    current.remove(bob.userId)
+    expect(current.memberWasRemoved(bob.userId)).toBe(true)
+
+    let checked = false
     const result = await connectInvitee({
       acceptor: withTeam(alice.connectionContext, cloneTeam(alice.team, alice.connectionContext)),
-      invitee: {
-        user: bob.user,
-        device: bob.device,
-        invitationSeed: seed,
-        expectedTeamId: teamId,
-        priorInvitationProofs: [{ proof: priorAdmission[0], presentedTo: alice.deviceId }],
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed, expectedTeamId: teamId },
+      rewrite(payload, inviteeClaim) {
+        // Same invitation, same claim, different proof — checked against the live handshake.
+        expect(stalePayload.id).toBe(inviteeClaim.proofOfInvitation.id)
+        expect(stalePayload.claim).toEqual(inviteeClaim.claim)
+        expect(stalePayload.proof).not.toEqual(inviteeClaim.proofOfInvitation)
+        checked = true
+        return acceptanceFrom(stale, alice.device)(payload, inviteeClaim)
       },
-      rewrite: acceptanceFrom(spoof, alice.device),
     })
 
+    expect(checked).toBe(true)
     expect(result.outcome).toMatchObject({
       kind: 'rejected',
       error: { type: 'ADMIT_MEMBER_LINK_MISSING' },

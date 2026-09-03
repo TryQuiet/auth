@@ -13,7 +13,6 @@ import {
   openInvitationAcceptance,
 } from './invitationAcceptance.js'
 import type { AcceptInvitationPayload, InvitationAcceptanceEnvelope } from './message.js'
-import type { PriorInvitationProof } from './types.js'
 
 /**
  * How an invitee decides whether to trust the team it has just been handed.
@@ -32,8 +31,7 @@ import type { PriorInvitationProof } from './types.js'
  * 4. the graph validates and contains this invitation with the claimed kind — else WRONG_TEAM
  * 5. the acceptance's sender is an active device in that graph — else SENDER_UNKNOWN
  * 6. exactly one effective (resolver-surviving) admission consumed this invitation with this
- *    handshake's exact proof and claim — or, if the application remembered one, with a proof this
- *    invitee presented to this same sender in an earlier failed attempt — else ADMISSION_INVALID
+ *    handshake's exact proof and claim — else ADMISSION_INVALID
  * 7. the final state registers exactly the claimed identity — else ADMISSION_INVALID
  *
  * Merely appearing in the final state proves nothing — presence is not provenance. The specific
@@ -71,9 +69,6 @@ type ValidateInvitationAcceptanceOptions = {
   claim: InvitationClaim
   expectedTeamId: Base58
   logger?: Logger
-
-  /** Proofs from this invitee's earlier failed attempts; see `acceptableProofs`. */
-  priorInvitationProofs?: PriorInvitationProof[]
 }
 
 type ProcessInvitationAcceptanceOptions = Omit<
@@ -91,7 +86,6 @@ export const processInvitationAcceptance = ({
   claim,
   expectedTeamId,
   logger,
-  priorInvitationProofs,
 }: ProcessInvitationAcceptanceOptions): InvitationAcceptanceValidationResult => {
   let acceptance: InvitationAcceptanceEnvelope
   try {
@@ -116,7 +110,6 @@ export const processInvitationAcceptance = ({
     claim,
     expectedTeamId,
     logger,
-    priorInvitationProofs,
   })
 }
 
@@ -124,8 +117,7 @@ export const processInvitationAcceptance = ({
  * Validates the graph returned to an invitee against independently authenticated handshake data.
  *
  * Merely finding the invitee in final state is insufficient: the graph must belong to the expected
- * team and contain exactly one effective admission carrying this handshake's exact proof and claim
- * (or a remembered prior proof; see `acceptableProofs`).
+ * team and contain exactly one effective admission carrying this handshake's exact proof and claim.
  */
 export const validateInvitationAcceptance = ({
   acceptance,
@@ -134,7 +126,6 @@ export const validateInvitationAcceptance = ({
   claim,
   expectedTeamId,
   logger,
-  priorInvitationProofs,
 }: ValidateInvitationAcceptanceOptions): InvitationAcceptanceValidationResult => {
   try {
     const graph = deserializeTeamGraph(acceptance.serializedGraph, acceptance.teamKeyring)
@@ -164,14 +155,10 @@ export const validateInvitationAcceptance = ({
       )
     }
 
-    // Rule 5 has just established who sent this acceptance, which is what a remembered proof is
-    // scoped to; that ordering is why this comes after the sender check and not before.
-    const proofs = acceptableProofs(proof, priorInvitationProofs, payload.senderDeviceId)
-
     const admissionLinks = effectiveLinks.filter(link =>
       claim.invitationKind === 'member'
-        ? memberAdmissionMatches(link, proofs, claim)
-        : deviceAdmissionMatches(link, proofs, claim, invitation.userId)
+        ? memberAdmissionMatches(link, proof, claim)
+        : deviceAdmissionMatches(link, proof, claim, invitation.userId)
     )
 
     if (admissionLinks.length !== 1) {
@@ -210,60 +197,44 @@ export const validateInvitationAcceptance = ({
 }
 
 /**
- * Which `ProofOfInvitation` values an admission may carry and still count as mine.
+ * What makes an admission *mine*: it consumed the invitation I am redeeming, it registers the exact
+ * identity I signed, and it carries the proof I made for *this* handshake.
  *
- * Normally exactly one: the proof I made for this handshake. That is what makes the delivered
- * graph *fresh* rather than merely *valid*. Without it an acceptor can wrap an older graph — one
- * in which I was admitted and have since been removed — in a correctly bound new envelope, and I
- * would install a state the team no longer authorizes. Envelope freshness (rule 2) says nothing
- * about the age of the graph inside it, and only the team root is pinned (rule 3), not the head.
+ * That last part is what makes the delivered graph fresh rather than merely valid, and it is the
+ * only rule here that does. An acceptor can always wrap an older graph — one in which I was
+ * admitted and have since been removed — in a correctly bound new envelope: the envelope's nonces
+ * say nothing about the age of the graph inside it, only the team root is pinned and not the head,
+ * and a graph that predates my removal contains no tombstone to notice. My proof exists nowhere in
+ * that older graph, so requiring it is what rejects the rollback.
  *
- * The exception is narrow and application-driven. When a durable write fails on the admitting
- * side, that peer keeps the admission it already appended and cannot append a second one, since
- * registered ids are unique. Its next handshake with me therefore offers an admission carrying my
- * *previous* proof. If my application remembered that attempt (`Connection.invitationAttempt`), I
- * accept that one specific proof, and only from the same peer I presented it to. It buys the
- * attacker nothing: a proof only reaches this list by my having made it moments earlier for a
- * handshake that produced no admission I could use, so no older, revoked state exists under it.
- *
- * Everything else is unchanged — invitation id, exact claim, effective-after-resolution, sender
- * active in the delivered graph, and a live exact identity in final state. See private#203 /
- * QSS-006, invariants D5 and G5.
+ * A fresh invitee has no anti-rollback anchor of its own — no head it has seen, no revocation it
+ * knows about — so there is no exception to be carved here safely. An earlier proof of my own is
+ * not evidence of freshness: the peer most likely to be holding a stale graph is exactly the peer
+ * I presented that proof to. Retry coherence therefore belongs on the admitting side, where the
+ * adapter that failed to persist must discard the in-memory admission and let the retry be
+ * admitted afresh. See private#203 / QSS-006, invariants D5, D7 and G5, and the contract on
+ * `ConnectionParams.persistAdmission`.
  */
-const acceptableProofs = (
-  proof: ProofOfInvitation,
-  priorInvitationProofs: PriorInvitationProof[] | undefined,
-  senderId: string
-): ProofOfInvitation[] => [
-  proof,
-  ...(priorInvitationProofs ?? [])
-    .filter(prior => prior.presentedTo === senderId && prior.proof.id === proof.id)
-    .map(prior => prior.proof),
-]
-
-const proofMatches = (linkProof: unknown, proofs: ProofOfInvitation[]): boolean =>
-  proofs.some(candidate => isEqual(linkProof, candidate))
-
 const memberAdmissionMatches = (
   link: TeamLink,
-  proofs: ProofOfInvitation[],
+  proof: ProofOfInvitation,
   claim: Extract<InvitationClaim, { invitationKind: 'member' }>
 ): boolean =>
   link.body.type === 'ADMIT_MEMBER' &&
-  link.body.payload.id === proofs[0].id &&
-  proofMatches(link.body.payload.proof, proofs) &&
+  link.body.payload.id === proof.id &&
+  isEqual(link.body.payload.proof, proof) &&
   isEqual(link.body.payload.claim, claim)
 
 const deviceAdmissionMatches = (
   link: TeamLink,
-  proofs: ProofOfInvitation[],
+  proof: ProofOfInvitation,
   claim: Extract<InvitationClaim, { invitationKind: 'device' }>,
   invitationUserId?: string
 ): boolean =>
   invitationUserId !== undefined &&
   link.body.type === 'ADMIT_DEVICE' &&
-  link.body.payload.id === proofs[0].id &&
-  proofMatches(link.body.payload.proof, proofs) &&
+  link.body.payload.id === proof.id &&
+  isEqual(link.body.payload.proof, proof) &&
   isEqual(link.body.payload.claim, claim)
 
 const finalMemberIsExact = (
