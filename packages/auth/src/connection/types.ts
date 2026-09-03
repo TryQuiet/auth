@@ -34,9 +34,12 @@ export type ConnectionParams = {
 
   /**
    * Durable-admission gate (private#203 / QSS-006, threat-model C3 "Option A").
-   * Called on the admitting side after ADMIT_MEMBER / ADMIT_DEVICE has been appended to the
-   * in-memory team and BEFORE ACCEPT_INVITATION is queued. Must resolve only once the team graph
-   * and the current team keyring are durably persisted. If it rejects, the connection fails with
+   *
+   * Binds membership to its record: nobody may hold a team's keys without a durable record of
+   * their admission on the peer that admitted them. Called on the admitting side after
+   * ADMIT_MEMBER / ADMIT_DEVICE has been appended to the in-memory team and BEFORE
+   * ACCEPT_INVITATION is queued. Must resolve only once the team graph and the current team
+   * keyring are durably persisted. If it rejects, the connection fails with
    * ADMISSION_NOT_PERSISTED and no acceptance is sent. Optional so upstream consumers and tests
    * keep working unchanged; Quiet's adapters always supply it.
    */

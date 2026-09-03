@@ -184,13 +184,14 @@ export class Connection extends EventEmitter<ConnectionEvents> {
         /**
          * The durable-admission gate (private#203 / QSS-006, threat-model C3 "Option A").
          *
-         * `Team.dispatch` emits `updated` synchronously and every consumer of that event persists
-         * asynchronously, so an admission exists in memory long before it exists on disk. Until
-         * this resolves, the admitting side has appended ADMIT_MEMBER / ADMIT_DEVICE to its
-         * in-memory graph and nothing else: no graph, no keyring, no acceptance has left the
-         * machine. If it rejects — or the application never supplied a hook that can promise
-         * durability — the invitee is told nothing rather than being handed keys to an admission
-         * that may not survive a restart.
+         * Membership is bound to its record: nobody may hold a team's keys without a durable
+         * record of their admission on the peer that admitted them. `Team.dispatch` emits
+         * `updated` synchronously and every consumer of that event persists asynchronously, so an
+         * admission exists in memory long before it exists on disk. Until this resolves, the
+         * admitting side has appended ADMIT_MEMBER / ADMIT_DEVICE to its in-memory graph and
+         * nothing else: no graph, no keyring, no acceptance has left the machine. If it rejects,
+         * the invitee is told nothing rather than being handed keys to an admission that may not
+         * survive a restart, which would be a member with keys but no record.
          *
          * With no hook this resolves immediately, which is the pre-existing behaviour.
          */
@@ -1030,9 +1031,10 @@ export class Connection extends EventEmitter<ConnectionEvents> {
              * The durable-admission gate (private#203 / QSS-006, threat-model C3 "Option A"): the
              * admitting side has validated, signed and appended the ADMIT link, and now waits for
              * the application to tell it that write is durable. Only then does the acceptance —
-             * the team graph and the team keyring — go out. If the write fails we fail closed:
-             * nothing is queued, nothing is sent, and the invitee is left holding only its
-             * invitation, which it can present again.
+             * the team graph and the team keyring — go out, so membership and its record are
+             * released together. If the write fails we fail closed: nothing is queued, nothing is
+             * sent, and the invitee is left holding only its invitation, which it can present
+             * again.
              */
             persistingAdmission: {
               invoke: {
