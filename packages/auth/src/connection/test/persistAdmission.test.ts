@@ -368,17 +368,19 @@ describe('connection', () => {
         })
         expect(await first.firstLocalError('admitter')).toBe(ADMISSION_NOT_PERSISTED)
 
-        // What the application remembers about the attempt that failed.
-        const attempt = first.invitee.invitationAttempt
-        expect(attempt).toBeDefined()
-        expect(attempt!.presentedTo).toBe(alice.deviceId)
+        // What the application remembers about the attempt that failed. The admitter's error can
+        // land before the invitee has processed the admitter's own identity claim, and the
+        // attempt names the peer, so wait for it rather than sampling mid-handshake.
+        await waitUntil(() => first.invitee.invitationAttempt !== undefined)
+        const attempt = first.invitee.invitationAttempt!
+        expect(attempt.presentedTo).toBe(alice.deviceId)
         first.stop()
 
         expect(alice.team.has(charlie.userId)).toBe(true)
 
         const second = connectInvitee({
           admitterContext: alice.connectionContext,
-          inviteeContext: retryContext(inviteeContext, attempt!),
+          inviteeContext: retryContext(inviteeContext, attempt),
           async persistAdmission(team: Team) {
             persisted.push(team)
           },
@@ -439,6 +441,7 @@ describe('connection', () => {
           },
         })
         expect(await first.firstLocalError('admitter')).toBe(ADMISSION_NOT_PERSISTED)
+        await waitUntil(() => first.invitee.invitationAttempt !== undefined)
         const attempt = first.invitee.invitationAttempt!
         first.stop()
 
