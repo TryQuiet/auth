@@ -185,7 +185,10 @@ export class Connection extends EventEmitter<ConnectionEvents> {
          * The durable-admission gate (private#203 / QSS-006, threat-model C3 "Option A").
          *
          * Membership is bound to its record: nobody may hold a team's keys without a durable
-         * record of their admission on the peer that admitted them. `Team.dispatch` emits
+         * record of their admission on the peer that admitted them. The adversary is the joiner:
+         * a peer holding a valid invitation is entitled to join but not to join unrecorded, and
+         * it is exactly the party that cannot be relied on to report its own admission
+         * afterwards. `Team.dispatch` emits
          * `updated` synchronously and every consumer of that event persists asynchronously, so an
          * admission exists in memory long before it exists on disk. Until this resolves, the
          * admitting side has appended ADMIT_MEMBER / ADMIT_DEVICE to its in-memory graph and

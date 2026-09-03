@@ -36,7 +36,10 @@ export type ConnectionParams = {
    * Durable-admission gate (private#203 / QSS-006, threat-model C3 "Option A").
    *
    * Binds membership to its record: nobody may hold a team's keys without a durable record of
-   * their admission on the peer that admitted them. Called on the admitting side after
+   * their admission on the peer that admitted them. The adversary is the joiner: a peer holding
+   * a valid invitation is entitled to join but not to join unrecorded, and it is exactly the
+   * party that cannot be relied on to report its own admission afterwards. Called on the
+   * admitting side after
    * ADMIT_MEMBER / ADMIT_DEVICE has been appended to the in-memory team and BEFORE
    * ACCEPT_INVITATION is queued. Must resolve only once the team graph and the current team
    * keyring are durably persisted. If it rejects, the connection fails with
