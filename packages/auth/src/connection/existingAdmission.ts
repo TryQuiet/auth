@@ -38,11 +38,12 @@ import type { TeamLink } from 'team/types.js'
  * WHAT THIS IS AND ISN'T FOR, now that rule 6 of `validateInvitationAcceptance` is strictly bound
  * to the current handshake's proof.
  *
- * It no longer rescues the failed-write case. An adapter whose `persistAdmission` rejects is
- * required to restore its team to the last durable state, which removes the admission this
- * function would have matched; the retry is then an ordinary first admission. Skipping the
- * dispatch when that contract is not honoured only avoids a throw — the invitee still refuses the
- * acceptance, because the link on the graph belongs to the earlier handshake.
+ * It no longer rescues the failed-write case. An adapter whose `persistAdmission` rejects either
+ * restores its team to the last durable state (which removes the admission this function would
+ * have matched, so the retry is an ordinary first admission) or keeps it and accepts that the
+ * invitee cannot converge until restart. In the latter case this path only avoids a throw — the
+ * invitee still refuses the acceptance, because the link on the graph belongs to the earlier
+ * handshake. See `ConnectionParams.persistAdmission`.
  *
  * What it still covers is the case where the write SUCCEEDED and the acceptance never arrived: a
  * dropped connection after the durable commit, or a crash between the commit and the send. The

@@ -1106,10 +1106,11 @@ export class Connection extends EventEmitter<ConnectionEvents> {
              * can present again. Established peers are a separate matter: they already have the
              * new head, because appending it told them. See the actor's own note.
              *
-             * A rejection also obliges the application to put the team back: the admission stays
-             * on the in-memory graph carrying this handshake's proof, and the invitee's next
-             * attempt will bring a different one. `ConnectionParams.persistAdmission` states the
-             * contract and why a retry cannot converge without it.
+             * After a rejection the admission stays on the in-memory graph carrying this
+             * handshake's proof, and the invitee's next attempt will bring a different one, so a
+             * retry with this peer cannot converge unless the application restores its durable
+             * state. `ConnectionParams.persistAdmission` states both honest options (restore, or
+             * fail closed until restart) and why.
              */
             persistingAdmission: {
               invoke: {

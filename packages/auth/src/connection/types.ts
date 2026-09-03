@@ -50,19 +50,27 @@ export type ConnectionParams = {
    * new head before this resolves and persist it through their own gates. Holding it back from
    * them would take a team-wide durable-head barrier, which this is not.
    *
-   * CONTRACT ON REJECTION. An implementation that rejects MUST discard the in-memory admission by
-   * restoring the team to its last durable state before this team takes part in another
-   * handshake. Quiet's adapters do this by reloading: the sync server evicts the community and
-   * reads it back from PostgreSQL, the client reads it back from LevelDB.
+   * CONTRACT ON REJECTION. Rejecting is always safe: nothing has been sent, and the invitee holds
+   * only its invitation. What an implementation does with the in-memory admission afterwards is
+   * its choice between two honest options, and it must pick one deliberately:
    *
-   * This is not tidiness, it is the only route to a converging retry. The admission is already on
-   * the in-memory graph and carries the proof from the handshake that failed. Registered ids are
-   * unique, so the peer cannot append a second admission for that identity; and the invitee
-   * requires the delivered graph to contain an admission bound to its *current* proof, because
-   * that binding is what stops an acceptor wrapping an older, pre-removal graph in a fresh
-   * envelope. Keep the stale admission and every retry with that peer fails closed with
-   * ADMIT_MEMBER_LINK_MISSING. Drop it and the retry is admitted afresh. See private#203 /
-   * QSS-006 and invariants D5, D7 and G5.
+   *  - Restore the team to its last durable state before it takes part in another handshake.
+   *    The invitee's retry is then an ordinary first admission and converges. Quiet's sync
+   *    server does this: it evicts the community and reads it back from PostgreSQL.
+   *  - Keep the in-memory admission and accept that this invitee cannot converge with this peer
+   *    until the process restarts and reloads the durable graph without it. Quiet's client does
+   *    this, because the rollback it would need is more machinery than the failure warrants on a
+   *    member device. A later successful write may then make the admission durable without the
+   *    invitee ever having received keys: a recorded, keyless member, which is the safe direction
+   *    of the asymmetry (the threat is an unrecorded one).
+   *
+   * Why a retry cannot converge without a restore: the admission is already on the in-memory
+   * graph and carries the proof from the handshake that failed. Registered ids are unique, so
+   * the peer cannot append a second admission for that identity; and the invitee requires the
+   * delivered graph to contain an admission bound to its *current* proof, because that binding
+   * is what stops an acceptor wrapping an older, pre-removal graph in a fresh envelope. So every
+   * retry with that peer fails closed with ADMIT_MEMBER_LINK_MISSING. See private#203 / QSS-006
+   * and invariants D5, D7 and G5.
    *
    * `signal` aborts if the connection is torn down while the write is outstanding. Honouring it
    * is a courtesy — the connection discards whatever the promise eventually produces either way —
