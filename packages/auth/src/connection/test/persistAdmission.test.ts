@@ -1,6 +1,6 @@
 import { getSequence } from '@localfirst/crdx'
 import { pause } from '@localfirst/shared'
-import { ADMISSION_NOT_PERSISTED, ADMIT_MEMBER_LINK_MISSING } from 'connection/errors.js'
+import { ADMISSION_NOT_PERSISTED } from 'connection/errors.js'
 import { findExistingAdmission } from 'connection/existingAdmission.js'
 import type { ConnectionMessage } from 'connection/message.js'
 import type { InviteeMemberContext, ServerContext } from 'connection/types.js'
@@ -232,21 +232,17 @@ describe('connection', () => {
        * The other failure mode: the durable write failed but the process survived, so the ADMIT
        * link is still on the admitter's in-memory graph.
        *
-       * On the admitting side the retry now behaves correctly: it recognizes its own earlier
-       * admission of this exact claim, appends nothing (a re-dispatch would throw `The id '…' is
-       * already in use` and lock this invitee out of this admitter for good), runs the durable
-       * write again — the step that failed — and sends the acceptance.
+       * The retry recognizes that earlier admission of this exact claim and appends nothing — a
+       * re-dispatch would throw `The id '…' is already in use`, and since ids are unique this
+       * admitter could then never admit this invitee again. It runs the durable write instead,
+       * which is the step that failed, and sends the acceptance.
        *
-       * The invitee still refuses that acceptance, and this test pins that. `ProofOfInvitation` is
-       * bound to the nonces of the handshake that produced it, and `validateInvitationAcceptance`
-       * requires the graph to contain an effective admission carrying *this* handshake's exact
-       * proof. The link on the graph carries the first handshake's. So the invitee reports
-       * ADMIT_MEMBER_LINK_MISSING and gets nothing — safe, but it means this particular admitter
-       * can never admit this invitee again until its team is rebuilt from durable storage (the
-       * test above). Closing that gap means changing a rule on the invitee side, which is a
-       * separate decision; see the notes in connection/existingAdmission.ts.
+       * The invitee accepts it. That took relaxing rule 6 of `validateInvitationAcceptance` from
+       * "an admission carrying this handshake's exact proof" to "an admission that consumed this
+       * invitation carrying this exact claim"; before that change the invitee refused with
+       * ADMIT_MEMBER_LINK_MISSING because the link on the graph belongs to the first handshake.
        */
-      it('re-runs the durable write instead of throwing when the admission is already in memory', async () => {
+      it('completes the admission when the write is retried against the same in-memory team', async () => {
         const { alice, charlie, inviteeContext } = invite()
         const persisted: Team[] = []
 
@@ -270,18 +266,19 @@ describe('connection', () => {
           },
         })
 
-        // The retry gets as far as a persisted admission and an acceptance on the wire...
-        await waitUntil(() => second.wire.from(alice.deviceId, 'ACCEPT_INVITATION').length === 1)
+        // The durable write is retried, and this time the acceptance goes out...
+        await second.bothConnected()
+        expect(second.wire.from(alice.deviceId, 'ACCEPT_INVITATION')).toHaveLength(1)
         expect(persisted).toHaveLength(1)
         expect(persisted[0].has(charlie.userId)).toBe(true)
 
-        // ...having appended nothing: the identity is registered exactly once.
-        expect(effectiveAdmissions(alice.team, charlie.userId)).toHaveLength(1)
+        // ...the invitee joins...
+        expect(second.log.joined).toBe(1)
+        expect(second.invitee.team!.has(charlie.userId)).toBe(true)
+        expect(second.log.localErrors.invitee).toEqual([])
 
-        // ...and the invitee declines it, because the admission on the graph belongs to the
-        // earlier handshake.
-        expect(await second.firstLocalError('invitee')).toBe(ADMIT_MEMBER_LINK_MISSING)
-        expect(second.invitee.team).toBeUndefined()
+        // ...and nothing new was appended: the identity is registered exactly once.
+        expect(effectiveAdmissions(alice.team, charlie.userId)).toHaveLength(1)
       })
     })
 

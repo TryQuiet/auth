@@ -217,8 +217,8 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
   // re-invited). Here Bob redeems invitation #2, but the acceptor's graph admits him only under
   // invitation #1 — a real, valid admission of exactly his identity, just not the redemption
   // happening on this connection. Final state therefore looks perfect; only the provenance rule —
-  // the admission must reference THIS invitation and embed THIS handshake's proof — rejects it.
-  // Accepting would let an acceptor pretend to consume an invitation it never consumed.
+  // the admission must have consumed THIS invitation — rejects it. Accepting would let an acceptor
+  // pretend to consume an invitation it never consumed.
   it('rejects an admission that consumed a different invitation than the one being redeemed', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
     const first = alice.team.inviteMember()
@@ -244,12 +244,19 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
     })
   })
 
-  // Same invitation, same identity — but the ADMIT link embeds a proof whose nonces belong to some
-  // other handshake (memberAdmission generates fresh random nonces). That is what a replay looks
-  // like: an acceptor re-serving a graph in which this invitee was admitted during an earlier
-  // session instead of admitting the live one. The proof-equality rule binds the admission to this
-  // connection's nonces, making each admission usable for exactly one handshake.
-  it('rejects a replayed admission from a different handshake of the same invitation', async () => {
+  // Same invitation, same identity, but the ADMIT link embeds a proof whose nonces belong to a
+  // different handshake (memberAdmission generates fresh random nonces). This used to be rejected
+  // as a replay. It is now accepted, deliberately — see the note on `memberAdmissionMatches`.
+  //
+  // Nothing an attacker controls is reachable here. A link carrying this exact claim only passes
+  // graph validation if it also carries a `possessionProof` signed by the very device key named
+  // inside that claim, so any admission that matches was initiated by this invitee. The old
+  // welcome itself still cannot be replayed: the acceptance envelope is bound to this handshake's
+  // nonces (rule 2), which is what the replay defence actually rests on. What the extra rule did
+  // buy was a permanent lockout: an admitter whose durable write failed keeps the admission in
+  // memory, cannot append a second one, and so could never admit this invitee again (private#203,
+  // invariant D5).
+  it('accepts an admission of this exact claim made during an earlier handshake', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
     const { seed, teamId } = alice.team.inviteMember()
     const acceptorTeam = cloneTeam(alice.team, alice.connectionContext)
@@ -262,10 +269,67 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
       rewrite: acceptanceFrom(spoof, alice.device),
     })
 
+    expect(result.outcome.kind).toBe('joined')
+    expect(result.invitee.team?.has(bob.userId)).toBe(true)
+  })
+
+  // The claim, not the proof, is what an admission has to match — so a graph that admits somebody
+  // else under this invitation, and never admits me, is still rejected. This is the companion to
+  // the test above: relaxing the proof comparison must not relax the identity comparison.
+  it('rejects an admission of a different identity under the same invitation', async () => {
+    const { alice, bob, eve } = setup(
+      'alice',
+      { user: 'bob', member: false },
+      { user: 'eve', member: false }
+    )
+    const { seed, teamId } = alice.team.inviteMember()
+    const acceptorTeam = cloneTeam(alice.team, alice.connectionContext)
+    const spoof = cloneTeam(alice.team, alice.connectionContext)
+    spoof.admitMember(...memberAdmission(seed, eve))
+
+    const result = await connectInvitee({
+      acceptor: withTeam(alice.connectionContext, acceptorTeam),
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed, expectedTeamId: teamId },
+      rewrite: acceptanceFrom(spoof, alice.device),
+    })
+
     expect(result.outcome).toMatchObject({
       kind: 'rejected',
       error: { type: 'ADMIT_MEMBER_LINK_MISSING' },
     })
+  })
+
+  // Two admins admitting the same invitee concurrently — an invitee connecting to an admin and to
+  // the sync server at once — produce two ADMIT links with identical claims and different proofs.
+  // Once the proof is no longer compared, both would match rule 6's "exactly one" count if both
+  // survived resolution. They don't: the membership resolver invalidates the duplicate, so exactly
+  // one effective admission remains and the invitee joins. This pins that interaction, because
+  // rule 6 counting two would turn an ordinary race into a failed join.
+  it('accepts a graph in which a concurrent duplicate admission was resolved away', async () => {
+    const { alice, bob, charlie } = setup('alice', 'bob', { user: 'charlie', member: false })
+    const { seed, teamId } = alice.team.inviteMember()
+    bob.team.merge(alice.team.graph)
+
+    const acceptorTeam = cloneTeam(alice.team, alice.connectionContext)
+    const spoof = cloneTeam(alice.team, alice.connectionContext)
+    const other = cloneTeam(bob.team, bob.connectionContext)
+    spoof.admitMember(...memberAdmission(seed, charlie))
+    other.admitMember(...memberAdmission(seed, charlie))
+    spoof.merge(other.graph)
+
+    const result = await connectInvitee({
+      acceptor: withTeam(alice.connectionContext, acceptorTeam),
+      invitee: {
+        user: charlie.user,
+        device: charlie.device,
+        invitationSeed: seed,
+        expectedTeamId: teamId,
+      },
+      rewrite: acceptanceFrom(spoof, alice.device),
+    })
+
+    expect(result.outcome.kind).toBe('joined')
+    expect(result.invitee.team?.has(charlie.userId)).toBe(true)
   })
 
   // Key substitution. Knowing the seed is enough to sign a proof over ANY claim, so a seed holder
@@ -408,8 +472,8 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
   // Guards against over-strictness. Invitations are multi-use (bounded by expiration), so a graph
   // may legitimately hold several admissions under one invitation id — here Eve was already
   // admitted with the same seed before Bob redeems it. "Exactly one admission" must mean exactly
-  // one matching THIS handshake's proof and claim, not one per invitation id; if the rule were
-  // keyed on the invitation alone, legitimate reuse would lock every later invitee out.
+  // one matching THIS claim, not one per invitation id; if the rule were keyed on the invitation
+  // alone, legitimate reuse would lock every later invitee out.
   it('accepts the matching admission even when the same invitation admitted someone else', async () => {
     const { alice, bob, eve } = setup(
       'alice',

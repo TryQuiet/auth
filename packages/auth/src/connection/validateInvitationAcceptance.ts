@@ -30,8 +30,8 @@ import type { AcceptInvitationPayload, InvitationAcceptanceEnvelope } from './me
  * 3. the graph's root hash is the expected team id — else WRONG_TEAM
  * 4. the graph validates and contains this invitation with the claimed kind — else WRONG_TEAM
  * 5. the acceptance's sender is an active device in that graph — else SENDER_UNKNOWN
- * 6. exactly one effective (resolver-surviving) admission consumed this invitation with this
- *    handshake's exact proof and claim — else ADMISSION_INVALID
+ * 6. exactly one effective (resolver-surviving) admission consumed this invitation id carrying
+ *    this exact claim — else ADMISSION_INVALID
  * 7. the final state registers exactly the claimed identity — else ADMISSION_INVALID
  *
  * Merely appearing in the final state proves nothing — presence is not provenance. The specific
@@ -117,7 +117,8 @@ export const processInvitationAcceptance = ({
  * Validates the graph returned to an invitee against independently authenticated handshake data.
  *
  * Merely finding the invitee in final state is insufficient: the graph must belong to the expected
- * team and contain exactly one effective admission carrying this handshake's exact proof and claim.
+ * team and contain exactly one effective admission that consumed this invitation carrying this
+ * exact claim.
  */
 export const validateInvitationAcceptance = ({
   acceptance,
@@ -196,6 +197,31 @@ export const validateInvitationAcceptance = ({
   }
 }
 
+/**
+ * What makes an admission *mine*: it consumed the invitation I am redeeming, and it registers the
+ * exact identity I signed.
+ *
+ * The `ProofOfInvitation` is deliberately not compared. Binding the admission to this handshake's
+ * nonces looks like a replay defence, but it buys no security property that the surrounding rules
+ * don't already provide:
+ *
+ *  - The acceptance envelope is still bound to this handshake's nonces (rule 2), so an old
+ *    *welcome* can't be replayed at me.
+ *  - The graph root is pinned to the team I was invited to (rule 3).
+ *  - The graph has already been fully validated (rule 4), and that validation verifies every
+ *    ADMIT link's `possessionProof` against the signature key inside the link's own claim
+ *    (team/validate.ts, `cantAdmitWithInvalidInvitation`). That signature can only be produced by
+ *    the device being registered.
+ *  - The claim names exactly my own keys, and rule 7 requires the final state to register exactly
+ *    that identity.
+ *
+ * So an effective admission carrying my exact claim under my invitation id is necessarily one I
+ * initiated myself, in some handshake. Demanding that it be *this* handshake bought nothing and
+ * cost real availability: an admitter whose durable write failed still holds the admission in
+ * memory, cannot append a second one (ids are unique), and so could never admit that invitee again
+ * — permanently, and for a QSS-only community with no other admitter reachable, until the server
+ * restarts. See private#203 / QSS-006 and invariant D5.
+ */
 const memberAdmissionMatches = (
   link: TeamLink,
   proof: ProofOfInvitation,
@@ -203,7 +229,6 @@ const memberAdmissionMatches = (
 ): boolean =>
   link.body.type === 'ADMIT_MEMBER' &&
   link.body.payload.id === proof.id &&
-  isEqual(link.body.payload.proof, proof) &&
   isEqual(link.body.payload.claim, claim)
 
 const deviceAdmissionMatches = (
@@ -215,7 +240,6 @@ const deviceAdmissionMatches = (
   invitationUserId !== undefined &&
   link.body.type === 'ADMIT_DEVICE' &&
   link.body.payload.id === proof.id &&
-  isEqual(link.body.payload.proof, proof) &&
   isEqual(link.body.payload.claim, claim)
 
 const finalMemberIsExact = (

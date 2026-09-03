@@ -35,20 +35,18 @@ import type { TeamLink } from 'team/types.js'
  * invitee's own device key, so an exact claim match is what makes this idempotent rather than
  * merely similar.
  *
- * KNOWN GAP, on the invitee's side rather than this one. `validateInvitationAcceptance` requires
- * the graph it is handed to contain an effective admission carrying *this* handshake's exact
- * proof (rule 6, "presence is not provenance"). The link this function matches carries the
- * earlier handshake's, so an invitee that retries against an admitter still holding the failed
- * attempt in memory refuses the acceptance with ADMIT_MEMBER_LINK_MISSING — safe, but that
- * admitter can never admit that invitee again until its team is rebuilt from durable storage.
- * The recovery that does work is the one QSS-006 is actually about: an admitter that crashed
- * before the write restarts without the link and admits cleanly. Closing the remaining case means
- * choosing between relaxing rule 6 to "same invitation id, exact claim" (which drops the ADMIT
- * link's handshake binding while keeping the acceptance envelope's), having the admitter decline
- * outright when it finds an admission from a different handshake, or having applications reload
- * the team from durable storage after a failed write. That is a security decision, not a
- * refactor, so it is left to the engagement owner. See
- * test/persistAdmission.test.ts, which pins the current behaviour.
+ * FORMER GAP, now closed — kept here because it explains why rule 6 reads the way it does.
+ * `validateInvitationAcceptance` used to require the delivered graph to contain an effective
+ * admission carrying *this* handshake's exact proof. The link this function matches carries the
+ * earlier handshake's, so an invitee retrying against an admitter that still held the failed
+ * attempt in memory refused the acceptance with ADMIT_MEMBER_LINK_MISSING. Safe, but that
+ * admitter could then never admit that invitee again — the ids are unique, so it could not append
+ * a second admission either — and for a community whose only reachable admitter is the sync
+ * server, the invitee stayed stranded until that server restarted. Rule 6 now matches on the
+ * invitation id and the exact claim, which is what makes the retry above complete; the reasoning
+ * is on `memberAdmissionMatches` in validateInvitationAcceptance.ts. The other recovery,
+ * an admitter that crashed before the write and restarts without the link, works either way.
+ * Both are covered in test/persistAdmission.test.ts.
  */
 export const findExistingAdmission = ({
   team,
