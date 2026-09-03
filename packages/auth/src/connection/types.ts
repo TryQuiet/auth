@@ -236,6 +236,15 @@ export type ConnectionContext = {
   /** Authentication and exact-admission result computed once for the received acceptance. */
   invitationAcceptanceResult?: InvitationAcceptanceValidationResult
 
+  /**
+   * Set when this connection commits to running the durable-admission gate, and when it has
+   * queued the acceptance (private#203 audit M-4). A `Connection` admits at most one invitee,
+   * once. Both are latches: nothing clears them, so no sequence of protocol messages can make the
+   * application persist twice or put a second copy of the team graph and keyring on the wire.
+   */
+  admissionGated?: boolean
+  acceptanceQueued?: boolean
+
   seed?: Uint8Array
   sessionKey?: Uint8Array
 

@@ -1,11 +1,16 @@
 import { getSequence } from '@localfirst/crdx'
+import { randomKey, type Base58 } from '@localfirst/crypto'
 import { pause } from '@localfirst/shared'
-import { ADMISSION_NOT_PERSISTED, ADMIT_MEMBER_LINK_MISSING } from 'connection/errors.js'
+import {
+  ADMISSION_NOT_PERSISTED,
+  ADMIT_MEMBER_LINK_MISSING,
+  IDENTITY_ALREADY_CLAIMED,
+} from 'connection/errors.js'
 import { findExistingAdmission } from 'connection/existingAdmission.js'
-import type { ConnectionMessage } from 'connection/message.js'
+import { CONNECTION_PROTOCOL_VERSION, type ConnectionMessage } from 'connection/message.js'
 import type { InviteeMemberContext, PriorInvitationProof, ServerContext } from 'connection/types.js'
 import { deriveId, generateProof, type MemberInvitationClaim } from 'invitation/index.js'
-import { unpack } from 'msgpackr'
+import { pack, unpack } from 'msgpackr'
 import { createServer, redactServer, type Server, type ServerWithSecrets } from 'server/index.js'
 import { load as loadTeam, type Team } from 'team/index.js'
 import { membershipResolver } from 'team/membershipResolver.js'
@@ -345,6 +350,82 @@ describe('connection', () => {
     })
 
     /**
+     * `REQUEST_IDENTITY` used to be a root-level transition back into `awaitingIdentityClaim`, so
+     * a peer could restart identity negotiation from any state — including one that had already
+     * admitted it. The audit's probe turned that into a second durable write and a second
+     * ACCEPT_INVITATION carrying the team graph and keyring, which an invitation holder could
+     * repeat at will (private#203 audit M-4).
+     */
+    describe('repeated identity requests', () => {
+      it('does not restart the durable write while one is in flight', async () => {
+        const { alice, inviteeContext } = invite()
+        const gate = deferred()
+
+        const pair = connectInvitee({
+          admitterContext: alice.connectionContext,
+          inviteeContext,
+          async persistAdmission() {
+            return gate.promise
+          },
+        })
+
+        await waitUntil(() => gate.calls === 1)
+        for (let attempt = 0; attempt < 3; attempt++) pair.injectFromInvitee(requestIdentity())
+
+        expect(await pair.firstLocalError('admitter')).toBe(IDENTITY_ALREADY_CLAIMED)
+
+        // Leaving the state stops the invoked actor, so the held promise settling later changes
+        // nothing: one hook call, no acceptance.
+        gate.resolve()
+        await pause(50)
+        expect(gate.calls).toBe(1)
+        expect(pair.wire.from(alice.deviceId, 'ACCEPT_INVITATION')).toHaveLength(0)
+        expect(pair.admitter.state).toBe('disconnected')
+      })
+
+      it('does not re-admit or re-send the acceptance after admission completed', async () => {
+        const { alice, charlie, inviteeContext } = invite()
+        let calls = 0
+
+        const pair = connectInvitee({
+          admitterContext: alice.connectionContext,
+          inviteeContext,
+          async persistAdmission() {
+            calls += 1
+          },
+        })
+
+        await pair.bothConnected()
+        await pause(50)
+        expect(pair.wire.from(alice.deviceId, 'ACCEPT_INVITATION')).toHaveLength(1)
+
+        for (let attempt = 0; attempt < 3; attempt++) pair.injectFromInvitee(requestIdentity())
+
+        expect(await pair.firstLocalError('admitter')).toBe(IDENTITY_ALREADY_CLAIMED)
+        await pause(50)
+        expect(calls).toBe(1)
+        expect(pair.wire.from(alice.deviceId, 'ACCEPT_INVITATION')).toHaveLength(1)
+        expect(pair.admitter.state).toBe('disconnected')
+        expect(effectiveAdmissions(alice.team, charlie.userId)).toHaveLength(1)
+      })
+
+      it('still answers the opening identity request', async () => {
+        // The negotiation itself is unchanged: the first request is what makes us send our claim.
+        const { alice, charlie, inviteeContext } = invite()
+
+        const pair = connectInvitee({
+          admitterContext: alice.connectionContext,
+          inviteeContext,
+          async persistAdmission() {},
+        })
+
+        await pair.bothConnected()
+        expect(pair.wire.from(alice.deviceId, 'CLAIM_IDENTITY')).toHaveLength(1)
+        expect(pair.invitee.team!.has(charlie.userId)).toBe(true)
+      })
+    })
+
+    /**
      * Unit-level checks on the predicate that makes the retry above idempotent. "Already admitted"
      * has to mean *this* identity by *this* invitation and nothing looser, because the consequence
      * of a match is handing over the team keyring without writing anything new.
@@ -448,6 +529,15 @@ const admission = (seed: string, invitee: UserStuff) => {
 
 // HELPERS
 
+/** A well-formed opening identity request, valid at any point in the protocol. */
+const requestIdentity = (): ConnectionMessage => ({
+  type: 'REQUEST_IDENTITY',
+  payload: {
+    protocolVersion: CONNECTION_PROTOCOL_VERSION,
+    identityNonce: randomKey() as Base58,
+  },
+})
+
 /** Alice invites Charlie; returns the invitee context his connection will present. */
 const invite = () => {
   const { alice, charlie } = setup('alice', { user: 'charlie', member: false })
@@ -529,6 +619,21 @@ const connectInvitee = ({
       messages.filter(m => m.senderId === senderId && m.message.type === type),
   }
 
+  const inviteeId = inviteeContext.device.deviceId
+
+  /**
+   * Puts a message on the wire as if the invitee had sent it, numbered so the admitter's message
+   * queue delivers it immediately rather than holding it for a gap.
+   */
+  const injectFromInvitee = (message: ConnectionMessage) => {
+    const indexes = messages
+      .filter(m => m.senderId === inviteeId)
+      .map(m => (m.message as unknown as { index: number }).index)
+    const index = Math.max(-1, ...indexes) + 1
+    const packed = pack({ ...message, index })
+    channel.write(inviteeId, Uint8Array.from(packed))
+  }
+
   // Subscribed before either side starts, so a test never has to attach a listener to an event
   // that may already have fired. Everything below is asserted against this log.
   const log = {
@@ -556,6 +661,7 @@ const connectInvitee = ({
     invitee,
     wire,
     log,
+    injectFromInvitee,
 
     /** Resolves once both sides report `connected`. */
     async bothConnected() {

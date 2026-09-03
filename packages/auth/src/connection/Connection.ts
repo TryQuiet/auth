@@ -38,6 +38,7 @@ import {
   UNHANDLED,
   ADMIT_MEMBER_LINK_MISSING,
   ADMISSION_NOT_PERSISTED,
+  IDENTITY_ALREADY_CLAIMED,
 } from 'connection/errors.js'
 import { findExistingAdmission } from 'connection/existingAdmission.js'
 import { getDeviceUserFromState } from 'connection/getDeviceUserFromGraph.js'
@@ -377,14 +378,26 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           }
         }),
 
+        /** Latches the durable-admission gate closed; see `ConnectionContext.admissionGated`. */
+        markAdmissionGated: assign(() => ({ admissionGated: true })),
+
         /**
          * Sends the invitee the two things they don't have yet — the team graph and the team
          * keyring. Reached only from `persistingAdmission`'s `onDone`, i.e. only once the
          * admission this graph contains is durable on our side.
          */
-        sendInvitationAcceptance: ({ context }) => {
+        sendInvitationAcceptance: assign(({ context }) => {
           this.logger.debug('sending invitation acceptance')
           const { team, theirIdentityClaim } = context
+
+          // A connection releases the team graph and keyring once. Reaching here twice would mean
+          // some event sequence walked the invitee branch again, so refuse rather than trust the
+          // machine's shape (private#203 audit M-4).
+          if (context.acceptanceQueued === true) {
+            this.logger.error('refusing to send a second invitation acceptance on one connection')
+            return {}
+          }
+
           assert(team)
           assert(theirIdentityClaim)
           assert(isInviteeClaim(theirIdentityClaim))
@@ -408,7 +421,9 @@ export class Connection extends EventEmitter<ConnectionEvents> {
               teamKeyring: team.teamKeyring(),
             })
           )
-        },
+
+          return { acceptanceQueued: true }
+        }),
 
         receiveInvitationAcceptance: assign(({ context, event }) => {
           assertEvent(event, 'ACCEPT_INVITATION')
@@ -815,6 +830,13 @@ export class Connection extends EventEmitter<ConnectionEvents> {
         },
 
         /**
+         * Whether this connection has already run the durable-admission gate. A second pass would
+         * mean asking the application to persist again and putting a second copy of the graph and
+         * keyring on the wire, so it is refused rather than repeated (private#203 audit M-4).
+         */
+        admissionAlreadyGated: ({ context }) => context.admissionGated === true,
+
+        /**
          * Whether `admitInvitee` actually registered the invitee. Before an invitee is admitted
          * there is nobody for `peer` to name — a member peer is looked up in `challengeIdentity`,
          * which this branch never reaches — so `peer` being set is exactly "the admission went
@@ -919,14 +941,21 @@ export class Connection extends EventEmitter<ConnectionEvents> {
       entry: 'requestIdentityClaim',
       initial: 'awaitingIdentityClaim',
       on: {
-        REQUEST_IDENTITY: [
-          {
-            guard: 'requestIdentityIsValid',
-            actions: 'sendIdentityClaim',
-            target: '.awaitingIdentityClaim',
-          },
-          fail(PROTOCOL_VERSION_UNSUPPORTED),
-        ],
+        /**
+         * Identity negotiation happens once, at the start, in `awaitingIdentityClaim` — which is
+         * where this message is handled. Reaching here means the peer asked us to claim an
+         * identity on a connection that has already settled one.
+         *
+         * This used to be a root-level transition back into `awaitingIdentityClaim`, which let a
+         * peer restart the invitee branch from any state: during `persistingAdmission` it started
+         * a second durable write, and after a completed admission it produced a second
+         * ACCEPT_INVITATION carrying the team graph and keyring (private#203 audit M-4). Since
+         * both peers send this as their opening move and the message queue delivers in order, a
+         * later one is never legitimate. We fail rather than ignore it: a peer that thinks it is
+         * still negotiating should be told the connection disagrees, and failing closed leaves no
+         * repeatable work for an invitation holder to amplify.
+         */
+        REQUEST_IDENTITY: fail(IDENTITY_ALREADY_CLAIMED),
         // Remote error (sent by peer)
         ERROR: { actions: 'receiveError', target: '#disconnected' },
         // Local error (detected by us, sent to peer)
@@ -937,7 +966,17 @@ export class Connection extends EventEmitter<ConnectionEvents> {
         awaitingIdentityClaim: {
           // Don't respond to a request for an identity claim if we've already sent one
           always: { guard: 'bothSentIdentityClaim', target: 'authenticating' },
-          on: { CLAIM_IDENTITY: { actions: 'receiveIdentityClaim' } },
+          on: {
+            CLAIM_IDENTITY: { actions: 'receiveIdentityClaim' },
+            REQUEST_IDENTITY: [
+              {
+                guard: 'requestIdentityIsValid',
+                actions: 'sendIdentityClaim',
+                target: 'awaitingIdentityClaim',
+              },
+              fail(PROTOCOL_VERSION_UNSUPPORTED),
+            ],
+          },
           ...timeout,
         },
 
@@ -1028,7 +1067,13 @@ export class Connection extends EventEmitter<ConnectionEvents> {
             // never happened.
             checkingAdmission: {
               always: [
-                { guard: 'admissionSucceeded', target: 'persistingAdmission' },
+                // Belt and braces for the latch above: one connection, one admission.
+                { guard: 'admissionAlreadyGated', ...fail(IDENTITY_ALREADY_CLAIMED) },
+                {
+                  guard: 'admissionSucceeded',
+                  actions: 'markAdmissionGated',
+                  target: 'persistingAdmission',
+                },
                 fail(INVITATION_PROOF_INVALID),
               ],
             },
