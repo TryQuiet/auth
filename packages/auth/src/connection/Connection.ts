@@ -37,7 +37,9 @@ import {
   type ConnectionErrorType,
   UNHANDLED,
   ADMIT_MEMBER_LINK_MISSING,
+  ADMISSION_NOT_PERSISTED,
 } from 'connection/errors.js'
+import { findExistingAdmission } from 'connection/existingAdmission.js'
 import { getDeviceUserFromState } from 'connection/getDeviceUserFromGraph.js'
 import {
   createInvitationAcceptance,
@@ -58,7 +60,7 @@ import { castServer } from 'server/castServer.js'
 import { Team, decryptTeamGraph, type TeamAction, type TeamContext } from 'team/index.js'
 import { arraysAreEqual } from 'util/arraysAreEqual.js'
 import { KeyType } from 'util/index.js'
-import { and, assertEvent, assign, createActor, setup } from 'xstate'
+import { and, assertEvent, assign, createActor, fromPromise, setup } from 'xstate'
 import { MessageQueue, type NumberedMessage } from './MessageQueue.js'
 import {
   extendServerContext,
@@ -67,7 +69,12 @@ import {
   ourSigningKeys,
   stateSummary,
 } from './helpers.js'
-import type { ConnectionContext, ConnectionEvents, Context, IdentityClaim } from './types.js'
+import type {
+  ConnectionContext,
+  ConnectionEvents,
+  ConnectionParams,
+  IdentityClaim,
+} from './types.js'
 import {
   isInviteeClaim,
   isInviteeContext,
@@ -128,7 +135,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
   #started = false
   private readonly logger: Logger
 
-  constructor({ sendMessage, context, createLogger }: ConnectionParams) {
+  constructor({ sendMessage, context, createLogger, persistAdmission }: ConnectionParams) {
     super()
 
     assert(
@@ -168,6 +175,28 @@ export class Connection extends EventEmitter<ConnectionEvents> {
       types: {
         context: {} as ConnectionContext,
         events: {} as ConnectionMessage,
+      },
+
+      // ******* ACTORS
+      // async work the machine waits in a state for; referred to by name in `invoke`
+
+      actors: {
+        /**
+         * The durable-admission gate (private#203 / QSS-006, threat-model C3 "Option A").
+         *
+         * `Team.dispatch` emits `updated` synchronously and every consumer of that event persists
+         * asynchronously, so an admission exists in memory long before it exists on disk. Until
+         * this resolves, the admitting side has appended ADMIT_MEMBER / ADMIT_DEVICE to its
+         * in-memory graph and nothing else: no graph, no keyring, no acceptance has left the
+         * machine. If it rejects — or the application never supplied a hook that can promise
+         * durability — the invitee is told nothing rather than being handed keys to an admission
+         * that may not survive a restart.
+         *
+         * With no hook this resolves immediately, which is the pre-existing behaviour.
+         */
+        persistAdmission: fromPromise(async ({ input }: { input: { team: Team } }) => {
+          await persistAdmission?.(input.team)
+        }),
       },
 
       // ******* ACTIONS
@@ -259,9 +288,19 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
         // INVITATIONS
 
-        acceptInvitation: assign(({ context }) => {
-          this.logger.debug('accepting invitation')
-          // Admit them to the team
+        /**
+         * Registers the invitee on our in-memory team graph. This is only half of accepting an
+         * invitation: the acceptance that carries the graph and the team keyring is sent by
+         * `sendInvitationAcceptance`, and only once `persistAdmission` says the admission is
+         * durable (private#203 / QSS-006). Splitting the two is the whole point — releasing keys
+         * for an admission we might lose on restart is what strands an invitee.
+         *
+         * On failure this returns without a `peer`, which the `checkingAdmission` state reads as
+         * "don't persist, don't send". A failing `assign` can't redirect its own transition, so
+         * the outcome has to be checked in the state we land in.
+         */
+        admitInvitee: assign(({ context }) => {
+          this.logger.debug('admitting invitee to the team')
           const { team, theirIdentityClaim } = context
 
           assert(team)
@@ -269,6 +308,16 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           assert(isInviteeClaim(theirIdentityClaim))
 
           const { proofOfInvitation, claim, possessionProof } = theirIdentityClaim
+
+          // A retry after a failed durable write finds our own earlier admission of this exact
+          // identity still on the in-memory graph. Re-dispatching it would be rejected by the
+          // uniqueness validator and would throw, permanently stranding an invitee whose only
+          // problem was that our disk write failed. See connection/existingAdmission.ts.
+          const alreadyAdmitted =
+            findExistingAdmission({ team, invitationId: proofOfInvitation.id, claim }) !== undefined
+          if (alreadyAdmitted) {
+            this.logger.debug('invitee is already admitted by this invitation; not re-dispatching')
+          }
 
           const admit = () => {
             if (isInviteeMemberClaim(theirIdentityClaim)) {
@@ -289,41 +338,60 @@ export class Connection extends EventEmitter<ConnectionEvents> {
                 throw new Error(`Invitation does not contain a current ${MEMBER_ROLE} role grant`)
               }
               // New member, along with the first device they'll sign links with
-              team.admitMember(proofOfInvitation, theirIdentityClaim.claim, possessionProof)
+              if (!alreadyAdmitted) {
+                team.admitMember(proofOfInvitation, theirIdentityClaim.claim, possessionProof)
+              }
               const userId = theirIdentityClaim.claim.memberKeys.name
+              // Idempotent in its own right, so it runs on the retry path too: a first attempt
+              // that admitted but never granted the role still converges.
               this.#maybeGrantMemberRole(context, userId)
               return team.members(userId)
             } else {
               this.logger.debug('handling device invite action')
               // New device for an existing member
-              team.admitDevice(
-                proofOfInvitation,
-                claim as invitations.DeviceInvitationClaim,
-                possessionProof
-              )
+              if (!alreadyAdmitted) {
+                team.admitDevice(
+                  proofOfInvitation,
+                  claim as invitations.DeviceInvitationClaim,
+                  possessionProof
+                )
+              }
               const { userId } = team.memberByDeviceId(claim.device.deviceId)
               return team.members(userId)
             }
           }
 
-          let peer
           try {
-            peer = admit()
+            return { peer: admit() }
           } catch (error) {
             // The invitation checked out, but the identity it presented can't be registered — a
-            // duplicate id, say. Report it rather than letting the throw kill the machine.
+            // duplicate id under different keys, say. Report it rather than letting the throw kill
+            // the machine.
             this.logger.error('failed to admit the invitee', error)
-            return this.#fail(INVITATION_PROOF_INVALID)
+            return { peer: undefined }
           }
+        }),
 
+        /**
+         * Sends the invitee the two things they don't have yet — the team graph and the team
+         * keyring. Reached only from `persistingAdmission`'s `onDone`, i.e. only once the
+         * admission this graph contains is durable on our side.
+         */
+        sendInvitationAcceptance: ({ context }) => {
+          this.logger.debug('sending invitation acceptance')
+          const { team, theirIdentityClaim } = context
+          assert(team)
+          assert(theirIdentityClaim)
+          assert(isInviteeClaim(theirIdentityClaim))
+
+          const { proofOfInvitation, claim } = theirIdentityClaim
           const invitation = team.getInvitation(proofOfInvitation.id)
           const sender = context.server ?? context.device
           assert(sender)
 
-          // Send them the two things they don't have yet — the team graph and keyring — encrypted
-          // to keys derived from their invitation seed and bound to this handshake's proof and
-          // claim, so only this invitee can read it and only this session can accept it (see
-          // connection/invitationAcceptance.ts).
+          // Encrypted to keys derived from their invitation seed and bound to this handshake's
+          // proof and claim, so only this invitee can read it and only this session can accept it
+          // (see connection/invitationAcceptance.ts).
           this.#queueMessage(
             'ACCEPT_INVITATION',
             createInvitationAcceptance({
@@ -335,9 +403,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
               teamKeyring: team.teamKeyring(),
             })
           )
-
-          return { peer }
-        }),
+        },
 
         receiveInvitationAcceptance: assign(({ context, event }) => {
           assertEvent(event, 'ACCEPT_INVITATION')
@@ -741,6 +807,18 @@ export class Connection extends EventEmitter<ConnectionEvents> {
           return context.invitationAcceptanceResult?.isValid === true
         },
 
+        /**
+         * Whether `admitInvitee` actually registered the invitee. Before an invitee is admitted
+         * there is nobody for `peer` to name — a member peer is looked up in `challengeIdentity`,
+         * which this branch never reaches — so `peer` being set is exactly "the admission went
+         * through".
+         */
+        admissionSucceeded: ({ context }) => {
+          const result = context.peer !== undefined
+          this.logger.debug('GUARD: did the admission succeed?', result)
+          return result
+        },
+
         peerIsUnknown: ({ context }) => {
           this.logger.debug('GUARD: checking for peer identity on chain')
           const { theirIdentityClaim, team } = context
@@ -925,16 +1003,51 @@ export class Connection extends EventEmitter<ConnectionEvents> {
                 // An identity we've retired can never be registered again, invitation or no
                 { guard: 'inviteeDeviceWasRemoved', ...fail(DEVICE_REMOVED) },
                 { guard: 'inviteeMemberWasRemoved', ...fail(MEMBER_REMOVED) },
-                // If the proof succeeds, add them to the team and send an acceptance message,
-                // then proceed to the standard identity claim & challenge process
+                // If the proof succeeds, add them to our in-memory team. Nothing is sent yet.
                 {
                   guard: 'invitationIsValid',
-                  actions: 'acceptInvitation',
-                  target: '#checkingIdentity',
+                  actions: 'admitInvitee',
+                  target: 'checkingAdmission',
                 },
                 // If the proof fails, disconnect with error
                 fail(INVITATION_PROOF_INVALID),
               ],
+            },
+
+            // `admitInvitee` runs as part of the transition above, so it can't choose where that
+            // transition lands; its outcome is read here instead. Failing in a state of its own
+            // also keeps a failed admission from ever entering `persistingAdmission`, where
+            // invoking the actor would call the application's persist hook for an admission that
+            // never happened.
+            checkingAdmission: {
+              always: [
+                { guard: 'admissionSucceeded', target: 'persistingAdmission' },
+                fail(INVITATION_PROOF_INVALID),
+              ],
+            },
+
+            /**
+             * The durable-admission gate (private#203 / QSS-006, threat-model C3 "Option A"): the
+             * admitting side has validated, signed and appended the ADMIT link, and now waits for
+             * the application to tell it that write is durable. Only then does the acceptance —
+             * the team graph and the team keyring — go out. If the write fails we fail closed:
+             * nothing is queued, nothing is sent, and the invitee is left holding only its
+             * invitation, which it can present again.
+             */
+            persistingAdmission: {
+              invoke: {
+                src: 'persistAdmission',
+                input: ({ context }: { context: ConnectionContext }) => {
+                  assert(context.team)
+                  return { team: context.team }
+                },
+                onDone: {
+                  actions: 'sendInvitationAcceptance',
+                  target: '#checkingIdentity',
+                },
+                onError: fail(ADMISSION_NOT_PERSISTED),
+              },
+              ...timeout,
             },
 
             // We use a signature challenge to verify the identity of an existing team member: We
@@ -1323,14 +1436,3 @@ const fail = (error: ConnectionErrorType) =>
 // timeout configuration
 const TIMEOUT_DELAY = 30_000
 const timeout = { after: { [TIMEOUT_DELAY]: fail(TIMEOUT) } } as const
-
-// TYPES
-
-export type ConnectionParams = {
-  /** A function to send messages to our peer. This how you hook this up to your network stack. */
-  sendMessage: (message: Uint8Array) => void
-
-  /** The initial context. */
-  context: Context
-  createLogger?: (packageName: string) => SharedLogger
-}

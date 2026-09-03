@@ -1,6 +1,7 @@
 export const DEVICE_REMOVED = 'DEVICE_REMOVED' as const
 export const DEVICE_UNKNOWN = 'DEVICE_UNKNOWN' as const
 export const ACCEPTANCE_INVALID = 'ACCEPTANCE_INVALID' as const
+export const ADMISSION_NOT_PERSISTED = 'ADMISSION_NOT_PERSISTED' as const
 export const ENCRYPTION_FAILURE = 'ENCRYPTION_FAILURE' as const
 export const IDENTITY_PROOF_INVALID = 'IDENTITY_PROOF_INVALID' as const
 export const INVITATION_PROOF_INVALID = 'INVITATION_PROOF_INVALID' as const
@@ -18,6 +19,10 @@ export const connectionErrors: Record<string, ErrorDefinition> = {
   [ACCEPTANCE_INVALID]: {
     localMessage: 'The invitation acceptance could not be authenticated',
     remoteMessage: 'The invitation acceptance could not be authenticated',
+  },
+  [ADMISSION_NOT_PERSISTED]: {
+    localMessage: 'The admission could not be durably persisted, so no acceptance was sent',
+    remoteMessage: 'The peer could not durably record your admission, so it sent you nothing',
   },
   [DEVICE_REMOVED]: {
     localMessage: "The peer's device was removed from this team",

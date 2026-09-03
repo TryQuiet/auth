@@ -16,10 +16,32 @@ import type {
 } from 'device/index.js'
 import type { InvitationClaim, ProofOfInvitation } from 'invitation/index.js'
 import type { ServerWithSecrets } from 'server/index.js'
+import type { SharedLogger } from '@localfirst/shared'
 import type { Member, Team, TeamState } from 'team/index.js'
 import type { ConnectionErrorPayload } from './errors.js'
 import type { ConnectionMessage } from './message.js'
 import type { InvitationAcceptanceValidationResult } from './validateInvitationAcceptance.js'
+
+// CONNECTION PARAMETERS
+
+export type ConnectionParams = {
+  /** A function to send messages to our peer. This how you hook this up to your network stack. */
+  sendMessage: (message: Uint8Array) => void
+
+  /** The initial context. */
+  context: Context
+  createLogger?: (packageName: string) => SharedLogger
+
+  /**
+   * Durable-admission gate (private#203 / QSS-006, threat-model C3 "Option A").
+   * Called on the admitting side after ADMIT_MEMBER / ADMIT_DEVICE has been appended to the
+   * in-memory team and BEFORE ACCEPT_INVITATION is queued. Must resolve only once the team graph
+   * and the current team keyring are durably persisted. If it rejects, the connection fails with
+   * ADMISSION_NOT_PERSISTED and no acceptance is sent. Optional so upstream consumers and tests
+   * keep working unchanged; Quiet's adapters always supply it.
+   */
+  persistAdmission?: (team: Team) => Promise<void>
+}
 
 export type ConnectionEvents = {
   /** state change in the connection */
