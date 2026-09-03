@@ -9,6 +9,7 @@ import { Logger } from '@localfirst/shared'
  */
 export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
   #started = false
+  #closed = false
 
   #inbound: Record<number, NumberedMessage<T>> = {}
   #nextInbound = 0
@@ -38,6 +39,7 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
    * over the network). They will be emitted in order when start() is called.
    */
   public start() {
+    if (this.#closed) return this
     this.#started = true
     this.#processInbound()
     this.#processOutbound()
@@ -53,9 +55,28 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
   }
 
   /**
+   * Shuts the queue down for good: anything not yet sent is dropped, nothing further is accepted,
+   * and `start()` cannot revive it.
+   *
+   * This is what `stop()` is not. A stopped queue keeps its backlog so it can resume, which means
+   * a promise that settles after a connection was torn down could queue a message that a later
+   * `start()` would then send (private#203 audit L-3). A closed queue has nothing to flush.
+   */
+  public close() {
+    this.#closed = true
+    this.#started = false
+    for (const timeout of Object.values(this.#waiting)) clearTimeout(timeout)
+    this.#waiting = {}
+    this.#outbound = {}
+    this.#inbound = {}
+    return this
+  }
+
+  /**
    * Assigns a number to the message and sends it.
    */
   public send(message: T) {
+    if (this.#closed) return this
     const index = highestIndex(this.#outbound) + 1
     const numberedMessage = { ...message, index }
     this.#outbound[index] = numberedMessage
@@ -67,6 +88,7 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
    * Resends a message that was previously sent.
    */
   public resend(index: number) {
+    if (this.#closed) return this
     const message = this.#outbound[index]
     if (!message)
       throw new Error(`Received resend request for message #${index}, which doesn't exist.`)
@@ -78,6 +100,7 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
    * Queues inbound messages and, if we're started, emits them in order.
    */
   public receive(message: NumberedMessage<T>) {
+    if (this.#closed) return this
     const { index } = message
     if (!this.#inbound[index]) {
       this.#inbound[index] = message

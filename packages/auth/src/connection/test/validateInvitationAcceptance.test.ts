@@ -1,4 +1,4 @@
-import { merge } from '@localfirst/crdx'
+import { getSequence, merge } from '@localfirst/crdx'
 import { signatures } from '@localfirst/crypto'
 import { assert, eventPromise } from '@localfirst/shared'
 import type { ConnectionMessage } from 'connection/message.js'
@@ -11,10 +11,12 @@ import type {
   MemberContext,
 } from 'connection/types.js'
 import type { DeviceWithSecrets } from 'device/index.js'
+import { createServer, redactServer, type ServerWithSecrets } from 'server/index.js'
 import { redactDevice, redactFirstUseDevice } from 'device/index.js'
 import { createPossessionProof, generateProof } from 'invitation/index.js'
 import { pack, unpack } from 'msgpackr'
 import * as teams from 'team/index.js'
+import { membershipResolver } from 'team/membershipResolver.js'
 import { serializeTeamGraph } from 'team/serialize.js'
 import type { Team } from 'team/Team.js'
 import type { TeamGraph } from 'team/types.js'
@@ -22,7 +24,10 @@ import { deriveUserId } from 'util/userId.js'
 import { joinTestChannel, memberClaim, setup, TestChannel } from 'util/testing/index.js'
 import { describe, expect, it } from 'vitest'
 import type { NumberedMessage } from '../MessageQueue.js'
-import { memberAdmission } from '../../team/test/helpers.js'
+import { deviceAdmission, memberAdmission } from '../../team/test/helpers.js'
+
+/** Whoever the welcome claims to come from: a member's device, or a server. */
+type AcceptanceSender = DeviceWithSecrets | ServerWithSecrets
 
 type AcceptanceMessage = Extract<ConnectionMessage, { type: 'ACCEPT_INVITATION' }>
 type AcceptancePayload = AcceptanceMessage['payload']
@@ -262,6 +267,179 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
       rewrite: acceptanceFrom(spoof, alice.device),
     })
 
+    expect(result.outcome).toMatchObject({
+      kind: 'rejected',
+      error: { type: 'ADMIT_MEMBER_LINK_MISSING' },
+    })
+  })
+
+  // The claim, not the proof, is what an admission has to match — so a graph that admits somebody
+  // else under this invitation, and never admits me, is still rejected. This is the companion to
+  // the test above: relaxing the proof comparison must not relax the identity comparison.
+  it('rejects an admission of a different identity under the same invitation', async () => {
+    const { alice, bob, eve } = setup(
+      'alice',
+      { user: 'bob', member: false },
+      { user: 'eve', member: false }
+    )
+    const { seed, teamId } = alice.team.inviteMember()
+    const acceptorTeam = cloneTeam(alice.team, alice.connectionContext)
+    const spoof = cloneTeam(alice.team, alice.connectionContext)
+    spoof.admitMember(...memberAdmission(seed, eve))
+
+    const result = await connectInvitee({
+      acceptor: withTeam(alice.connectionContext, acceptorTeam),
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed, expectedTeamId: teamId },
+      rewrite: acceptanceFrom(spoof, alice.device),
+    })
+
+    expect(result.outcome).toMatchObject({
+      kind: 'rejected',
+      error: { type: 'ADMIT_MEMBER_LINK_MISSING' },
+    })
+  })
+
+  /**
+   * Rule 6 exists to stop rollback, not just replay (private#203 audit M-1, invariant G5).
+   *
+   * An identity that was validly admitted and later removed still holds the seed and its own
+   * signed claim. A member who has not seen the removal — or a compromised sync server sitting on
+   * an older graph and keyring — can run a completely fresh handshake and wrap that older graph in
+   * a correctly bound envelope. Envelope freshness says nothing about the age of the graph inside
+   * it, only the team root is pinned and not the head, and the delivered graph contains no removal
+   * to notice. The one rule that catches it is proof equality: the admission in the old graph
+   * belongs to an old handshake.
+   *
+   * A first attempt at private#203's retry problem let the invitee also accept a proof it had
+   * presented to this same sender moments earlier. That reopened exactly this attack, because the
+   * peer most likely to be holding a stale graph is the peer the proof was presented to, and
+   * because such a proof can follow an admission that was durably written before the invitee's own
+   * local write failed. A fresh invitee has no anti-rollback anchor, so no exception here can be
+   * made safe; retry coherence lives on the admitting side instead.
+   */
+  it('rejects a fresh envelope wrapping a pre-removal graph (member)', async () => {
+    const { alice, bob } = setup('alice', { user: 'bob', member: false })
+    const { seed, teamId } = alice.team.inviteMember()
+
+    // The graph as it stood when Bob was admitted, in some earlier handshake.
+    const stale = cloneTeam(alice.team, alice.connectionContext)
+    stale.admitMember(...memberAdmission(seed, bob))
+
+    // The team has since removed him. The acceptor below is a member that has not seen that yet,
+    // which is what lets the handshake get far enough to deliver anything at all.
+    const current = cloneTeam(stale, alice.connectionContext)
+    current.remove(bob.userId)
+    expect(current.memberWasRemoved(bob.userId)).toBe(true)
+
+    const result = await connectInvitee({
+      acceptor: withTeam(alice.connectionContext, cloneTeam(alice.team, alice.connectionContext)),
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed, expectedTeamId: teamId },
+      rewrite: acceptanceFrom(stale, alice.device),
+    })
+
+    expect(result.outcome).toMatchObject({
+      kind: 'rejected',
+      error: { type: 'ADMIT_MEMBER_LINK_MISSING' },
+    })
+  })
+
+  it('rejects a fresh envelope wrapping a pre-removal graph (device)', async () => {
+    const { alice, bob } = setup('alice', 'bob')
+    const { seed, teamId } = bob.team.inviteDevice()
+    alice.team.merge(bob.team.graph)
+
+    const stale = cloneTeam(alice.team, alice.connectionContext)
+    stale.admitDevice(...deviceAdmission(seed, bob.phone!))
+
+    const current = cloneTeam(stale, alice.connectionContext)
+    current.removeDevice(bob.phone!.deviceId)
+    expect(current.deviceWasRemoved(bob.phone!.deviceId)).toBe(true)
+
+    const result = await connectInvitee({
+      acceptor: withTeam(alice.connectionContext, cloneTeam(alice.team, alice.connectionContext)),
+      invitee: {
+        userName: bob.userName,
+        device: bob.phone!,
+        invitationSeed: seed,
+        expectedTeamId: teamId,
+      },
+      rewrite: acceptanceFrom(stale, alice.device),
+    })
+
+    expect(result.outcome).toMatchObject({
+      kind: 'rejected',
+      error: { type: 'ADMIT_MEMBER_LINK_MISSING' },
+    })
+  })
+
+  // The sync server is the likeliest holder of a stale graph, and it signs welcomes with its own
+  // server identity rather than a device, so the rule has to hold on that path too.
+  it('rejects a fresh envelope wrapping a pre-removal graph sent by a server', async () => {
+    const { alice, bob } = setup('alice', { user: 'bob', member: false })
+    const serverWithSecrets = createServer({ host: 'example.com', seed: 'example.com' })
+    alice.team.addServer(redactServer(serverWithSecrets))
+    const { seed, teamId } = alice.team.inviteMember()
+
+    const stale = cloneTeam(alice.team, alice.connectionContext)
+    stale.admitMember(...memberAdmission(seed, bob))
+
+    const current = cloneTeam(stale, alice.connectionContext)
+    current.remove(bob.userId)
+    expect(current.memberWasRemoved(bob.userId)).toBe(true)
+
+    const result = await connectInvitee({
+      acceptor: withTeam(alice.connectionContext, cloneTeam(alice.team, alice.connectionContext)),
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed, expectedTeamId: teamId },
+      rewrite: acceptanceFrom(stale, serverWithSecrets),
+    })
+
+    expect(result.outcome).toMatchObject({
+      kind: 'rejected',
+      error: { type: 'ADMIT_MEMBER_LINK_MISSING' },
+    })
+  })
+
+  /**
+   * The compositional case: everything rule 6 checks lines up except the proof.
+   *
+   * The sender is an active member of the delivered graph, the admission consumed the very
+   * invitation being redeemed, and it registers the invitee's exact signed claim — the assertions
+   * inside the rewrite prove all three against the live handshake rather than assuming them. Only
+   * the proof differs, because that admission was made in an earlier handshake. It must still be
+   * rejected, or every other rule can be satisfied by an old graph.
+   */
+  it('rejects an older-handshake admission from an active sender when id and claim both match', async () => {
+    const { alice, bob } = setup('alice', { user: 'bob', member: false })
+    const { seed, teamId } = alice.team.inviteMember()
+
+    const stale = cloneTeam(alice.team, alice.connectionContext)
+    stale.admitMember(...memberAdmission(seed, bob))
+    const staleAdmission = getSequence(stale.graph, membershipResolver).find(
+      link => !link.isInvalid && link.body.type === 'ADMIT_MEMBER'
+    )
+    assert(staleAdmission !== undefined && staleAdmission.body.type === 'ADMIT_MEMBER')
+    const stalePayload = staleAdmission.body.payload
+
+    // The team removes Bob after that admission, so the delivered graph is now a rollback.
+    const current = cloneTeam(stale, alice.connectionContext)
+    current.remove(bob.userId)
+    expect(current.memberWasRemoved(bob.userId)).toBe(true)
+
+    let checked = false
+    const result = await connectInvitee({
+      acceptor: withTeam(alice.connectionContext, cloneTeam(alice.team, alice.connectionContext)),
+      invitee: { user: bob.user, device: bob.device, invitationSeed: seed, expectedTeamId: teamId },
+      rewrite(payload, inviteeClaim) {
+        // Same invitation, same claim, different proof — checked against the live handshake.
+        expect(stalePayload.id).toBe(inviteeClaim.proofOfInvitation.id)
+        expect(stalePayload.claim).toEqual(inviteeClaim.claim)
+        expect(stalePayload.proof).not.toEqual(inviteeClaim.proofOfInvitation)
+        checked = true
+        return acceptanceFrom(stale, alice.device)(payload, inviteeClaim)
+      },
+    })
+
+    expect(checked).toBe(true)
     expect(result.outcome).toMatchObject({
       kind: 'rejected',
       error: { type: 'ADMIT_MEMBER_LINK_MISSING' },
@@ -531,7 +709,7 @@ const asMemberContext = (context: Context): MemberContext => context as MemberCo
  * so the envelope itself is well-formed and correctly transcript-bound — the graph (and possibly
  * the sender) is what's adversarial.
  */
-const acceptanceFrom = (team: Team, senderDevice: DeviceWithSecrets): Rewrite =>
+const acceptanceFrom = (team: Team, senderDevice: AcceptanceSender): Rewrite =>
   acceptanceFromGraph(team.save(), team.teamKeyring(), team, senderDevice)
 
 const acceptanceFromGraph =
@@ -539,7 +717,7 @@ const acceptanceFromGraph =
     serializedGraph: Uint8Array,
     teamKeyring: ReturnType<Team['teamKeyring']>,
     invitationTeam: Team,
-    senderDevice: DeviceWithSecrets
+    senderDevice: AcceptanceSender
   ): Rewrite =>
   (_payload, inviteeClaim) => {
     const { proofOfInvitation: proof, claim } = inviteeClaim

@@ -1,7 +1,9 @@
 export const DEVICE_REMOVED = 'DEVICE_REMOVED' as const
 export const DEVICE_UNKNOWN = 'DEVICE_UNKNOWN' as const
 export const ACCEPTANCE_INVALID = 'ACCEPTANCE_INVALID' as const
+export const ADMISSION_NOT_PERSISTED = 'ADMISSION_NOT_PERSISTED' as const
 export const ENCRYPTION_FAILURE = 'ENCRYPTION_FAILURE' as const
+export const IDENTITY_ALREADY_CLAIMED = 'IDENTITY_ALREADY_CLAIMED' as const
 export const IDENTITY_PROOF_INVALID = 'IDENTITY_PROOF_INVALID' as const
 export const INVITATION_PROOF_INVALID = 'INVITATION_PROOF_INVALID' as const
 export const JOINED_WRONG_TEAM = 'JOINED_WRONG_TEAM' as const
@@ -19,6 +21,10 @@ export const connectionErrors: Record<string, ErrorDefinition> = {
     localMessage: 'The invitation acceptance could not be authenticated',
     remoteMessage: 'The invitation acceptance could not be authenticated',
   },
+  [ADMISSION_NOT_PERSISTED]: {
+    localMessage: 'The admission could not be durably persisted, so no acceptance was sent',
+    remoteMessage: 'The peer could not durably record your admission, so it sent you nothing',
+  },
   [DEVICE_REMOVED]: {
     localMessage: "The peer's device was removed from this team",
     remoteMessage: 'Your device was removed from this team',
@@ -29,6 +35,10 @@ export const connectionErrors: Record<string, ErrorDefinition> = {
   },
   [ENCRYPTION_FAILURE]: {
     localMessage: 'Unable to establish a secure connection',
+  },
+  [IDENTITY_ALREADY_CLAIMED]: {
+    localMessage: 'The peer tried to start identity negotiation again on a settled connection',
+    remoteMessage: 'Identity negotiation was already settled on this connection',
   },
   [IDENTITY_PROOF_INVALID]: {
     localMessage: "The peer's proof of identity is not valid",

@@ -196,6 +196,25 @@ export const validateInvitationAcceptance = ({
   }
 }
 
+/**
+ * What makes an admission *mine*: it consumed the invitation I am redeeming, it registers the exact
+ * identity I signed, and it carries the proof I made for *this* handshake.
+ *
+ * That last part is what makes the delivered graph fresh rather than merely valid, and it is the
+ * only rule here that does. An acceptor can always wrap an older graph — one in which I was
+ * admitted and have since been removed — in a correctly bound new envelope: the envelope's nonces
+ * say nothing about the age of the graph inside it, only the team root is pinned and not the head,
+ * and a graph that predates my removal contains no tombstone to notice. My proof exists nowhere in
+ * that older graph, so requiring it is what rejects the rollback.
+ *
+ * A fresh invitee has no anti-rollback anchor of its own — no head it has seen, no revocation it
+ * knows about — so there is no exception to be carved here safely. An earlier proof of my own is
+ * not evidence of freshness: the peer most likely to be holding a stale graph is exactly the peer
+ * I presented that proof to. Retry coherence therefore belongs on the admitting side, where the
+ * adapter that failed to persist must discard the in-memory admission and let the retry be
+ * admitted afresh. See private#203 / QSS-006, invariants D5, D7 and G5, and the contract on
+ * `ConnectionParams.persistAdmission`.
+ */
 const memberAdmissionMatches = (
   link: TeamLink,
   proof: ProofOfInvitation,
