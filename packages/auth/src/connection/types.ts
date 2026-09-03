@@ -45,8 +45,13 @@ export type ConnectionParams = {
    * keyring are durably persisted. If it rejects, the connection fails with
    * ADMISSION_NOT_PERSISTED and no acceptance is sent. Optional so upstream consumers and tests
    * keep working unchanged; Quiet's adapters always supply it.
+   *
+   * `signal` aborts if the connection is torn down while the write is outstanding. Honouring it
+   * is a courtesy — the connection discards whatever the promise eventually produces either way —
+   * but it lets an adapter drop work nobody is waiting for. A one-argument implementation stays
+   * valid.
    */
-  persistAdmission?: (team: Team) => Promise<void>
+  persistAdmission?: (team: Team, opts?: { signal: AbortSignal }) => Promise<void>
 }
 
 export type ConnectionEvents = {

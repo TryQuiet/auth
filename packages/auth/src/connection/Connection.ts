@@ -135,6 +135,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
   readonly #machine
   readonly #messageQueue: MessageQueue<ConnectionMessage>
   #started = false
+  #stopped = false
   private readonly logger: Logger
 
   constructor({ sendMessage, context, createLogger, persistAdmission }: ConnectionParams) {
@@ -199,10 +200,16 @@ export class Connection extends EventEmitter<ConnectionEvents> {
          * survive a restart, which would be a member with keys but no record.
          *
          * With no hook this resolves immediately, which is the pre-existing behaviour.
+         *
+         * `signal` aborts when this actor stops — a disconnect, an error, the timeout, or the
+         * connection being torn down — so an adapter that watches it can drop a write nobody is
+         * waiting for. Either way the machine ignores whatever the promise produces after that.
          */
-        persistAdmission: fromPromise(async ({ input }: { input: { team: Team } }) => {
-          await persistAdmission?.(input.team)
-        }),
+        persistAdmission: fromPromise(
+          async ({ input, signal }: { input: { team: Team }; signal: AbortSignal }) => {
+            await persistAdmission?.(input.team, { signal })
+          }
+        ),
       },
 
       // ******* ACTIONS
@@ -956,6 +963,14 @@ export class Connection extends EventEmitter<ConnectionEvents> {
          * repeatable work for an invitation holder to amplify.
          */
         REQUEST_IDENTITY: fail(IDENTITY_ALREADY_CLAIMED),
+        /**
+         * A peer can hang up at any point, and we hang up on ourselves the same way from `stop()`.
+         * This used to be handled only in `connected`, so a disconnect arriving while we were
+         * waiting on the application's durable write was simply ignored and the invoked actor
+         * outlived the session (private#203 audit L-3). Handling it here exits every state,
+         * including `persistingAdmission`, which stops that actor and aborts its signal.
+         */
+        DISCONNECT: '#disconnected',
         // Remote error (sent by peer)
         ERROR: { actions: 'receiveError', target: '#disconnected' },
         // Local error (detected by us, sent to peer)
@@ -1236,8 +1251,7 @@ export class Connection extends EventEmitter<ConnectionEvents> {
             SYNC: { actions: ['receiveSyncMessage', 'sendSyncMessage'] },
             // Deliver any encrypted messages
             ENCRYPTED_MESSAGE: { actions: 'receiveEncryptedMessage' },
-            // If they disconnect we disconnect
-            DISCONNECT: '#disconnected',
+            // DISCONNECT is handled at the root, for every state
           },
         },
 
@@ -1302,8 +1316,14 @@ export class Connection extends EventEmitter<ConnectionEvents> {
 
   // PUBLIC API
 
-  /** Starts the state machine. Returns this Connection object. */
+  /**
+   * Starts the state machine. Returns this Connection object.
+   *
+   * A connection runs once. Calling this after `stop()` throws rather than reviving a torn-down
+   * session — see `stop()` for why.
+   */
   public start = (storedMessages: Uint8Array[] = []) => {
+    assert(!this.#stopped, 'A stopped connection cannot be restarted; create a new one')
     this.logger.debug('starting')
     this.#machine.start()
     this.#messageQueue.start()
@@ -1315,7 +1335,16 @@ export class Connection extends EventEmitter<ConnectionEvents> {
     return this
   }
 
-  /** Shuts down and sends a disconnect message to the peer. */
+  /**
+   * Shuts down and sends a disconnect message to the peer.
+   *
+   * A stopped connection is finished, not paused (private#203 audit L-3). The state machine actor
+   * is stopped, which aborts the durable-admission gate's signal and discards anything its promise
+   * produces afterwards; the outbound queue is closed and emptied rather than merely paused, so
+   * there is no backlog for anyone to flush; and `start()` will not revive it. Before this, a hook
+   * that resolved after teardown queued an acceptance that a later `start()` on the same object
+   * would send. Reconnecting means constructing a new `Connection`.
+   */
   public stop = (sendPeerDisconnect = true) => {
     if (this.#started && this.#machine.getSnapshot().status !== 'done') {
       const disconnectMessage: DisconnectMessage = { type: 'DISCONNECT' }
@@ -1325,8 +1354,10 @@ export class Connection extends EventEmitter<ConnectionEvents> {
       }
     }
 
+    this.#stopped = true
     this.removeAllListeners()
-    this.#messageQueue.stop()
+    this.#messageQueue.close()
+    this.#machine.stop()
     this.logger.warn('connection stopped')
     return this
   }

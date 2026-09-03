@@ -8,7 +8,12 @@ import {
 } from 'connection/errors.js'
 import { findExistingAdmission } from 'connection/existingAdmission.js'
 import { CONNECTION_PROTOCOL_VERSION, type ConnectionMessage } from 'connection/message.js'
-import type { InviteeMemberContext, PriorInvitationProof, ServerContext } from 'connection/types.js'
+import type {
+  ConnectionParams,
+  InviteeMemberContext,
+  PriorInvitationProof,
+  ServerContext,
+} from 'connection/types.js'
 import { deriveId, generateProof, type MemberInvitationClaim } from 'invitation/index.js'
 import { pack, unpack } from 'msgpackr'
 import { createServer, redactServer, type Server, type ServerWithSecrets } from 'server/index.js'
@@ -107,26 +112,66 @@ describe('connection', () => {
       it('releases nothing if the connection is torn down mid-write', async () => {
         // A crash is the scenario QSS-006 is about, and the closest a test can get to one is a
         // teardown while the durable write is still outstanding. Whatever the write goes on to do,
-        // no graph and no keyring may leave a connection that is no longer running.
+        // no graph and no keyring may leave a connection that is no longer running — and a
+        // stopped connection cannot be revived to flush one later (private#203 audit L-3).
         const { alice, inviteeContext } = invite()
         const gate = deferred()
+        let signal: AbortSignal | undefined
 
         const { wire, admitter, invitee } = connectInvitee({
           admitterContext: alice.connectionContext,
           inviteeContext,
-          async persistAdmission() {
+          async persistAdmission(_team, options) {
+            signal = options?.signal
             return gate.promise
           },
         })
 
         await waitUntil(() => gate.calls === 1)
+        expect(signal?.aborted).toBe(false)
+
         admitter.stop()
         invitee.stop()
+
+        // Stopping stops the machine's actor, so the hook is told nobody is waiting any more.
+        expect(signal?.aborted).toBe(true)
 
         gate.resolve()
         await pause(50)
         expect(wire.from(alice.deviceId, 'ACCEPT_INVITATION')).toHaveLength(0)
         expect(invitee.team).toBeUndefined()
+
+        // And the acceptance cannot be flushed by restarting the same object.
+        expect(() => admitter.start()).toThrow()
+        await pause(50)
+        expect(wire.from(alice.deviceId, 'ACCEPT_INVITATION')).toHaveLength(0)
+      })
+
+      it('releases nothing if the peer disconnects mid-write', async () => {
+        // DISCONNECT used to be handled only in `connected`, so a peer hanging up during the
+        // durable write was ignored and the invoked actor outlived the session.
+        const { alice, inviteeContext } = invite()
+        const gate = deferred()
+        let signal: AbortSignal | undefined
+
+        const pair = connectInvitee({
+          admitterContext: alice.connectionContext,
+          inviteeContext,
+          async persistAdmission(_team, options) {
+            signal = options?.signal
+            return gate.promise
+          },
+        })
+
+        await waitUntil(() => gate.calls === 1)
+        pair.injectFromInvitee({ type: 'DISCONNECT' })
+        await waitUntil(() => pair.admitter.state === 'disconnected')
+        expect(signal?.aborted).toBe(true)
+
+        gate.resolve()
+        await pause(50)
+        expect(pair.wire.from(alice.deviceId, 'ACCEPT_INVITATION')).toHaveLength(0)
+        expect(pair.invitee.team).toBeUndefined()
       })
 
       it('behaves exactly as before when no hook is supplied', async () => {
@@ -602,7 +647,7 @@ const connectInvitee = ({
 }: {
   admitterContext: Parameters<ReturnType<typeof joinTestChannel>>[0]
   inviteeContext: InviteeMemberContext
-  persistAdmission?: (team: Team) => Promise<void>
+  persistAdmission?: ConnectionParams['persistAdmission']
 }) => {
   const channel = new TestChannel()
   const messages: Array<{ senderId: string; message: ConnectionMessage }> = []
