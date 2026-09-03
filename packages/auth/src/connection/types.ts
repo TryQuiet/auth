@@ -50,6 +50,20 @@ export type ConnectionParams = {
    * new head before this resolves and persist it through their own gates. Holding it back from
    * them would take a team-wide durable-head barrier, which this is not.
    *
+   * CONTRACT ON REJECTION. An implementation that rejects MUST discard the in-memory admission by
+   * restoring the team to its last durable state before this team takes part in another
+   * handshake. Quiet's adapters do this by reloading: the sync server evicts the community and
+   * reads it back from PostgreSQL, the client reads it back from LevelDB.
+   *
+   * This is not tidiness, it is the only route to a converging retry. The admission is already on
+   * the in-memory graph and carries the proof from the handshake that failed. Registered ids are
+   * unique, so the peer cannot append a second admission for that identity; and the invitee
+   * requires the delivered graph to contain an admission bound to its *current* proof, because
+   * that binding is what stops an acceptor wrapping an older, pre-removal graph in a fresh
+   * envelope. Keep the stale admission and every retry with that peer fails closed with
+   * ADMIT_MEMBER_LINK_MISSING. Drop it and the retry is admitted afresh. See private#203 /
+   * QSS-006 and invariants D5, D7 and G5.
+   *
    * `signal` aborts if the connection is torn down while the write is outstanding. Honouring it
    * is a courtesy — the connection discards whatever the promise eventually produces either way —
    * but it lets an adapter drop work nobody is waiting for. A one-argument implementation stays

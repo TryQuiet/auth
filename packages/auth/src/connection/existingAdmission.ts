@@ -35,23 +35,27 @@ import type { TeamLink } from 'team/types.js'
  * invitee's own device key, so an exact claim match is what makes this idempotent rather than
  * merely similar.
  *
- * THE OTHER HALF OF THE RETRY, on the invitee's side. Skipping the dispatch here means the link
- * the invitee is eventually shown carries the *earlier* handshake's proof, and rule 6 of
- * `validateInvitationAcceptance` requires this handshake's. So an invitee retrying against an
- * admitter that still holds the failed attempt in memory refuses the acceptance with
- * ADMIT_MEMBER_LINK_MISSING unless it is told to expect that older proof.
+ * WHAT THIS IS AND ISN'T FOR, now that rule 6 of `validateInvitationAcceptance` is strictly bound
+ * to the current handshake's proof.
  *
- * Relaxing rule 6 for everyone was tried and rejected: dropping the proof comparison lets an
- * acceptor wrap an older graph — one in which the invitee was admitted and has since been removed
- * — in a correctly bound new envelope, since only the team root is pinned and not the head
- * (invariant G5). The mechanism instead is `ConnectionContext.priorInvitationProofs`: the
- * application reads `Connection.invitationAttempt` after a failed attempt and hands that one
- * proof back on the retry, where it counts only for an acceptance sent by the same peer. Nothing
- * else about rule 6 moves.
+ * It no longer rescues the failed-write case. An adapter whose `persistAdmission` rejects is
+ * required to restore its team to the last durable state, which removes the admission this
+ * function would have matched; the retry is then an ordinary first admission. Skipping the
+ * dispatch when that contract is not honoured only avoids a throw — the invitee still refuses the
+ * acceptance, because the link on the graph belongs to the earlier handshake.
  *
- * The other recovery — an admitter that crashed before the write and restarts without the link —
- * needs none of this, because it admits cleanly under the new proof. Both are covered in
- * test/persistAdmission.test.ts.
+ * What it still covers is the case where the write SUCCEEDED and the acceptance never arrived: a
+ * dropped connection after the durable commit, or a crash between the commit and the send. The
+ * admission is real and durable, so there is nothing to roll back, and re-dispatching it would
+ * throw on the duplicate id. This path lets the peer re-run the (already satisfied) durable write
+ * and re-send.
+ *
+ * That acceptance is still refused by the invitee, for the same reason: the durable admission
+ * carries the first handshake's proof. This is a pre-existing limitation of re-presenting an
+ * invitation and is out of scope here — the fix is for the invitee to authenticate normally as
+ * the device it was admitted as, which it can, since the admission is on the team. An earlier
+ * attempt to close it by widening rule 6 was reverted for reopening a rollback attack; see the
+ * note on `memberAdmissionMatches`.
  */
 export const findExistingAdmission = ({
   team,
