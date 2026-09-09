@@ -9,24 +9,28 @@ on:
       - main
 jobs:
   run-tests:
-    name: Run tests
+    name: Run tests (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 24]
     steps:
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v6
         with:
-          node-version: '18.x'
+          node-version: ${{ matrix.node }}
           registry-url: 'https://registry.npmjs.org'
-      - uses: pnpm/action-setup@v2
+      - uses: pnpm/action-setup@v5
         with:
-          version: 8
+          version: 10.6.0
           run_install: false
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ github.ref }}
       - name: Install and build
         run: |
-          pnpm install
+          pnpm install --frozen-lockfile
           pnpm build
       - name: Run tests
-        run: pnpm test
+        run: pnpm test:run
