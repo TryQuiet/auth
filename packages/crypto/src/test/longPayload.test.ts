@@ -5,7 +5,7 @@ import { asymmetric, hash, signatures, symmetric } from '../index.js'
 import { keyToBytes } from '../util/index.js'
 
 // Long UTF-8 strings exercise msgpackr's Buffer write path, which threw
-// ERR_OUT_OF_RANGE with msgpackr 1.10.2 on Node 24. These are public test values.
+// a RangeError with msgpackr 1.10.2 on Node 24. These are public test values.
 const text = 'Quiet 🌱 — ключи — 鍵 '.repeat(12)
 const makePayload = () => ({
   type: 'long-unicode-payload',
