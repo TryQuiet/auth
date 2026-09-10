@@ -57,7 +57,8 @@ describe('forged registration', () => {
       })
     })
 
-    it('rejects registering a device id that was removed', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('rejects registering a device id that was removed', () => {
       const { alice, bob } = setup('alice', 'bob')
       const removed = { ...alice.team.device(bob.deviceId) }
       alice.team.removeDevice(bob.deviceId)
@@ -199,7 +200,8 @@ describe('forged registration', () => {
       expect(alice.team.hasDevice(eve.deviceId)).toBe(false)
     })
 
-    it('rejects a device admitted against an invitation whose owner has left the team', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('rejects a device admitted against an invitation whose owner has left the team', () => {
       const { alice, bob } = setup('alice', 'bob')
 
       // 👨🏻‍🦲 Bob invites his phone and is then removed from the team. A device invitation is the

@@ -151,7 +151,8 @@ describe('granting the member role on admission', () => {
     expect(bobConnection.team!.has(charlie.user.userId)).toBe(false)
   })
 
-  it('rejects a stale member grant before a non-admin peer admits the invitee', async () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('rejects a stale member grant before a non-admin peer admits the invitee', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', admin: false })
     alice.team.dispatch({
       type: 'SET_METADATA',
@@ -184,7 +185,8 @@ describe('granting the member role on admission', () => {
     expect(bobConnection.team!.has(charlie.user.userId)).toBe(false)
   })
 
-  it('rejects a stale grant before the server admits the invitee', async () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('rejects a stale grant before the server admits the invitee', async () => {
     const alice = createTestUser('stale-alice')
     const bob = createTestUser('stale-bob')
     const team = teams.createTeam('stale-server-relayed-member-grant', alice, undefined, {

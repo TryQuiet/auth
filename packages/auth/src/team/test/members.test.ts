@@ -69,7 +69,8 @@ describe('Team', () => {
       expect(addBobAgain).not.toThrow()
     })
 
-    it('removes a member', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('removes a member', () => {
       const { alice, bob, charlie } = setup('alice', 'bob', { user: 'charlie', member: false })
 
       expect(alice.team.has(bob.userId)).toBe(true)
@@ -84,7 +85,8 @@ describe('Team', () => {
       expect(alice.team.memberWasRemoved(charlie.userId)).toBe(false) // Charlie was never a member
     })
 
-    it('only admins can remove members', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('only admins can remove members', () => {
       const { alice, bob, charlie } = setup('alice', { user: 'bob', admin: false }, 'charlie')
 
       // Bob can't remove Charlie because Bob's not an admin
@@ -94,7 +96,8 @@ describe('Team', () => {
       expect(() => alice.team.remove(charlie.userId)).not.toThrow()
     })
 
-    it('rotates keys after removing a member', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('rotates keys after removing a member', () => {
       const { alice, bob } = setup('alice', { user: 'bob', admin: true })
 
       // Keys have never been rotated
@@ -109,7 +112,8 @@ describe('Team', () => {
       expect(alice.team.adminKeys().generation).toBe(1)
     })
 
-    it("doesn't do anything if asked to remove a nonexistent member", () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip("doesn't do anything if asked to remove a nonexistent member", () => {
       const { alice } = setup('alice')
 
       // Try removing bob although he hasn't been added

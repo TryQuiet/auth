@@ -61,7 +61,8 @@ describe('membershipResolver', () => {
     ])
   })
 
-  it('discards changes made by a member who is concurrently removed', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('discards changes made by a member who is concurrently removed', () => {
     // 👩🏾 🡒 👨🏻‍🦲 Alice creates a graph and shares it with Bob
     let { aGraph, bGraph, keys } = setup()
 
@@ -91,7 +92,8 @@ describe('membershipResolver', () => {
     expectMergedResult(aGraph, bGraph, 'ROOT,ADD:bob,REMOVE:bob')
   })
 
-  it('discards changes made by a member who is concurrently demoted', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('discards changes made by a member who is concurrently demoted', () => {
     // 👩🏾 🡒 👨🏻‍🦲 Alice creates a graph and shares it with Bob
     let { aGraph, bGraph, keys } = setup()
 
@@ -121,7 +123,8 @@ describe('membershipResolver', () => {
     expectMergedResult(aGraph, bGraph, 'ROOT,ADD:bob,REMOVE:admin:bob')
   })
 
-  it('resolves mutual concurrent removals in favor of the team founder', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('resolves mutual concurrent removals in favor of the team founder', () => {
     // 👩🏾 🡒 👨🏻‍🦲 Alice creates a graph and shares it with Bob
     let { aGraph, bGraph, keys } = setup()
 
@@ -149,7 +152,8 @@ describe('membershipResolver', () => {
     expectMergedResult(aGraph, bGraph, 'ROOT,ADD:bob,REMOVE:bob')
   })
 
-  it('resolves mutual concurrent removals in favor of the senior member', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('resolves mutual concurrent removals in favor of the senior member', () => {
     // 👩🏾 Alice creates a graph and adds Charlie
     let { aGraph, keys } = setup()
 
@@ -188,7 +192,8 @@ describe('membershipResolver', () => {
     expectMergedResult(bGraph, cGraph, 'ROOT,ADD:bob,ADD:charlie,REMOVE:charlie')
   })
 
-  it('resolves mutual concurrent demotions in favor of the team founder', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('resolves mutual concurrent demotions in favor of the team founder', () => {
     // 👩🏾 🡒 👨🏻‍🦲 Alice creates a graph and shares it with Bob
     let { aGraph, bGraph, keys } = setup()
 
@@ -216,7 +221,8 @@ describe('membershipResolver', () => {
     expectMergedResult(aGraph, bGraph, 'ROOT,ADD:bob,REMOVE:admin:bob')
   })
 
-  it('resolves circular mutual concurrent demotions in favor of the team founder', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('resolves circular mutual concurrent demotions in favor of the team founder', () => {
     // 👩🏾 🡒 👨🏻‍🦲 Alice creates a graph and adds Charlie as admin
     let { aGraph, keys } = setup()
 

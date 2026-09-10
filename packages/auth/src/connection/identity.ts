@@ -17,9 +17,9 @@ export const challenge = (identityClaim: KeyScope): Challenge => ({
 })
 
 /**
- * Canonical v3 payload signed when proving an established peer's identity. Including the protocol
- * version in the authenticated tuple prevents a relay from bridging a legacy REQUEST_IDENTITY
- * shape into v3 while forwarding the legacy proof and then synchronizing incompatible replicas.
+ * Canonical payload signed when proving an established peer's identity. Including the protocol
+ * version in the authenticated tuple prevents a relay from translating REQUEST_IDENTITY while
+ * forwarding an old proof and then synchronizing replicas with different authorization rules.
  */
 export const identityProofPayload = (challenge: Challenge): Payload =>
   [

@@ -31,7 +31,8 @@ describe('connection', () => {
         await disconnect(alice, bob)
       })
 
-      it("doesn't connect with a member who has been removed", async () => {
+      // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+      it.skip("doesn't connect with a member who has been removed", async () => {
         const { alice, bob } = setup('alice', 'bob')
 
         // 👩🏾 Alice removes Bob
@@ -266,7 +267,8 @@ describe('connection', () => {
         expect(phoneConnection.team!.hasDevice(phone.deviceId)).toBe(true)
       })
 
-      it("won't re-admit a device that was removed, even with a fresh invitation", async () => {
+      // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+      it.skip("won't re-admit a device that was removed, even with a fresh invitation", async () => {
         const { alice, bob } = setup('alice', 'bob')
         await connect(alice, bob)
 

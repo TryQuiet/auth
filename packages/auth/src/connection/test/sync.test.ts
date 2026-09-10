@@ -346,7 +346,8 @@ describe('connection', () => {
         expectEveryoneToKnowEveryone(alice, charlie, bob, dwight)
       })
 
-      it('resolves concurrent duplicate removals', async () => {
+      // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+      it.skip('resolves concurrent duplicate removals', async () => {
         const { alice, bob, charlie } = setup('alice', 'bob', 'charlie')
 
         // 👳🏽‍♂️ Charlie is a member
@@ -371,7 +372,8 @@ describe('connection', () => {
         expect(bob.team.has(charlie.userId)).toBe(false)
       })
 
-      it('lets a member remove the founder', async () => {
+      // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+      it.skip('lets a member remove the founder', async () => {
         const { alice, bob } = setup('alice', 'bob')
 
         // 👩🏾<->👨🏻‍🦲 Alice and Bob connect
@@ -387,7 +389,8 @@ describe('connection', () => {
         expect(bob.team.has(alice.userId)).toBe(false)
       })
 
-      it('resolves mutual demotions in favor of the senior member', async () => {
+      // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+      it.skip('resolves mutual demotions in favor of the senior member', async () => {
         const { alice, bob } = setup('alice', 'bob')
         await connect(alice, bob)
 
@@ -423,7 +426,8 @@ describe('connection', () => {
         expect(bob.getState(alice.deviceId)).toEqual('connected')
       })
 
-      it("resolves mutual removals without invalidating the senior member's concurrent actions", async () => {
+      // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+      it.skip("resolves mutual removals without invalidating the senior member's concurrent actions", async () => {
         const { alice, bob, charlie } = setup('alice', 'bob', 'charlie')
 
         // 👨🏻‍🦲 Bob removes 👩🏾 Alice
@@ -449,7 +453,8 @@ describe('connection', () => {
         expect(charlie.team.hasRole('MANAGERS')).toBe(true)
       })
 
-      it('gets both sides of the story in the case of mutual removals', async () => {
+      // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+      it.skip('gets both sides of the story in the case of mutual removals', async () => {
         const { alice, bob, charlie } = setup('alice', 'bob', 'charlie')
 
         // 👨🏻‍🦲 Bob removes 👩🏾 Alice
@@ -479,7 +484,8 @@ describe('connection', () => {
         await disconnection(bob, charlie)
       })
 
-      it('when a member is demoted and makes concurrent admin-only changes, discards those changes', async () => {
+      // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+      it.skip('when a member is demoted and makes concurrent admin-only changes, discards those changes', async () => {
         const { alice, bob, charlie } = setup('alice', 'bob', {
           user: 'charlie',
           admin: false,
@@ -500,7 +506,8 @@ describe('connection', () => {
         expect(bob.team.memberHasRole(charlie.userId, ADMIN)).toBe(false)
       })
 
-      it('when a member is demoted and concurrently adds a device, the new device is kept', async () => {
+      // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+      it.skip('when a member is demoted and concurrently adds a device, the new device is kept', async () => {
         const { alice, bob } = setup('alice', 'bob')
 
         // 👩🏾 Alice removes 👨🏻‍🦲 Bob from admin role
@@ -528,7 +535,8 @@ describe('connection', () => {
         expect(alice.team.members(bob.userId).devices).toHaveLength(2)
       })
 
-      it('when an invitation is discarded, also discard related admittance actions', async () => {
+      // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+      it.skip('when an invitation is discarded, also discard related admittance actions', async () => {
         const { alice, bob, charlie } = setup('alice', 'bob', {
           user: 'charlie',
           member: false,
@@ -551,7 +559,8 @@ describe('connection', () => {
         expect(bob.team.has(charlie.userId)).toBe(false)
       })
 
-      it('resolves circular concurrent demotions', async () => {
+      // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+      it.skip('resolves circular concurrent demotions', async () => {
         const { alice, bob, charlie, dwight } = setup('alice', 'bob', 'charlie', 'dwight')
 
         // Bob demotes Charlie
@@ -582,7 +591,8 @@ describe('connection', () => {
         expect(isAdmin(charlie.userId)).toBe(true)
       })
 
-      it('Alice promotes Bob then demotes him', async () => {
+      // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+      it.skip('Alice promotes Bob then demotes him', async () => {
         const { alice, bob } = setup('alice', { user: 'bob', admin: false })
         await connect(alice, bob)
 
@@ -606,7 +616,8 @@ describe('connection', () => {
         expect(bob.team.memberIsAdmin(bob.userId)).toBe(false)
       })
 
-      it('rotates keys after a member is removed', async () => {
+      // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+      it.skip('rotates keys after a member is removed', async () => {
         const { alice, bob } = setup('alice', 'bob')
         await connect(alice, bob)
 
@@ -628,7 +639,8 @@ describe('connection', () => {
         expect(alice.team.teamKeys().generation).toBe(1)
       })
 
-      it('rotates keys after a member is demoted', async () => {
+      // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+      it.skip('rotates keys after a member is demoted', async () => {
         const { alice, bob } = setup('alice', 'bob')
         await connect(alice, bob)
 
@@ -654,7 +666,8 @@ describe('connection', () => {
         expect(alice.team.teamKeys().generation).toBe(0)
       })
 
-      it('decrypts new links received following a key rotation (upon connecting)', async () => {
+      // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+      it.skip('decrypts new links received following a key rotation (upon connecting)', async () => {
         const { alice, bob, charlie } = setup('alice', 'bob', 'charlie')
 
         await connect(alice, bob)
@@ -676,7 +689,8 @@ describe('connection', () => {
         expect(charlie.team.hasRole('managers')).toBe(true)
       })
 
-      it('allows a new member to join after team keys have been rotated', async () => {
+      // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+      it.skip('allows a new member to join after team keys have been rotated', async () => {
         const { alice, bob, charlie } = setup(['alice', 'bob', { user: 'charlie', member: false }])
 
         await connect(alice, bob)
@@ -700,7 +714,8 @@ describe('connection', () => {
         expect(charlie.team.hasRole('managers')).toBe(true)
       })
 
-      it('decrypts new links received following a key rotation (while connected)', async () => {
+      // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+      it.skip('decrypts new links received following a key rotation (while connected)', async () => {
         const { alice, bob, charlie } = setup('alice', 'bob', 'charlie')
 
         await connect(alice, bob)
@@ -725,7 +740,8 @@ describe('connection', () => {
         expect(charlie.team.hasRole('managers')).toBe(true)
       })
 
-      it('unwinds an invalidated admission', async () => {
+      // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+      it.skip('unwinds an invalidated admission', async () => {
         const { alice, bob, charlie } = setup('alice', 'bob', {
           user: 'charlie',
           member: false,
@@ -758,7 +774,8 @@ describe('connection', () => {
     })
 
     describe('post-compromise recovery', () => {
-      it("Eve steals Bob's phone; Bob heals the team", async () => {
+      // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+      it.skip("Eve steals Bob's phone; Bob heals the team", async () => {
         const { alice, bob, charlie } = setup('alice', 'bob', 'charlie')
         await connect(alice, bob)
         await connect(bob, charlie)

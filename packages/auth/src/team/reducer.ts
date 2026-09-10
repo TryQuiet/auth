@@ -3,6 +3,7 @@ import { Logger } from '@localfirst/shared'
 import { ADMIN } from 'role/index.js'
 import { clone, composeTransforms } from 'util/index.js'
 import { invalidLinkReducer } from './invalidLinkReducer.js'
+import { isDisabledAction } from './disabledActions.js'
 import { setHead } from './setHead.js'
 import {
   addInvitedDevice,
@@ -76,6 +77,11 @@ export const reducer: Reducer<TeamState, TeamAction, TeamContext> = (
   if (!validation.isValid) {
     throw validation.error
   }
+
+  // Preserve authenticated graph history without applying a disabled operation or its keys.
+  // Retaining its lockboxes would still allow a modified peer to force key rotation. A later
+  // link encrypted under such a rotation is rejected before Team.merge installs any graph.
+  if (isDisabledAction(link.body)) return setHead(link)(state)
 
   // Apply the semantic state transition before collecting its lockbox deliveries. A delivery
   // policy can then compare the plan with both the state that authorized the action and the state

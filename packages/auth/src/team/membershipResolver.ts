@@ -25,6 +25,7 @@ import {
 } from 'team/types.js'
 import { arraysAreEqual } from 'util/arraysAreEqual.js'
 import { isAdminOnlyAction } from './isAdminOnlyAction.js'
+import { isDisabledAction } from './disabledActions.js'
 
 /**
  * This is a custom resolver, used to flatten a graph of team membership operations into a strictly
@@ -41,6 +42,8 @@ export const membershipResolver: Resolver<TeamAction, TeamContext> = graph => {
   const bubbles = getConcurrentBubbles(graph).map(hashes => hashes.map(hash => graph.links[hash]))
   const invalidLinks: TeamLink[] = []
   for (let bubble of bubbles) {
+    // Ignored removals must not invalidate their targets' concurrent work or admissions.
+    bubble = bubble.filter(link => !isDisabledAction(link.body))
     for (const ruleName in membershipRules) {
       // Apply this rule to find any links that need to be invalidated
       const rule = membershipRules[ruleName]

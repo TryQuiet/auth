@@ -40,7 +40,8 @@ describe('visibleKeys', () => {
     expect(keysAdminSees.map(getScope)).toEqual([{ type: ROLE, name: 'MANAGERS' }])
   })
 
-  it('after rotating keys, can still see the same scopes', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('after rotating keys, can still see the same scopes', () => {
     const { alice } = setup('alice')
     const getUserKeys = () => select.visibleKeys(alice.team.state, alice.user.keys).map(getScope)
 

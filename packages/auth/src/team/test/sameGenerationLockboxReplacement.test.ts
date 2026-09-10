@@ -81,7 +81,8 @@ describe('same-generation lockbox replacement', () => {
     return { alice, legitimateKeys, evilKeys, recipient: currentRoleLockbox!.recipient, attackWith }
   }
 
-  it('a removed role member cannot rebind the current generation to a key they control', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('a removed role member cannot rebind the current generation to a key they control', () => {
     const { alice, legitimateKeys, evilKeys, recipient, attackWith } = setupRemovedRoleMember()
 
     // The forged lockbox is honest about what it carries: its manifest advertises Bob's public
@@ -99,7 +100,8 @@ describe('same-generation lockbox replacement', () => {
     )
   })
 
-  it('nor by lying in the manifest about which key the lockbox contains', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('nor by lying in the manifest about which key the lockbox contains', () => {
     const { alice, legitimateKeys, evilKeys, recipient, attackWith } = setupRemovedRoleMember()
 
     // Authorization reads the public manifest; only recipients can decrypt the payload. So this
