@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import sodium from 'libsodium-wrappers-sumo'
 import {
   asymmetric,
   base58,
@@ -9,7 +10,50 @@ import {
   signatures,
 } from '../index.js'
 
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
 describe('keypair validation', () => {
+  it.each(['encryption', 'signature'] as const)(
+    'reuses successful %s correspondence checks but rechecks shape and changed key material',
+    kind => {
+      const pair = kind === 'encryption' ? asymmetric.keyPair() : signatures.keyPair()
+      const other = kind === 'encryption' ? asymmetric.keyPair() : signatures.keyPair()
+      const validate = kind === 'encryption' ? isValidEncryptionKeypair : isValidSignatureKeypair
+      const derive = vi.spyOn(
+        sodium,
+        kind === 'encryption' ? 'crypto_scalarmult_base' : 'crypto_sign_seed_keypair'
+      )
+      expect(validate(pair)).toBe(true)
+      expect(validate({ ...pair })).toBe(true)
+      expect(derive).toHaveBeenCalledTimes(1)
+      expect(validate({ ...pair, extra: undefined })).toBe(false)
+      pair.publicKey = other.publicKey
+      expect(validate(pair)).toBe(false)
+      expect(derive).toHaveBeenCalledTimes(2)
+      pair.secretKey = other.secretKey
+      expect(validate(pair)).toBe(true)
+      expect(derive).toHaveBeenCalledTimes(3)
+      const corrupted = keyToBytes(pair.secretKey).slice()
+      corrupted[corrupted.length - 1] ^= 1
+      expect(validate({ ...pair, secretKey: base58.encode(corrupted) })).toBe(false)
+    }
+  )
+
+  it.each(['encryption', 'signature'] as const)('bounds retained %s validation results', kind => {
+    const generate = kind === 'encryption' ? asymmetric.keyPair : signatures.keyPair
+    const validate = kind === 'encryption' ? isValidEncryptionKeypair : isValidSignatureKeypair
+    const first = generate()
+    expect(validate(first)).toBe(true)
+    for (let i = 0; i < 256; i++) expect(validate(generate())).toBe(true)
+    const derive = vi.spyOn(
+      sodium,
+      kind === 'encryption' ? 'crypto_scalarmult_base' : 'crypto_sign_seed_keypair'
+    )
+    expect(validate(first)).toBe(true)
+    expect(derive).toHaveBeenCalledTimes(1)
+  })
   it('accepts generated encryption and signature keypairs', () => {
     const encryption = asymmetric.keyPair('encryption keypair validation vector')
     const signature = signatures.keyPair('signature keypair validation vector')

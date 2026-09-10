@@ -2,6 +2,18 @@ import sodium from 'libsodium-wrappers-sumo'
 import { type Base58, type Base58Keypair } from './types.js'
 import { keyToBytes } from './util/index.js'
 
+// Cache only successful correspondence checks, separately for each algorithm. Bound retention of
+// secret material, and key by both strings so mutations and freshly decoded copies behave alike.
+const CACHE_LIMIT = 256
+const encryptionPairs = new Set<string>()
+const signaturePairs = new Set<string>()
+
+const remember = (cache: Set<string>, key: string): true => {
+  if (cache.size >= CACHE_LIMIT) cache.delete(cache.values().next().value!)
+  cache.add(key)
+  return true
+}
+
 /** Returns whether a value is a Base58-encoded byte string of exactly the requested length. */
 export const isBase58KeyOfLength = (value: unknown, expectedLength: number): value is Base58 => {
   if (typeof value !== 'string') return false
@@ -23,9 +35,11 @@ export const isValidEncryptionKeypair = (value: unknown): value is Base58Keypair
   if (!isBase58KeyOfLength(value.publicKey, sodium.crypto_box_PUBLICKEYBYTES)) return false
   if (!isBase58KeyOfLength(value.secretKey, sodium.crypto_box_SECRETKEYBYTES)) return false
 
+  const cacheKey = `${value.publicKey}:${value.secretKey}`
+  if (encryptionPairs.has(cacheKey)) return true
   const publicKey = keyToBytes(value.publicKey)
   const derivedPublicKey = sodium.crypto_scalarmult_base(keyToBytes(value.secretKey))
-  return sodium.memcmp(publicKey, derivedPublicKey)
+  return sodium.memcmp(publicKey, derivedPublicKey) && remember(encryptionPairs, cacheKey)
 }
 
 /**
@@ -39,12 +53,18 @@ export const isValidSignatureKeypair = (value: unknown): value is Base58Keypair 
   if (!isBase58KeyOfLength(value.publicKey, sodium.crypto_sign_PUBLICKEYBYTES)) return false
   if (!isBase58KeyOfLength(value.secretKey, sodium.crypto_sign_SECRETKEYBYTES)) return false
 
+  const cacheKey = `${value.publicKey}:${value.secretKey}`
+  if (signaturePairs.has(cacheKey)) return true
   const publicKey = keyToBytes(value.publicKey)
   const secretKey = keyToBytes(value.secretKey)
   const seed = secretKey.slice(0, sodium.crypto_sign_SEEDBYTES)
   const derived = sodium.crypto_sign_seed_keypair(seed)
 
-  return sodium.memcmp(publicKey, derived.publicKey) && sodium.memcmp(secretKey, derived.privateKey)
+  return (
+    sodium.memcmp(publicKey, derived.publicKey) &&
+    sodium.memcmp(secretKey, derived.privateKey) &&
+    remember(signaturePairs, cacheKey)
+  )
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
