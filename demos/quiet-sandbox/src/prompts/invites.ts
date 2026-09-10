@@ -3,7 +3,7 @@ import { InvitationState } from "@localfirst/auth";
 import clipboard from 'clipboardy';
 
 import actionSelect from "../components/actionSelect.js";
-import { DEFAULT_INVITATION_VALID_FOR_MS, DEFAULT_MAX_USES } from "../auth/services/invites/inviteService.js";
+import { DEFAULT_INVITATION_VALID_FOR_MS } from "../auth/services/invites/inviteService.js";
 import { LocalStorage } from "../network.js";
 
 const inviteSeedMap = new Map<string, string>()
@@ -22,7 +22,7 @@ const invitesList = async (storage: LocalStorage) => {
       message: "Select an invite",
       choices: invites.map((invite: InvitationState) => {
         return {
-          name: `${invite.id} (Remaining Uses: ${invite.maxUses - invite.uses}, Expiry: ${invite.expiration}, Revoked?: ${invite.revoked})`,
+          name: `${invite.id} (Usage: Multi-use, Expiry: ${invite.expiration}, Revoked?: ${invite.revoked})`,
           value: invite.id,
         };
       }),
@@ -51,8 +51,9 @@ const invitesList = async (storage: LocalStorage) => {
         if (seed == null) {
           console.warn(`No seed found for invite with ID ${invite.id}`)
         } else {
-          await clipboard.write(seed)
-          if (await clipboard.read() === seed) {
+          const invitationCode = `${storage.getSigChain()!.team.id}:${seed}`
+          await clipboard.write(invitationCode)
+          if (await clipboard.read() === invitationCode) {
             console.log('Copied!')
           } else {
             console.warn('Copy failed!')
@@ -78,11 +79,7 @@ const inviteAdd = async (storage: LocalStorage) => {
     message: "How long, in milliseconds, should this invite be valid for?",
     default: DEFAULT_INVITATION_VALID_FOR_MS.toString(),
   });
-  const maxUses = await input({
-    message: "How many times can this invite be used?",
-    default: DEFAULT_MAX_USES.toString()
-  });
-  const invite = sigChain.invites.create(Number(validForMs), Number(maxUses))
+  const invite = sigChain.invites.create(Number(validForMs))
   console.log(`Created new invite with seed ${invite.seed}`)
   inviteSeedMap.set(invite.id, invite.seed)
 

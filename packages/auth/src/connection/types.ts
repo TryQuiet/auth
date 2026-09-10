@@ -2,10 +2,8 @@
 
 import type {
   Base58,
-  Hash,
-  KeyScope,
   Keyring,
-  Keyset,
+  KeyScope,
   SyncState,
   UnixTimestamp,
   UserWithSecrets,
@@ -16,11 +14,71 @@ import type {
   FirstUseDevice,
   FirstUseDeviceWithSecrets,
 } from 'device/index.js'
-import type { ProofOfInvitation } from 'invitation/index.js'
+import type { InvitationClaim, ProofOfInvitation } from 'invitation/index.js'
 import type { ServerWithSecrets } from 'server/index.js'
-import type { Member, Team } from 'team/index.js'
+import type { SharedLogger } from '@localfirst/shared'
+import type { Member, Team, TeamState } from 'team/index.js'
 import type { ConnectionErrorPayload } from './errors.js'
 import type { ConnectionMessage } from './message.js'
+import type { InvitationAcceptanceValidationResult } from './validateInvitationAcceptance.js'
+
+// CONNECTION PARAMETERS
+
+export type ConnectionParams = {
+  /** A function to send messages to our peer. This how you hook this up to your network stack. */
+  sendMessage: (message: Uint8Array) => void
+
+  /** The initial context. */
+  context: Context
+  createLogger?: (packageName: string) => SharedLogger
+
+  /**
+   * Durable-admission gate (private#203 / QSS-006, threat-model C3 "Option A").
+   *
+   * Binds membership to its record: nobody may hold a team's keys without a durable record of
+   * their admission on the peer that admitted them. The adversary is the joiner: a peer holding
+   * a valid invitation is entitled to join but not to join unrecorded, and it is exactly the
+   * party that cannot be relied on to report its own admission afterwards. Called on the
+   * admitting side after ADMIT_MEMBER / ADMIT_DEVICE has been appended to the in-memory team and
+   * BEFORE ACCEPT_INVITATION is queued. Must resolve only once the team graph and the current
+   * team keyring are durably persisted. If it rejects, the connection fails with
+   * ADMISSION_NOT_PERSISTED and no acceptance is sent. Optional so upstream consumers and tests
+   * keep working unchanged; Quiet's adapters always supply it.
+   *
+   * What this gates is the acceptance to the invitee, not the admission itself. Appending the
+   * link already told every peer this `Team` is connected to, so established members receive the
+   * new head before this resolves and persist it through their own gates. Holding it back from
+   * them would take a team-wide durable-head barrier, which this is not.
+   *
+   * CONTRACT ON REJECTION. Rejecting is always safe: nothing has been sent, and the invitee holds
+   * only its invitation. What an implementation does with the in-memory admission afterwards is
+   * its choice between two honest options, and it must pick one deliberately:
+   *
+   *  - Restore the team to its last durable state before it takes part in another handshake.
+   *    The invitee's retry is then an ordinary first admission and converges. Quiet's sync
+   *    server does this: it evicts the community and reads it back from PostgreSQL.
+   *  - Keep the in-memory admission and accept that this invitee cannot converge with this peer
+   *    until the process restarts and reloads the durable graph without it. Quiet's client does
+   *    this, because the rollback it would need is more machinery than the failure warrants on a
+   *    member device. A later successful write may then make the admission durable without the
+   *    invitee ever having received keys: a recorded, keyless member, which is the safe direction
+   *    of the asymmetry (the threat is an unrecorded one).
+   *
+   * Why a retry cannot converge without a restore: the admission is already on the in-memory
+   * graph and carries the proof from the handshake that failed. Registered ids are unique, so
+   * the peer cannot append a second admission for that identity; and the invitee requires the
+   * delivered graph to contain an admission bound to its *current* proof, because that binding
+   * is what stops an acceptor wrapping an older, pre-removal graph in a fresh envelope. So every
+   * retry with that peer fails closed with ADMIT_MEMBER_LINK_MISSING. See private#203 / QSS-006
+   * and invariants D5, D7 and G5.
+   *
+   * `signal` aborts if the connection is torn down while the write is outstanding. Honouring it
+   * is a courtesy — the connection discards whatever the promise eventually produces either way —
+   * but it lets an adapter drop work nobody is waiting for. A one-argument implementation stays
+   * valid.
+   */
+  persistAdmission?: (team: Team, opts?: { signal: AbortSignal }) => Promise<void>
+}
 
 export type ConnectionEvents = {
   /** state change in the connection */
@@ -61,29 +119,34 @@ export type ConnectionEvents = {
 // IDENTITY CLAIMS
 
 export type MemberIdentityClaim = {
-  // I'm already a member, I just send my deviceId
+  /** I'm already a member; I authenticate as the device I sign links with. */
   deviceId: string
 }
 
-export type InviteeMemberIdentityClaim = {
-  // I'm a new user and I have an invitation
-  proofOfInvitation: ProofOfInvitation
-  userName: string
-  userKeys: Keyset
-  device: Device
+export type ServerIdentityClaim = {
+  /** I'm a server; I authenticate as my immutable identity keys, never as my host. */
+  serverId: string
 }
 
-export type InviteeDeviceIdentityClaim = {
-  // I'm a new device for an existing user and I have an invitation
+/**
+ * What an invitee presents instead of authenticating: the exact identity it wants registered, a
+ * proof that it holds the invitation seed, and a proof that it holds the keys in the claim.
+ *
+ * All three travel verbatim to `Team.admitMember` / `Team.admitDevice`, which post them on the
+ * graph, so every other replica re-derives the admitted identity from the same signed material
+ * the admitting peer saw.
+ */
+export type InviteeIdentityClaim = {
   proofOfInvitation: ProofOfInvitation
-  userName: string
-  device: FirstUseDevice
+
+  /** The identity being registered. Both proofs are signed over exactly this object. */
+  claim: InvitationClaim
+
+  /** Signature by the new device's own signing key over the claim; only the invitee can make it. */
+  possessionProof: Base58
 }
 
-export type IdentityClaim =
-  | MemberIdentityClaim
-  | InviteeMemberIdentityClaim
-  | InviteeDeviceIdentityClaim
+export type IdentityClaim = MemberIdentityClaim | ServerIdentityClaim | InviteeIdentityClaim
 
 // CONTEXT
 
@@ -97,12 +160,14 @@ export type InviteeMemberContext = {
   user: UserWithSecrets
   device: DeviceWithSecrets
   invitationSeed: string
+  expectedTeamId: Base58
 }
 
 export type InviteeDeviceContext = {
   userName: string
   device: FirstUseDeviceWithSecrets
   invitationSeed: string
+  expectedTeamId: Base58
 }
 
 export type InviteeContext = InviteeMemberContext | InviteeDeviceContext
@@ -119,8 +184,44 @@ export type Challenge = KeyScope & {
   timestamp: UnixTimestamp
 }
 
+/** An `ACCEPT_INVITATION` payload, along with the team state we derived from it. */
+export type InvitationAcceptance = {
+  serializedGraph: Uint8Array
+  teamKeyring: Keyring
+
+  /** Undefined if the graph didn't deserialize or didn't validate. */
+  state?: TeamState
+}
+
 export type ConnectionContext = {
-  device: DeviceWithSecrets | FirstUseDeviceWithSecrets
+  /** Our device — absent on a server, since a server signs as itself rather than as a device. */
+  device?: DeviceWithSecrets | FirstUseDeviceWithSecrets
+
+  /** Present only when we're a server. */
+  server?: ServerWithSecrets
+
+  /**
+   * Our member identity. On a server this is the server's projection as a member; on a device
+   * joining with an invitation it's unknown until we've read it out of the team graph.
+   */
+  user?: UserWithSecrets
+
+  /** The user an invited device expects to belong to. Display only — the owner comes from the
+   * invitation record on the graph. */
+  userName?: string
+
+  team?: Team
+
+  invitationSeed?: string
+
+  /** Independently supplied immutable root of the team an invitation is expected to join. */
+  expectedTeamId?: Base58
+
+  /** Challenge we sent with `REQUEST_IDENTITY`; an invitee's proof to us must be bound to it. */
+  identityNonce: Base58
+
+  /** Nonce we bind our own invitation proof to. */
+  inviteeNonce: Base58
 
   ourIdentityClaim?: IdentityClaim
   theirIdentityClaim?: IdentityClaim
@@ -130,18 +231,28 @@ export type ConnectionContext = {
   theirDevice?: Device | FirstUseDevice
   peer?: Member
 
+  /** The invitation acceptance we received, and the team state we derived from it. */
+  acceptance?: InvitationAcceptance
+
+  /** Authentication and exact-admission result computed once for the received acceptance. */
+  invitationAcceptanceResult?: InvitationAcceptanceValidationResult
+
+  /**
+   * Set when this connection commits to running the durable-admission gate, and when it has
+   * queued the acceptance (private#203 audit M-4). A `Connection` admits at most one invitee,
+   * once. Both are latches: nothing clears them, so no sequence of protocol messages can make the
+   * application persist twice or put a second copy of the team graph and keyring on the wire.
+   */
+  admissionGated?: boolean
+  acceptanceQueued?: boolean
+
   seed?: Uint8Array
-  theirEncryptedSeed?: Uint8Array
   sessionKey?: Uint8Array
 
-  theirHead?: Hash
   syncState?: SyncState
 
   error?: ErrorPayload
-} & Partial<InviteeDeviceContext> &
-  Partial<InviteeMemberContext> &
-  Partial<ServerContext> &
-  Partial<MemberContext>
+}
 
 export type ErrorPayload = {
   message: string
@@ -155,7 +266,7 @@ export type ErrorPayload = {
 type C = Context | ConnectionContext
 
 export const isMemberContext = (c: C): c is MemberContext => {
-  return 'team' in c && c.team !== undefined
+  return 'team' in c && c.team !== undefined && !isServerContext(c)
 }
 
 export const isInviteeContext = (c: C): c is InviteeContext => {
@@ -180,14 +291,22 @@ export const isMemberClaim = (claim: IdentityClaim): claim is MemberIdentityClai
   return 'deviceId' in claim && claim.deviceId !== undefined
 }
 
-export const isInviteeMemberClaim = (claim: IdentityClaim): claim is InviteeMemberIdentityClaim => {
-  return isInviteeClaim(claim) && 'userKeys' in claim && claim.userKeys !== undefined
+export const isServerClaim = (claim: IdentityClaim): claim is ServerIdentityClaim => {
+  return 'serverId' in claim && claim.serverId !== undefined
 }
 
-export const isInviteeDeviceClaim = (claim: IdentityClaim): claim is InviteeDeviceIdentityClaim => {
-  return isInviteeClaim(claim) && !('userKeys' in claim)
-}
-
-export const isInviteeClaim = (claim: IdentityClaim): claim is InviteeDeviceIdentityClaim => {
+export const isInviteeClaim = (claim: IdentityClaim): claim is InviteeIdentityClaim => {
   return 'proofOfInvitation' in claim && claim.proofOfInvitation !== undefined
+}
+
+export const isInviteeMemberClaim = (
+  claim: IdentityClaim
+): claim is InviteeIdentityClaim & { claim: { invitationKind: 'member' } } => {
+  return isInviteeClaim(claim) && claim.claim.invitationKind === 'member'
+}
+
+export const isInviteeDeviceClaim = (
+  claim: IdentityClaim
+): claim is InviteeIdentityClaim & { claim: { invitationKind: 'device' } } => {
+  return isInviteeClaim(claim) && claim.claim.invitationKind === 'device'
 }

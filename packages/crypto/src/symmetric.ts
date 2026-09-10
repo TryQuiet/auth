@@ -1,13 +1,24 @@
-import sodium, { StateAddress } from 'libsodium-wrappers-sumo'
+import sodium, { type StateAddress } from 'libsodium-wrappers-sumo'
 import { pack, unpack } from 'msgpackr'
 import { stretch } from './stretch.js'
-import { DecryptError, EncryptStreamResult, INVALID_STREAM_DECRYPT_ERROR_MSG, INVALID_TAG_DECRYPT_ERROR_MSG, StreamDecryptError, StreamEncryptError, type Base58, type Cipher, type Password, type Payload } from './types.js'
+import {
+  DecryptError,
+  type EncryptStreamResult,
+  INVALID_STREAM_DECRYPT_ERROR_MSG,
+  INVALID_TAG_DECRYPT_ERROR_MSG,
+  StreamDecryptError,
+  StreamEncryptError,
+  type Base58,
+  type Cipher,
+  type Password,
+  type Payload,
+} from './types.js'
 import { base58, keyToBytes } from './util/index.js'
 
 /**
  * Symmetrically encrypts a byte array and calculate a hash of the nonce and authentication
  * tag to prevent invisible salamanders attacks
- * 
+ *
  * References:
  *  - https://libsodium.gitbook.io/doc/secret-key_cryptography/aead#robustness
  *  - https://github.com/TryQuiet/quiet/issues/2711
@@ -31,9 +42,9 @@ const encryptBytes = (
 /**
  * Symmetrically decrypts a message encrypted by `symmetric.encryptBytes` after validating
  * the tag against the nonce and mac to prevent invisible salamanders attacks
- * 
+ *
  * Returns the original byte array
- * 
+ *
  * References:
  *  - https://libsodium.gitbook.io/doc/secret-key_cryptography/aead#robustness
  *  - https://github.com/TryQuiet/quiet/issues/2711
@@ -48,7 +59,7 @@ const decryptBytes = (
   const { nonce, message, tag, mac } = unpack(cipher) as Cipher
   const tagValid = sodium.crypto_auth_verify(tag, new Uint8Array([...nonce, ...mac]), key)
   if (!tagValid) {
-      throw new DecryptError(INVALID_TAG_DECRYPT_ERROR_MSG)
+    throw new DecryptError(INVALID_TAG_DECRYPT_ERROR_MSG)
   }
   const decrypted = sodium.crypto_secretbox_open_detached(message, mac, nonce, key)
   return unpack(decrypted)
@@ -66,10 +77,13 @@ const encryptBytesStream = (
   // Prepare stream for encryption
   const key = stretch(password)
 
-  const { state, header } = sodium.crypto_secretstream_xchacha20poly1305_init_push(key);
+  const { state, header } = sodium.crypto_secretstream_xchacha20poly1305_init_push(key)
 
   // Encrypt stream
-  const createEncryptStream = async function*(stream: AsyncIterable<Uint8Array>, state: StateAddress): AsyncGenerator<Uint8Array> {
+  const createEncryptStream = async function* (
+    stream: AsyncIterable<Uint8Array>,
+    state: StateAddress
+  ): AsyncGenerator<Uint8Array> {
     // Encrypt each chunk of the stream with message tag
     for await (const chunk of stream) {
       try {
@@ -78,11 +92,11 @@ const encryptBytesStream = (
           chunk,
           null,
           sodium.crypto_secretstream_xchacha20poly1305_TAG_MESSAGE
-        );
+        )
         yield encryptedChunk
-      } catch (e) {
+      } catch (error) {
         throw new StreamEncryptError(`Error while encrypting byte stream message`, {
-          cause: e
+          cause: error,
         })
       }
     }
@@ -94,11 +108,11 @@ const encryptBytesStream = (
         new Uint8Array(),
         null,
         sodium.crypto_secretstream_xchacha20poly1305_TAG_FINAL
-      );
+      )
       yield encryptedFinalChunk
-    } catch (e) {
+    } catch (error) {
       throw new StreamEncryptError(`Error while encrypting final message of byte stream`, {
-        cause: e
+        cause: error,
       })
     }
   }
@@ -123,40 +137,46 @@ const decryptBytesStream = (
   // Prepare stream for decryption
   const key = stretch(password)
 
-  const state = sodium.crypto_secretstream_xchacha20poly1305_init_pull(header, key);
+  const state = sodium.crypto_secretstream_xchacha20poly1305_init_pull(header, key)
 
   // Decrypt stream
-  const createDecryptStream = async function*(encryptedStream: AsyncIterable<Uint8Array>, state: StateAddress): AsyncGenerator<any> {
+  const createDecryptStream = async function* (
+    encryptedStream: AsyncIterable<Uint8Array>,
+    state: StateAddress
+  ): AsyncGenerator<any> {
     // Decrypt each chunk of the byte stream
     for await (const chunk of encryptedStream) {
       try {
-        const decryptedChunk = sodium.crypto_secretstream_xchacha20poly1305_pull(
-          state,
-          chunk
-        );
+        const decryptedChunk = sodium.crypto_secretstream_xchacha20poly1305_pull(state, chunk)
 
         switch (decryptedChunk.tag) {
           // all valid encrypted chunks on the stream should end with this tag
-          case sodium.crypto_secretstream_xchacha20poly1305_TAG_MESSAGE:
+          case sodium.crypto_secretstream_xchacha20poly1305_TAG_MESSAGE: {
             yield decryptedChunk.message
             break
+          }
           // the final tag is only here to mark the end of the stream but contains no valid information
-          case sodium.crypto_secretstream_xchacha20poly1305_TAG_FINAL:
+          case sodium.crypto_secretstream_xchacha20poly1305_TAG_FINAL: {
             break
+          }
           // if we are missing a tag that means something is wrong with the incoming stream
-          case undefined:
+          case undefined: {
             throw new StreamDecryptError(INVALID_STREAM_DECRYPT_ERROR_MSG)
+          }
           // any other tag means we've hit an issue
-          default:
-            throw new StreamDecryptError(`Invalid tag ${decryptedChunk.tag} seen while decrypting byte stream`)
+          default: {
+            throw new StreamDecryptError(
+              `Invalid tag ${decryptedChunk.tag} seen while decrypting byte stream`
+            )
+          }
         }
-      } catch (e) {
-        if (e instanceof StreamDecryptError) {
-          throw e
+      } catch (error) {
+        if (error instanceof StreamDecryptError) {
+          throw error
         }
 
         throw new StreamDecryptError(`Error while decrypting byte stream`, {
-          cause: e
+          cause: error,
         })
       }
     }
@@ -193,10 +213,16 @@ const decrypt = (
   return decryptBytes(cipherBytes, password)
 }
 
-const packToUint8Array = (
-  payload: Payload
-): Uint8Array => {
+const packToUint8Array = (payload: Payload): Uint8Array => {
   return new Uint8Array(pack(payload))
 }
 
-export const symmetric = { encryptBytes, decryptBytes, encrypt, decrypt, encryptBytesStream, decryptBytesStream, packToUint8Array }
+export const symmetric = {
+  encryptBytes,
+  decryptBytes,
+  encrypt,
+  decrypt,
+  encryptBytesStream,
+  decryptBytesStream,
+  packToUint8Array,
+}

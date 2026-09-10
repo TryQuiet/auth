@@ -8,7 +8,7 @@ import { generateMessage } from 'sync/generateMessage.js'
 import { initSyncState } from 'sync/initSyncState.js'
 import { receiveMessage } from 'sync/receiveMessage.js'
 import { type SyncMessage, type SyncState } from 'sync/types.js'
-import { type UserWithSecrets } from 'user/index.js'
+import { type TestSigner } from './setup.js'
 
 /** Simulates a peer-to-peer network. */
 export class Network {
@@ -120,19 +120,19 @@ export class Peer {
 export const setupWithNetwork =
   (keys: KeysetWithSecrets) =>
   (...userNames: string[]) => {
-    const users = setup(...userNames)
+    const signers = setup(...userNames)
     const founderUserName = userNames[0]
-    const founderUser = users[founderUserName]
+    const founderSigner = signers[founderUserName]
 
-    const graph = createGraph({ user: founderUser, keys })
+    const graph = createGraph({ signer: founderSigner, keys })
 
     const network = new Network(keys)
 
     const userRecords = {} as Record<string, TestUserStuff>
-    for (const userName in users) {
-      const user = users[userName]
+    for (const userName in signers) {
+      const signer = signers[userName]
       const peer = new Peer(userName, graph, network)
-      userRecords[userName] = { user, peer }
+      userRecords[userName] = { signer, peer }
     }
 
     const founder = userRecords[founderUserName]
@@ -154,6 +154,6 @@ export type NetworkMessage = {
 }
 
 export type TestUserStuff = {
-  user: UserWithSecrets
+  signer: TestSigner
   peer: Peer
 }

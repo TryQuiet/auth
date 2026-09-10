@@ -1,6 +1,7 @@
-import { redactDevice } from 'index.js'
+import * as teams from 'team/index.js'
 import { setup as setupUsers } from 'util/testing/index.js'
 import { describe, expect, it } from 'vitest'
+import { deviceAdmission } from './helpers.js'
 
 describe('Team', () => {
   const setup = () => {
@@ -105,23 +106,44 @@ describe('Team', () => {
       expect(getDevice).toThrow()
     })
 
-    it('rotates keys after removing a device', () => {
+    it('has an admin rotate shared keys after a non-admin removes a device', () => {
       const { alice, bob } = setup()
 
       // Keys have never been rotated
-      expect(alice.team.teamKeys().generation).toBe(0)
-      const { secretKey } = alice.team.teamKeys()
+      expect(bob.team.teamKeys().generation).toBe(0)
+      const { secretKey } = bob.team.teamKeys()
 
-      // Add bob's phone
-      const phone = redactDevice(bob.phone!)
-      bob.team.addForTesting(bob.user, [], phone)
+      // Bob invites his phone and admits it. A device can only join through an invitation now —
+      // that's what makes it prove it holds its own keys before anything is registered for it.
+      const { seed } = bob.team.inviteDevice()
+      bob.team.admitDevice(...deviceAdmission(seed, bob.phone!))
+
+      // The phone instantiates the team and posts a lockbox holding Bob's user keys, which is what
+      // gives it access to everything Bob can see
+      const phoneTeam = teams.load(
+        bob.team.save(),
+        { user: bob.user, device: bob.phone! },
+        bob.team.teamKeyring()
+      )
+      phoneTeam.join(bob.team.teamKeyring())
+      bob.team.merge(phoneTeam.graph)
 
       // Remove bob's phone
-      bob.team.removeDevice(phone.deviceId)
+      bob.team.removeDevice(bob.phone!.deviceId)
 
-      // Team keys have now been rotated once
+      // Bob can rotate his own USER keys, but his shared-key batch is dropped and queued for an
+      // admin rather than granting every key holder rotation authority.
+      expect(bob.team.teamKeys().generation).toBe(0)
+      expect(bob.team.state.pendingKeyRotations).toContain(bob.userId)
+
+      // When an admin receives the removal, it publishes the shared-key rotation. Bob then learns
+      // that authorized rotation normally.
+      alice.team.merge(bob.team.graph)
+      bob.team.merge(alice.team.graph)
+
       expect(bob.team.teamKeys().generation).toBe(1)
       expect(bob.team.teamKeys().secretKey).not.toBe(secretKey)
+      expect(bob.team.state.pendingKeyRotations).not.toContain(bob.userId)
     })
   })
 })

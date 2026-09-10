@@ -56,9 +56,9 @@ const replaceNamesWithEmoji = (s: string) => {
 
 const mermaidNodeFromLink = (link: TeamLink) => {
   {
-    const { userId, type } = link.body
+    const { signer, type } = link.body
 
-    const author = getUserName(userId)
+    const author = getUserName(signer.id)
     const summary = actionSummary(link.body)
 
     let node = `("
@@ -103,10 +103,6 @@ const actionSummary = (action: TeamLinkBody) => {
       return `${action.payload.userId} ${action.payload.roleName}`
     }
 
-    case 'ADD_DEVICE': {
-      return `${action.payload.device.userId}::${action.payload.device.deviceName}`
-    }
-
     case 'REMOVE_DEVICE': {
       return `${action.payload.deviceId}`
     }
@@ -121,11 +117,11 @@ const actionSummary = (action: TeamLinkBody) => {
     }
 
     case 'ADMIT_DEVICE': {
-      return action.payload.device.deviceName
+      return action.payload.claim.device.deviceName
     }
 
     case 'ADMIT_MEMBER': {
-      return action.payload.memberKeys.name
+      return action.payload.claim.memberKeys.name
     }
 
     case 'CHANGE_MEMBER_KEYS': {

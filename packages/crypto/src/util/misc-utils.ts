@@ -1,6 +1,14 @@
-import sodium, { Uint8ArrayOutputFormat } from 'libsodium-wrappers-sumo'
+import sodium, { type Uint8ArrayOutputFormat } from 'libsodium-wrappers-sumo'
 
-export const randomBytes = (length: number, outputFormat?: Uint8ArrayOutputFormat | null): Uint8Array => {
+/* These snake_case names mirror libsodium's public API. */
+/* eslint unicorn/filename-case: off, @typescript-eslint/naming-convention: off */
+
+export const randomBytes = (
+  length: number,
+  // Preserve the public libsodium-compatible API, including an explicit null format.
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  outputFormat?: Uint8ArrayOutputFormat | null
+): Uint8Array => {
   return sodium.randombytes_buf(length, outputFormat)
 }
 
@@ -25,4 +33,4 @@ export const compare = (first: Uint8Array, second: Uint8Array): number => {
 }
 
 export type base64_variants = sodium.base64_variants
-export const base64_variants = sodium.base64_variants
+export const { base64_variants } = sodium

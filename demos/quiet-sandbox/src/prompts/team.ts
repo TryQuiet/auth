@@ -3,6 +3,7 @@
 import chalk from 'chalk';
 import { confirm, input } from '@inquirer/prompts';
 import clipboard from 'clipboardy';
+import type { Base58 } from '@localfirst/auth'
 
 import { SigChain } from '../auth/chain.js';
 import { LocalStorage, Networking } from '../network.js';
@@ -83,20 +84,22 @@ const teamAdd = async (storage: LocalStorage, existingPeer?: Networking): Promis
       message: "What is your username?",
       default: 'otheruser'
     });
-    const invitationSeed = await input({
-      message: "What is your invite seed?",
+    const invitationCode = await input({
+      message: "What is your invitation code?",
       default:  await clipboard.read(),
       validate: ((input) => {
         return input != null ? true : "Must enter a valid invite seed"
       })
     })
+    const [expectedTeamId, invitationSeed] = invitationCode.split(':')
     console.log(`Joining a team as user ${username} with invite seed ${invitationSeed}`);
     const prospectiveUser = UserService.createFromInviteSeed(username, invitationSeed)
     storage.setContext(prospectiveUser.context)
     storage.setAuthContext({
       user: prospectiveUser.context.user,
       device: prospectiveUser.context.device,
-      invitationSeed
+      invitationSeed,
+      expectedTeamId: expectedTeamId as Base58
     })
   }
 

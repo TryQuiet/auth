@@ -1,17 +1,32 @@
-﻿import { arrayToMap } from './util/arrayToMap.js'
+﻿import * as auth from '@localfirst/auth'
+import { arrayToMap } from './util/arrayToMap.js'
 
 export const devices = {
   laptop: { name: 'laptop', emoji: '💻' },
   phone: { name: 'phone', emoji: '📱' },
 } as Record<string, DeviceInfo>
 
+export function deviceSeed(userName: string, deviceName: string) {
+  return `${userName}:${deviceName}`
+}
+
 export const users = {
-  Alice: { userName: 'Alice', userId: 'alice-111', emoji: '👩🏾' },
-  Bob: { userName: 'Bob', userId: 'bob-222', emoji: '👨🏻‍🦲' },
-  Charlie: { userName: 'Charlie', userId: 'charlie-333', emoji: '👳🏽‍♂️' },
-  Dwight: { userName: 'Dwight', userId: 'dwight-444', emoji: '👴' },
-  Eve: { userName: 'Eve', userId: 'eve-555', emoji: '🦹‍♀️' },
+  Alice: createUserInfo('Alice', '👩🏾'),
+  Bob: createUserInfo('Bob', '👨🏻‍🦲'),
+  Charlie: createUserInfo('Charlie', '👳🏽‍♂️'),
+  Dwight: createUserInfo('Dwight', '👴'),
+  Eve: createUserInfo('Eve', '🦹‍♀️'),
 } as Record<string, UserInfo>
+
+/** Derives each demo user's stable id from the stable laptop that founds that identity. */
+function createUserInfo(userName: string, emoji: string): UserInfo {
+  const foundingDevice = auth.createFirstUseDevice({
+    deviceName: devices.laptop.name,
+    seed: deviceSeed(userName, devices.laptop.name),
+  })
+
+  return { userName, userId: auth.deriveUserId(foundingDevice.deviceId), emoji }
+}
 
 const peerArray = Object.values(users).flatMap(user =>
   Object.values(devices).map(

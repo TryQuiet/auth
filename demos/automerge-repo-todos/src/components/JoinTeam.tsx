@@ -1,7 +1,7 @@
-import * as Auth from '@localfirst/auth'
 import cx from 'classnames'
+import type * as Auth from '@localfirst/auth'
 import { useState } from 'react'
-import { createDevice } from '../util/createDevice'
+import { createDevice, createUserAndDevice } from '../util/createDevice'
 import { initializeAuthRepo } from '../util/initializeAuthRepo'
 import { parseInvitationCode } from '../util/parseInvitationCode'
 import type { SetupCallback } from './FirstUseSetup'
@@ -9,12 +9,10 @@ import type { SetupCallback } from './FirstUseSetup'
 export const JoinTeam = ({ joinAs, userName, onSetup }: Props) => {
   const [invitationCode, setInvitationCode] = useState<string>('')
 
-  const getUserAndDevice = () => {
+  const getUserAndDevice = (): { user?: Auth.UserWithSecrets; device: Auth.DeviceWithSecrets } => {
     if (joinAs === 'MEMBER') {
-      // Create new user and device
-      const user = Auth.createUser(userName) as Auth.UserWithSecrets
-      const device = createDevice(user.userId)
-      return { user, device }
+      // A new member's id derives from the device that founds their identity.
+      return createUserAndDevice(userName)
     } else {
       // Create new device (our user has already been created on another device)
       const device = createDevice(userName) // we'll temporarily use the userName instead of the userId
@@ -25,8 +23,8 @@ export const JoinTeam = ({ joinAs, userName, onSetup }: Props) => {
     const { user, device } = getUserAndDevice()
     const { auth, repo } = await initializeAuthRepo({ user, device })
 
-    const { shareId, invitationSeed } = parseInvitationCode(invitationCode)
-    auth.addInvitation({ shareId, invitationSeed, userName })
+    const { expectedTeamId, shareId, invitationSeed } = parseInvitationCode(invitationCode)
+    auth.addInvitation({ expectedTeamId, shareId, invitationSeed, userName })
 
     // Once we're admitted, we'll get the Team data and our User object
     auth.once('joined', ({ team, user }) => {

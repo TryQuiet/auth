@@ -20,7 +20,7 @@ export const decryptLink = <A extends Action, C>(
   encryptedLink: EncryptedLink,
   keys: Keyring | KeysetWithSecrets | KeysetWithSecrets[]
 ): Link<A, C> => {
-  const { senderPublicKey, recipientPublicKey, encryptedBody } = encryptedLink
+  const { senderPublicKey, recipientPublicKey, encryptedBody, signature } = encryptedLink
 
   const keyring = createKeyring(keys)
   const keyset = keyring[recipientPublicKey]
@@ -36,6 +36,7 @@ export const decryptLink = <A extends Action, C>(
 
   return {
     hash: hashEncryptedLink(encryptedBody),
+    signature,
     body: decryptedLinkBody,
   }
 }
@@ -46,17 +47,25 @@ export const decryptLink = <A extends Action, C>(
 export const decryptGraph: DecryptFn = <A extends Action, C>({
   encryptedGraph,
   keys,
+  maxTraversalSteps = 50_000,
 }: {
   encryptedGraph: MaybePartlyDecryptedGraph<A, C>
   keys: KeysetWithSecrets | KeysetWithSecrets[] | Keyring
+  maxTraversalSteps?: number
 }): Graph<A, C> => {
   const { encryptedLinks, root, childMap = {} } = encryptedGraph
-  const links = encryptedGraph.links ?? {}
   const toVisit = [root]
-  const visited: Set<Hash> = new Set()
+  const visited = new Set<Hash>()
   const decryptedLinks: Record<Hash, Link<A, C>> = {}
+  let traversalSteps = 0
 
   while (toVisit.length > 0) {
+    // The child map comes from a peer, so its size and shape are the peer's choice, not ours. Cap
+    // the walk rather than letting a crafted map keep us here indefinitely.
+    if (++traversalSteps > maxTraversalSteps) {
+      throw new Error('Graph decryption exceeded its traversal limit')
+    }
+
     const current = toVisit.pop() as Hash
 
     if (visited.has(current)) {
@@ -64,9 +73,11 @@ export const decryptGraph: DecryptFn = <A extends Action, C>({
     }
 
     const encryptedLink = encryptedLinks[current]
-    const decryptedLink =
-      links[current] ?? // if it's already decrypted, don't bother decrypting it again
-      decryptLink(encryptedLink, keys)
+
+    // Never reuse a caller-supplied plaintext `links` entry. The hash authenticates the encrypted
+    // bytes, so the body that validation and reduction consume has to come from those same bytes
+    // rather than from an object handed to us alongside them.
+    const decryptedLink = decryptLink<A, C>(encryptedLink, keys)
 
     decryptedLinks[current] = decryptedLink
 
@@ -86,11 +97,13 @@ export const decryptGraph: DecryptFn = <A extends Action, C>({
 export type DecryptFnParams<A extends Action, C> = {
   encryptedGraph: MaybePartlyDecryptedGraph<A, C>
   keys: KeysetWithSecrets | KeysetWithSecrets[] | Keyring
+  maxTraversalSteps?: number
 }
 
 export type DecryptFn = <A extends Action, C>({
   encryptedGraph,
   keys,
+  maxTraversalSteps,
 }: DecryptFnParams<A, C>) => Graph<A, C>
 
 // ignore coverage

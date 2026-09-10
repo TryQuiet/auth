@@ -54,10 +54,7 @@ export const keysAllGen = (
   return keys
 }
 
-export const allKeys = (
-  state: TeamState,
-  deviceKeys: KeysetWithSecrets
-): KeyMap => {
+export const allKeys = (state: TeamState, deviceKeys: KeysetWithSecrets): KeyMap => {
   const keysFromLockboxes = keyMap(state, deviceKeys)
 
   assert(

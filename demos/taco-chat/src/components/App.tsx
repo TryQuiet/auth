@@ -1,6 +1,6 @@
 import * as auth from '@localfirst/auth'
 import React from 'react'
-import { type PeerInfo, peers as allPeers } from '../peers.js'
+import { deviceSeed, type PeerInfo, peers as allPeers } from '../peers.js'
 import { type PeerState, type Storage, type StoredPeerState } from '../types.js'
 import { Chooser } from './Chooser.js'
 import { Peer } from './Peer.js'
@@ -46,7 +46,11 @@ export const App = () => {
     // we're showing a peer for the first time
     const { userId, userName } = peerInfo.user
 
-    const device = auth.createDevice({ userId, deviceName: peerInfo.device.name })
+    const device = auth.createDevice({
+      userId,
+      deviceName: peerInfo.device.name,
+      seed: deviceSeed(userName, peerInfo.device.name),
+    })
 
     const user =
       peerInfo.device.name === 'laptop'

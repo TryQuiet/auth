@@ -5,17 +5,17 @@ import { validate } from 'validator/index.js'
 import 'util/testing/expect/toBeValid'
 
 const { alice } = setup('alice')
-const defaultUser = alice
+const defaultSigner = alice
 
 const _ = expect.objectContaining
 
 describe('graphs', () => {
   test('append', () => {
-    const graph1 = createGraph({ user: defaultUser, name: 'a', keys })
+    const graph1 = createGraph({ signer: defaultSigner, name: 'a', keys })
     const graph2 = append({
       graph: graph1,
       action: { type: 'FOO', payload: 'b' },
-      user: defaultUser,
+      signer: defaultSigner,
       keys,
     })
 
