@@ -122,8 +122,7 @@ describe('lockbox authorization hardening', () => {
     ).toBe(false)
   })
 
-  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
-  it.skip('does not let an unrelated member pre-seed a future USER generation', () => {
+  it('does not let an unrelated member pre-seed a future USER generation', () => {
     const { alice, bob } = setup('alice', { user: 'bob', admin: false })
     const nextKeys = createKeyset(
       { type: KeyType.USER, name: alice.userId },
@@ -157,11 +156,9 @@ describe('lockbox authorization hardening', () => {
       )
     ).toBe(false)
 
-    alice.team.changeKeys(nextKeys)
-    expect(alice.team.members(alice.userId).keys.generation).toBe(1)
-    expect(alice.team.members(alice.userId).keys.encryption).toBe(nextKeys.encryption.publicKey)
-    expect(alice.team.teamKeys().generation).toBe(1)
-    expect(alice.team.adminKeys().generation).toBe(1)
+    expect(alice.team.members(alice.userId).keys.generation).toBe(0)
+    expect(alice.team.teamKeys().generation).toBe(0)
+    expect(alice.team.adminKeys().generation).toBe(0)
   })
 
   // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
@@ -209,8 +206,7 @@ describe('lockbox authorization hardening', () => {
     }
   })
 
-  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
-  it.skip('does not let an unrelated member pre-seed a future SERVER generation', () => {
+  it('does not let an unrelated member pre-seed a future SERVER generation', () => {
     const { alice, bob } = setup('alice', { user: 'bob', admin: false })
     const serverWithSecrets = createServer({ host: 'sync.example', seed: 'registered-server' })
     alice.team.addServer(redactServer(serverWithSecrets))
@@ -245,12 +241,8 @@ describe('lockbox authorization hardening', () => {
       )
     ).toBe(false)
 
-    alice.team.changeKeys(nextKeys)
-    expect(alice.team.servers(serverWithSecrets.serverId).keys.generation).toBe(1)
-    expect(alice.team.servers(serverWithSecrets.serverId).keys.encryption).toBe(
-      nextKeys.encryption.publicKey
-    )
-    expect(alice.team.teamKeys().generation).toBe(1)
+    expect(alice.team.servers(serverWithSecrets.serverId).keys.generation).toBe(0)
+    expect(alice.team.teamKeys().generation).toBe(0)
   })
 
   it('does not let an ADMIT_MEMBER link pre-poison the USER commitment before join', () => {

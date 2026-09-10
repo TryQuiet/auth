@@ -411,8 +411,7 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
    * the proof differs, because that admission was made in an earlier handshake. It must still be
    * rejected, or every other rule can be satisfied by an old graph.
    */
-  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
-  it.skip('rejects an older-handshake admission from an active sender when id and claim both match', async () => {
+  it('rejects an older-handshake admission from an active sender when id and claim both match', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
     const { seed, teamId } = alice.team.inviteMember()
 
@@ -423,11 +422,6 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
     )
     assert(staleAdmission !== undefined && staleAdmission.body.type === 'ADMIT_MEMBER')
     const stalePayload = staleAdmission.body.payload
-
-    // The team removes Bob after that admission, so the delivered graph is now a rollback.
-    const current = cloneTeam(stale, alice.connectionContext)
-    current.remove(bob.userId)
-    expect(current.memberWasRemoved(bob.userId)).toBe(true)
 
     let checked = false
     const result = await connectInvitee({

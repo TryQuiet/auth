@@ -57,7 +57,7 @@ comment at each test. They do not establish revocation guarantees for this relea
 supported signature, identity, invitation, and lockbox authorization continue to run. No test
 or production switch bypasses the gate.
 
-85 existing test cases are explicitly retired by this change:
+82 existing test cases are explicitly retired by this change:
 
 ### [connection/test/authentication.test.ts](../packages/auth/src/connection/test/authentication.test.ts)
 
@@ -98,7 +98,6 @@ or production switch bypasses the gate.
 - rejects a fresh envelope wrapping a pre-removal graph (member)
 - rejects a fresh envelope wrapping a pre-removal graph (device)
 - rejects a fresh envelope wrapping a pre-removal graph sent by a server
-- rejects an older-handshake admission from an active sender when id and claim both match
 - rejects an admission that the membership resolver has invalidated
 - rejects a graph in which the invitee was admitted and then removed
 
@@ -167,9 +166,7 @@ or production switch bypasses the gate.
 ### [team/test/lockboxAuthorizationHardening.test.ts](../packages/auth/src/team/test/lockboxAuthorizationHardening.test.ts)
 
 - does not carry a retired generic recipient into a subsequent role rotation
-- does not let an unrelated member pre-seed a future USER generation
 - selects the legitimate USER key change in both concurrent merge orders
-- does not let an unrelated member pre-seed a future SERVER generation
 - preserves an authenticated ROTATE_KEYS recipient transition
 
 ### [team/test/lockboxChannelTakeover.test.ts](../packages/auth/src/team/test/lockboxChannelTakeover.test.ts)
