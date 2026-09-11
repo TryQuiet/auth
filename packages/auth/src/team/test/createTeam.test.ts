@@ -29,7 +29,8 @@ describe('Team', () => {
       expect(restoredTeam.teamName).toBe('Spies Я Us')
     })
 
-    it('deserializes a team after key rotations', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('deserializes a team after key rotations', () => {
       const { alice, bob } = setup('alice', 'bob')
 
       // We start with generation 0 keys

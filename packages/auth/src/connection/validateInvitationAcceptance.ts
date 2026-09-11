@@ -25,7 +25,7 @@ import type { AcceptInvitationPayload, InvitationAcceptanceEnvelope } from './me
  * this session, as exactly the identity they claimed. The checks run in order, each mapped to a
  * failure reason the connection machine reports distinctly:
  *
- * 1. the outer and inner schemas are exactly v3 — else PROTOCOL_VERSION_UNSUPPORTED
+ * 1. the outer and inner schemas match the current protocol — else PROTOCOL_VERSION_UNSUPPORTED
  * 2. the envelope opened and is bound to this handshake — else ACCEPTANCE_INVALID
  * 3. the graph's root hash is the expected team id — else WRONG_TEAM
  * 4. the graph validates and contains this invitation with the claimed kind — else WRONG_TEAM

@@ -10,12 +10,11 @@ import { describe, expect, it } from 'vitest'
 const MEMBER = 'MEMBER'
 
 describe('invitation role grants', () => {
-  it('lets an invitation holder self-assign the declared role with every key generation', () => {
+  it('lets an invitation holder self-assign the declared role with its current key generation', () => {
     const { alice, bob } = setup('alice', { user: 'bob', admin: false })
     alice.team.addRole(MEMBER)
     alice.team.addMemberRole(alice.userId, MEMBER)
-    alice.team.removeMemberRole(alice.userId, MEMBER)
-    alice.team.addMemberRole(alice.userId, MEMBER)
+    expect(alice.team.roleKeys(MEMBER).generation).toBe(0)
 
     const { seed } = alice.team.inviteMember({ roleNames: [MEMBER] })
     const acceptanceKeys = invitation.generateStarterKeys(seed)
@@ -44,7 +43,8 @@ describe('invitation role grants', () => {
     )
   })
 
-  it('rejects a stale grant before assigning the role', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('rejects a stale grant before assigning the role', () => {
     const { alice, bob } = setup('alice', { user: 'bob', admin: false })
     alice.team.addRole(MEMBER)
     alice.team.addMemberRole(alice.userId, MEMBER)

@@ -17,7 +17,8 @@ import { memberAdmission } from './helpers.js'
  * has, so it is distribution, not rotation, and every generation survives.
  */
 describe('admission after a team-key rotation (185b650)', () => {
-  it('lockboxes every team-key generation to the joiner', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('lockboxes every team-key generation to the joiner', () => {
     const { alice, bob, charlie } = setup('alice', 'bob', { user: 'charlie', member: false })
 
     // 👩🏾 Alice removes 👨🏻‍🦲 Bob, which rotates the team keys to generation 1.

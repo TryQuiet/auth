@@ -8,7 +8,8 @@ import { describe, expect, it } from 'vitest'
 const CHANNEL = 'private-channel-role'
 
 describe('lockbox rotation under honest concurrency (#63)', () => {
-  it('does not poison the graph when a role add lands before a concurrent re-key', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('does not poison the graph when a role add lands before a concurrent re-key', () => {
     const { alice, bob, charlie, dave } = setup(
       'alice',
       'bob',

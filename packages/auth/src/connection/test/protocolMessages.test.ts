@@ -21,7 +21,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { NumberedMessage } from '../MessageQueue.js'
 
 describe('connection protocol messages', () => {
-  it('accepts only the exact v3 REQUEST_IDENTITY payload', () => {
+  it('accepts only the exact v4 REQUEST_IDENTITY payload', () => {
     const identityNonce = randomKey()
     expect(
       isReadyMessage({
@@ -55,7 +55,7 @@ describe('connection protocol messages', () => {
     ).toBe(false)
   })
 
-  it('connects peers that both negotiate v3', async () => {
+  it('connects peers that both negotiate v4', async () => {
     const { alice, bob } = setup('alice', 'bob')
     await expect(connect(alice, bob)).resolves.toBe(true)
   })
@@ -87,9 +87,15 @@ describe('connection protocol messages', () => {
     ['old nonce shape', { acceptorNonce: randomKey() }],
     ['missing version', { identityNonce: randomKey() }],
     ['missing identity nonce', { protocolVersion: CONNECTION_PROTOCOL_VERSION }],
-    ['old version', { protocolVersion: 2, identityNonce: randomKey() }],
-    ['future version', { protocolVersion: 4, identityNonce: randomKey() }],
-    ['unknown version', { protocolVersion: '3', identityNonce: randomKey() }],
+    ['previous removal-enabled version', { protocolVersion: 3, identityNonce: randomKey() }],
+    [
+      'future version',
+      { protocolVersion: CONNECTION_PROTOCOL_VERSION + 1, identityNonce: randomKey() },
+    ],
+    [
+      'unknown version',
+      { protocolVersion: String(CONNECTION_PROTOCOL_VERSION), identityNonce: randomKey() },
+    ],
     [
       'extra field',
       { protocolVersion: CONNECTION_PROTOCOL_VERSION, identityNonce: randomKey(), extra: true },
@@ -133,8 +139,17 @@ describe('connection protocol messages', () => {
         return rest
       },
     ],
-    ['old version', (payload: Record<string, unknown>) => ({ ...payload, version: 2 })],
-    ['future version', (payload: Record<string, unknown>) => ({ ...payload, version: 4 })],
+    [
+      'previous removal-enabled version',
+      (payload: Record<string, unknown>) => ({ ...payload, version: 3 }),
+    ],
+    [
+      'future version',
+      (payload: Record<string, unknown>) => ({
+        ...payload,
+        version: CONNECTION_PROTOCOL_VERSION + 1,
+      }),
+    ],
     ['extra field', (payload: Record<string, unknown>) => ({ ...payload, extra: true })],
   ])('rejects an invitation acceptance with a %s before sync', async (_label, rewrite) => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
@@ -177,8 +192,17 @@ describe('connection protocol messages', () => {
         return rest
       },
     ],
-    ['old version', (envelope: Record<string, unknown>) => ({ ...envelope, version: 2 })],
-    ['future version', (envelope: Record<string, unknown>) => ({ ...envelope, version: 4 })],
+    [
+      'previous removal-enabled version',
+      (envelope: Record<string, unknown>) => ({ ...envelope, version: 3 }),
+    ],
+    [
+      'future version',
+      (envelope: Record<string, unknown>) => ({
+        ...envelope,
+        version: CONNECTION_PROTOCOL_VERSION + 1,
+      }),
+    ],
     ['extra field', (envelope: Record<string, unknown>) => ({ ...envelope, extra: true })],
   ])('rejects an encrypted invitation envelope with a %s before sync', async (_label, mutate) => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
@@ -238,9 +262,9 @@ class RewriteAcceptanceChannel extends TestChannel {
 }
 
 /**
- * Models a relay translating the legacy and v3 REQUEST_IDENTITY field names in both directions,
+ * Models a relay translating the legacy and current REQUEST_IDENTITY field names in both directions,
  * while one peer still produces the pre-v3 identity signature over the bare challenge. Syntax
- * translation gets both requests through, but the authenticated v3 identity payload must not.
+ * translation gets both requests through, but the authenticated current identity payload must not.
  */
 class LegacyRequestBridgeChannel extends TestChannel {
   sawSync = false
@@ -259,7 +283,7 @@ class LegacyRequestBridgeChannel extends TestChannel {
 
     if (numbered.type === 'REQUEST_IDENTITY') {
       // The intermediate legacy representation is intentionally not delivered: the relay maps it
-      // straight back to the exact v3 payload understood by the current endpoint.
+      // straight back to the exact current payload understood by the current endpoint.
       const legacyRequest = { acceptorNonce: numbered.payload.identityNonce }
       const translated = {
         ...numbered,

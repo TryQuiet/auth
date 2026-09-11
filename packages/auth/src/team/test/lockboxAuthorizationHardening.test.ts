@@ -37,7 +37,8 @@ describe('lockbox authorization hardening', () => {
     ).toBe(false)
   })
 
-  it('does not carry a retired generic recipient into a subsequent role rotation', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('does not carry a retired generic recipient into a subsequent role rotation', () => {
     const { alice, bob } = setup('alice', { user: 'bob', admin: false })
     alice.team.addRole(CHANNEL)
     alice.team.addMemberRole(bob.userId, CHANNEL)
@@ -155,14 +156,13 @@ describe('lockbox authorization hardening', () => {
       )
     ).toBe(false)
 
-    alice.team.changeKeys(nextKeys)
-    expect(alice.team.members(alice.userId).keys.generation).toBe(1)
-    expect(alice.team.members(alice.userId).keys.encryption).toBe(nextKeys.encryption.publicKey)
-    expect(alice.team.teamKeys().generation).toBe(1)
-    expect(alice.team.adminKeys().generation).toBe(1)
+    expect(alice.team.members(alice.userId).keys.generation).toBe(0)
+    expect(alice.team.teamKeys().generation).toBe(0)
+    expect(alice.team.adminKeys().generation).toBe(0)
   })
 
-  it('selects the legitimate USER key change in both concurrent merge orders', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('selects the legitimate USER key change in both concurrent merge orders', () => {
     const { alice, bob } = setup('alice', { user: 'bob', admin: false })
     const base = alice.team.graph
     const nextKeys = createKeyset(
@@ -241,12 +241,8 @@ describe('lockbox authorization hardening', () => {
       )
     ).toBe(false)
 
-    alice.team.changeKeys(nextKeys)
-    expect(alice.team.servers(serverWithSecrets.serverId).keys.generation).toBe(1)
-    expect(alice.team.servers(serverWithSecrets.serverId).keys.encryption).toBe(
-      nextKeys.encryption.publicKey
-    )
-    expect(alice.team.teamKeys().generation).toBe(1)
+    expect(alice.team.servers(serverWithSecrets.serverId).keys.generation).toBe(0)
+    expect(alice.team.teamKeys().generation).toBe(0)
   })
 
   it('does not let an ADMIT_MEMBER link pre-poison the USER commitment before join', () => {
@@ -294,7 +290,8 @@ describe('lockbox authorization hardening', () => {
     ).toBe(true)
   })
 
-  it('preserves an authenticated ROTATE_KEYS recipient transition', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('preserves an authenticated ROTATE_KEYS recipient transition', () => {
     const { alice } = setup('alice')
 
     // This is the same action `checkForPendingKeyRotations` emits after a resolver marks a

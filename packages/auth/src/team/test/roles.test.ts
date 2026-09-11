@@ -119,7 +119,8 @@ describe('Team', () => {
       expect(alice.team.memberHasRole(alice.userId, FOOBAR)).toBe(false)
     })
 
-    it('removes a member from a role', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('removes a member from a role', () => {
       const { alice, bob } = setup('alice', 'bob')
 
       // Alice creates manager role and add 👨🏻‍🦲 Bob to it
@@ -256,7 +257,8 @@ describe('Team', () => {
       expect(bob.team.memberHasRole(charlie.userId, 'MEMBER')).toBe(false)
     })
 
-    it('removes a role', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('removes a role', () => {
       const { alice } = setup('alice')
 
       // 👩🏾 Alice adds the managers role
@@ -398,7 +400,8 @@ describe('Team', () => {
       expect(remove).toThrow()
     })
 
-    it('Alice can remove herself as admin as long as there at least one other admin', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('Alice can remove herself as admin as long as there at least one other admin', () => {
       const { alice } = setup('alice', 'bob')
 
       const remove = () => {
@@ -408,7 +411,8 @@ describe('Team', () => {
       expect(remove).not.toThrow()
     })
 
-    it('rotates keys when a member is removed from a role', async () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('rotates keys when a member is removed from a role', async () => {
       const COOLKIDS = 'coolkids'
 
       const { alice, bob, charlie } = setup(

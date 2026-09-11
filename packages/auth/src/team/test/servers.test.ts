@@ -28,7 +28,7 @@ import {
 
 describe('Team', () => {
   describe('a server', () => {
-    it('can be added and removed by an admin', () => {
+    it('can be added by an admin but removal is disabled', () => {
       const { alice } = setupHumans('alice')
 
       // Add server
@@ -43,10 +43,10 @@ describe('Team', () => {
       // The host is a label, not an identity, so looking one up by host gives a list
       expect(alice.team.serversByHost(host)).toHaveLength(1)
 
-      // Remove server
-      alice.team.removeServer(server.serverId)
-      expect(alice.team.servers().length).toBe(0)
-      expect(alice.team.serverWasRemoved(server.serverId)).toBe(true)
+      // Protocol 4 retains the server even when its admin requests removal.
+      expect(() => alice.team.removeServer(server.serverId)).toThrow(/disabled/i)
+      expect(alice.team.servers().length).toBe(1)
+      expect(alice.team.serverWasRemoved(server.serverId)).toBe(false)
     })
 
     it("throws if a named server doesn't exist on the team", () => {
@@ -54,7 +54,8 @@ describe('Team', () => {
       expect(() => alice.team.servers('foo.com')).toThrow()
     })
 
-    it("can't be re-added after being removed", () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip("can't be re-added after being removed", () => {
       const { alice } = setupHumans('alice')
 
       // Add server
@@ -264,7 +265,8 @@ describe('Team', () => {
       expect(alice.team.members(bob.userId).devices).toHaveLength(2)
     })
 
-    it('has its keys rotated by an admin', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('has its keys rotated by an admin', () => {
       const { alice } = setupHumans('alice', 'bob')
       const { server, serverWithSecrets } = createServer(host)
       alice.team.addServer(server)

@@ -83,35 +83,39 @@ const rotationRecipientsFor = (
   return { expected, removed: removedRecipients[0] }
 }
 
-const dispatchDeclaredRotation = (
+const mergeDeclaredRotation = (
   alice: UserStuff,
   removed: UserStuff,
   scope: (typeof ATTACK_SCOPES)[number],
   lockboxes: lockbox.Lockbox[]
 ) => {
-  if (scope.type === KeyType.TEAM) {
-    alice.team.dispatch({
-      type: 'REMOVE_MEMBER',
-      payload: { userId: removed.userId, lockboxes },
+  const action: TeamAction =
+    scope.type === KeyType.TEAM
+      ? { type: 'REMOVE_MEMBER', payload: { userId: removed.userId, lockboxes } }
+      : {
+          type: 'REMOVE_MEMBER_ROLE',
+          payload: { userId: removed.userId, roleName: scope.name, lockboxes },
+        }
+  // Bypass only the local producer, as a modified peer would, then use the real remote path.
+  alice.team.merge(
+    append({
+      graph: alice.team.graph,
+      action,
+      signer: alice.signer,
+      keys: alice.team.teamKeys(),
     })
-    return
-  }
-
-  alice.team.dispatch({
-    type: 'REMOVE_MEMBER_ROLE',
-    payload: { userId: removed.userId, roleName: scope.name, lockboxes },
-  })
+  )
 }
 
-const expectDeclaredRemovalApplied = (
+const expectDeclaredRemovalIgnored = (
   alice: UserStuff,
   removed: UserStuff,
   scope: (typeof ATTACK_SCOPES)[number]
 ) => {
   if (scope.type === KeyType.TEAM) {
-    expect(alice.team.has(removed.userId)).toBe(false)
+    expect(alice.team.has(removed.userId)).toBe(true)
   } else {
-    expect(alice.team.memberHasRole(removed.userId, scope.name)).toBe(false)
+    expect(alice.team.memberHasRole(removed.userId, scope.name)).toBe(true)
   }
 }
 
@@ -268,10 +272,10 @@ describe('honest lockbox private-channel takeover (#61)', () => {
       const lockboxes = expected.map(recipient => lockbox.create(skippedKeys, recipient))
       expect(lockboxes).toHaveLength(expected.length)
 
-      // REMOVE_MEMBER and REMOVE_MEMBER_ROLE are declared rotation carriers. Every recipient is
-      // correct, so this batch is rejected specifically because generation 2 skips generation 1.
-      expect(() => dispatchDeclaredRotation(alice, bob, scope, lockboxes)).not.toThrow()
-      expectDeclaredRemovalApplied(alice, bob, scope)
+      // These signed removal carriers were able to rotate keys in protocol 3. Protocol 4 keeps
+      // both removal and rotation inert, even with a malformed future generation.
+      expect(() => mergeDeclaredRotation(alice, bob, scope, lockboxes)).not.toThrow()
+      expectDeclaredRemovalIgnored(alice, bob, scope)
       expectNoGeneration(alice, scope, 2)
     })
 
@@ -289,8 +293,8 @@ describe('honest lockbox private-channel takeover (#61)', () => {
       const lockboxes = expected.slice(0, -1).map(recipient => lockbox.create(nextKeys, recipient))
       expect(lockboxes).toHaveLength(expected.length - 1)
 
-      expect(() => dispatchDeclaredRotation(alice, bob, scope, lockboxes)).not.toThrow()
-      expectDeclaredRemovalApplied(alice, bob, scope)
+      expect(() => mergeDeclaredRotation(alice, bob, scope, lockboxes)).not.toThrow()
+      expectDeclaredRemovalIgnored(alice, bob, scope)
       expectNoGeneration(alice, scope, 1)
     })
 
@@ -308,13 +312,14 @@ describe('honest lockbox private-channel takeover (#61)', () => {
       const lockboxes = [...expected, removed].map(recipient => lockbox.create(nextKeys, recipient))
       expect(lockboxes).toHaveLength(expected.length + 1)
 
-      expect(() => dispatchDeclaredRotation(alice, bob, scope, lockboxes)).not.toThrow()
-      expectDeclaredRemovalApplied(alice, bob, scope)
+      expect(() => mergeDeclaredRotation(alice, bob, scope, lockboxes)).not.toThrow()
+      expectDeclaredRemovalIgnored(alice, bob, scope)
       expectNoGeneration(alice, scope, 1)
     })
   }
 
-  it('still lets an admin rotate the team key when removing a member', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('still lets an admin rotate the team key when removing a member', () => {
     const { alice, bob, charlie } = setupSharedScopes()
     const teamKeys = alice.team.teamKeys()
 
@@ -333,7 +338,8 @@ describe('honest lockbox private-channel takeover (#61)', () => {
     expect(() => bob.team.decrypt(envelope)).toThrow()
   })
 
-  it('still lets an admin rotate the channel key when removing a member from it', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('still lets an admin rotate the channel key when removing a member from it', () => {
     const { alice, bob, charlie } = setup(
       'alice',
       { user: 'bob', admin: false },

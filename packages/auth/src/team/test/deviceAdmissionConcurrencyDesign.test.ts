@@ -9,11 +9,11 @@ import { forge } from './forgeHelpers.js'
 import { deviceAdmission } from './helpers.js'
 
 /**
- * These are executable design targets for concurrency cases the current reducer does not yet
- * satisfy. They intentionally fail until their invariants are implemented.
+ * Protocol 4 ignores removals, including their effects on concurrent device admissions. These
+ * signed graph branches must preserve both existing registrations and new valid admissions.
  */
 describe('device admission concurrency design targets', () => {
-  it('converges to one valid removal when two admins concurrently remove the same device', () => {
+  it('keeps the device when two admins concurrently request its removal', () => {
     const { alice, bob } = setup('alice', 'bob')
     const { seed } = bob.team.inviteDevice()
     bob.team.admitDevice(...deviceAdmission(seed, bob.phone!))
@@ -44,13 +44,13 @@ describe('device admission concurrency design targets', () => {
       alice.team.teamKeyring()
     )
 
-    expect(loaded.hasDevice(bob.phone!.deviceId)).toBe(false)
+    expect(loaded.hasDevice(bob.phone!.deviceId)).toBe(true)
     expect(
       loaded.state.removedDevices.filter(device => device.deviceId === bob.phone!.deviceId)
-    ).toHaveLength(1)
+    ).toHaveLength(0)
   })
 
-  it('lets member removal win over a concurrent admission for that member device', () => {
+  it('retains a device admission concurrent with a disabled member removal', () => {
     const { alice, bob } = setup('alice', 'bob')
     const { seed } = bob.team.inviteDevice()
     alice.team.merge(bob.team.graph)
@@ -81,7 +81,7 @@ describe('device admission concurrency design targets', () => {
         teamKeys: alice.team.teamKeys(),
       })
 
-      // Exercise the ordering that currently applies the removal before the invalid admission.
+      // Exercise removal before admission in the deterministic link ordering.
       if (removal.head[0] < admission.head[0]) {
         branches = { admission, removal }
         break
@@ -97,11 +97,11 @@ describe('device admission concurrency design targets', () => {
       alice.team.teamKeyring()
     )
 
-    expect(loaded.has(bob.userId)).toBe(false)
-    expect(loaded.hasDevice(bob.phone!.deviceId)).toBe(false)
+    expect(loaded.has(bob.userId)).toBe(true)
+    expect(loaded.hasDevice(bob.phone!.deviceId)).toBe(true)
   })
 
-  it('retains the owner when a device admission is invalidated with its invitation', () => {
+  it('keeps an invitation and its device admission despite a concurrent device removal', () => {
     const { alice, bob } = setup('alice', 'bob')
     const { seed: phoneSeed } = bob.team.inviteDevice()
     bob.team.admitDevice(...deviceAdmission(phoneSeed, bob.phone!))
@@ -141,7 +141,9 @@ describe('device admission concurrency design targets', () => {
       device => device.deviceId === tablet.deviceId
     )
 
-    expect(tombstone?.userId).toBe(bob.userId)
-    expect(loaded.state.pendingKeyRotations).toContain(bob.userId)
+    expect(tombstone).toBeUndefined()
+    expect(loaded.hasDevice(tablet.deviceId)).toBe(true)
+    expect(loaded.hasDevice(bob.deviceId)).toBe(true)
+    expect(loaded.state.pendingKeyRotations).toEqual([])
   })
 })

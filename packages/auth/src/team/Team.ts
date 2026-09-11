@@ -37,6 +37,7 @@ import { type LocalContext } from 'team/context.js'
 import { KeyType, scopesMatch } from 'util/index.js'
 import { ADMIN_SCOPE, ALL, TEAM_SCOPE, initialState } from './constants.js'
 import { decryptTeamGraph } from './decryptTeamGraph.js'
+import { isDisabledAction } from './disabledActions.js'
 import { membershipResolver as resolver } from './membershipResolver.js'
 import { redactUser } from './redactUser.js'
 import { reducer } from './reducer.js'
@@ -256,6 +257,7 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** Add a link to the graph, then recompute team state from the new graph */
   public dispatch(action: TeamAction, teamKeys: KeysetWithSecrets = this.teamKeys()) {
+    assert(!isDisabledAction(action), `Removal and key rotation are disabled: ${action.type}`)
     this.store.dispatch(action, teamKeys)
     this.state = this.store.getState()
     this.emit('updated', { head: this.graph.head })
@@ -310,7 +312,7 @@ export class Team extends EventEmitter<TeamEvents> {
     })
   }
 
-  /** Remove a member from the team */
+  /** Member removal is disabled in protocol 4. */
   public remove = (userId: string) => {
     // Create new keys & lockboxes for any keys this person had access to
     const lockboxes = this.rotateKeys({ type: USER, name: userId }, { excludeMemberId: userId })
@@ -393,7 +395,7 @@ export class Team extends EventEmitter<TeamEvents> {
     })
   }
 
-  /** Remove a role from the team */
+  /** Graph role removal is disabled in protocol 4. Quiet channel deletion uses OrbitDB metadata. */
   public removeRole = (roleName: string) => {
     this._isRoleRemovable(roleName, true)
 
@@ -461,7 +463,7 @@ export class Team extends EventEmitter<TeamEvents> {
     )
   }
 
-  /** Remove a role from a member */
+  /** Removing a member from a role is disabled in protocol 4. */
   public removeMemberRole = (userId: string, roleName: string) => {
     if (roleName === ADMIN) {
       const adminCount = this.membersInRole(ADMIN).length
@@ -505,8 +507,9 @@ export class Team extends EventEmitter<TeamEvents> {
     return canUserAddMemberToRole(roleName, memberId, undefined, this.state)
   }
 
-  /** Check if member has permissions to reevoke membership from a role */
+  /** Role membership removal is unavailable in protocol 4, including for administrators. */
   public memberCanRemoveMembersFromRole(roleName: string, memberId: string): boolean {
+    if (isDisabledAction({ type: 'REMOVE_MEMBER_ROLE' })) return false
     if (!this._memberHasPrivelegeToPerformAction(memberId, 'REMOVE_MEMBER_ROLE')) {
       return false
     }
@@ -518,7 +521,7 @@ export class Team extends EventEmitter<TeamEvents> {
     return this._memberHasPrivelegeToPerformAction(memberId, 'ADD_ROLE')
   }
 
-  /** Check if member has permissions to delete a specific role */
+  /** Authorization for Quiet's channel metadata deletion; does not enable graph REMOVE_ROLE. */
   public memberCanDeleteRole(roleName: string, memberId: string): boolean {
     if (!this._memberHasPrivelegeToPerformAction(memberId, 'REMOVE_ROLE')) {
       return false
@@ -540,7 +543,7 @@ export class Team extends EventEmitter<TeamEvents> {
     return select.device(this.state, deviceId, options)
   }
 
-  /** Remove a member's device */
+  /** Device removal is disabled in protocol 4. */
   public removeDevice = (deviceId: string) => {
     if (!this.hasDevice(deviceId)) throw new Error(`Device ${deviceId} not found`)
 
@@ -949,7 +952,7 @@ export class Team extends EventEmitter<TeamEvents> {
    * `188.26.221.135`).
    *
    * The expected usage is for the application to add a server or servers immediately after the team
-   * is created. However, the application can add or remove servers at any time.
+   * is created. More servers can be added later; server removal is disabled in protocol 4.
    *
    * Just before adding a server, the application should send it the latest graph and the team keys
    * (so it can decrypt the team graph). No invitation or authentication is necessary in this phase,
@@ -975,7 +978,7 @@ export class Team extends EventEmitter<TeamEvents> {
     })
   }
 
-  /** Removes a server from the team. */
+  /** Server removal is disabled in protocol 4. */
   public removeServer = (serverId: string) => {
     const lockboxes = this.rotateKeys(
       { type: SERVER, name: serverId },
@@ -1162,8 +1165,7 @@ export class Team extends EventEmitter<TeamEvents> {
   public adminKeys = (generation?: number) => this.roleKeys(ADMIN, generation)
 
   /**
-   * Replaces a member's or a server's secret keyset with the one provided. (An admin can do this
-   * for someone else; anyone can do it for themselves.)
+   * Member and server key replacement is disabled in protocol 4.
    *
    * Only these two kinds of keys rotate. Device keys and a server's identity keys are what their
    * ids are fingerprints of, and what their past links were signed with — rotating them would
@@ -1177,6 +1179,12 @@ export class Team extends EventEmitter<TeamEvents> {
     )
 
     const isForServer = type === SERVER
+    const actionType = isForServer ? 'CHANGE_SERVER_KEYS' : 'CHANGE_MEMBER_KEYS'
+    // Refuse before mutating the supplied keyset, which may alias the caller's current keys.
+    assert(
+      !isDisabledAction({ type: actionType }),
+      `Removal and key rotation are disabled: ${actionType}`
+    )
     const currentKeys = isForServer ? this.servers(name).keys : this.members(name).keys
     newKeys.generation = currentKeys.generation + 1
 
@@ -1185,7 +1193,7 @@ export class Team extends EventEmitter<TeamEvents> {
 
     // Post the new public keys to the graph
     this.dispatch({
-      type: isForServer ? 'CHANGE_SERVER_KEYS' : 'CHANGE_MEMBER_KEYS',
+      type: actionType,
       payload: { keys: redactKeys(newKeys), lockboxes },
     })
 
@@ -1217,6 +1225,9 @@ export class Team extends EventEmitter<TeamEvents> {
   }
 
   private checkForPendingKeyRotations() {
+    // Invalid admission cleanup can request rotations even without a REMOVE_* action. Do not
+    // let an update callback dispatch a disabled action after a successful graph mutation.
+    if (isDisabledAction({ type: 'ROTATE_KEYS' })) return
     // Only admins can rotate keys
     if (!this.memberIsAdmin(this.userId)) {
       return

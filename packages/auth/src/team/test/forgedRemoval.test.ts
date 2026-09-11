@@ -73,7 +73,8 @@ describe('forged removal', () => {
     expect(charlie.team.memberWasRemoved(alice.userId)).toBe(false)
   })
 
-  it('rejects links signed by a removed member’s device', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('rejects links signed by a removed member’s device', () => {
     const { alice, bob } = setup('alice', 'bob')
 
     // 👩🏾 Alice removes 👨🏻‍🦲 Bob...
@@ -99,7 +100,8 @@ describe('forged removal', () => {
     })
   })
 
-  it('rejects links signed by a removed member’s device even when the device itself was left alone', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('rejects links signed by a removed member’s device even when the device itself was left alone', () => {
     const { alice, bob } = setup('alice', 'bob')
 
     // Only the member is removed this time; his device record is untouched and still carries a
@@ -121,7 +123,7 @@ describe('forged removal', () => {
     })
   })
 
-  it('CONTROL: an admin’s own device can remove a member, and the result survives a round trip', () => {
+  it('CONTROL: a signed admin removal is inert on merge and round trip', () => {
     const { alice, bob, charlie } = setup('alice', 'bob', 'charlie')
 
     const honest = forge({
@@ -132,14 +134,15 @@ describe('forged removal', () => {
     })
 
     charlie.team.merge(honest)
-    expect(charlie.team.has(bob.userId)).toBe(false)
-    expect(charlie.team.memberWasRemoved(bob.userId)).toBe(true)
+    expect(charlie.team.has(bob.userId)).toBe(true)
+    expect(charlie.team.memberWasRemoved(bob.userId)).toBe(false)
 
     const reloaded = teams.load(
       serializeTeamGraph(honest),
       charlie.localContext,
       alice.team.teamKeyring()
     )
-    expect(reloaded.memberWasRemoved(bob.userId)).toBe(true)
+    expect(reloaded.has(bob.userId)).toBe(true)
+    expect(reloaded.memberWasRemoved(bob.userId)).toBe(false)
   })
 })
