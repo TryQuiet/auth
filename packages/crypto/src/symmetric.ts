@@ -144,9 +144,11 @@ const decryptBytesStream = (
     encryptedStream: AsyncIterable<Uint8Array>,
     state: StateAddress
   ): AsyncGenerator<any> {
+    let finalized = false
     // Decrypt each chunk of the byte stream
     for await (const chunk of encryptedStream) {
       try {
+        if (finalized) throw new StreamDecryptError('Data after encrypted stream final tag')
         const decryptedChunk = sodium.crypto_secretstream_xchacha20poly1305_pull(state, chunk)
 
         switch (decryptedChunk.tag) {
@@ -157,6 +159,10 @@ const decryptBytesStream = (
           }
           // the final tag is only here to mark the end of the stream but contains no valid information
           case sodium.crypto_secretstream_xchacha20poly1305_TAG_FINAL: {
+            if (decryptedChunk.message.length > 0) {
+              throw new StreamDecryptError('Unexpected payload in encrypted stream final tag')
+            }
+            finalized = true
             break
           }
           // if we are missing a tag that means something is wrong with the incoming stream
@@ -180,6 +186,7 @@ const decryptBytesStream = (
         })
       }
     }
+    if (!finalized) throw new StreamDecryptError('Missing encrypted stream final tag')
   }
 
   return createDecryptStream(encryptedStream, state)
