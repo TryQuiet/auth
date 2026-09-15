@@ -1,3 +1,5 @@
+import { verifyGraphProof } from './verifiedGraphProof.js'
+import { type TeamLink } from 'team/types.js'
 import { redactKeys } from '@localfirst/crdx'
 import { signatures, DEVICE_POSSESSION, type Base58, type Payload } from '@localfirst/crypto'
 import { assert } from '@localfirst/shared'
@@ -59,20 +61,25 @@ export const validatePossessionProof = ({
   invitationId,
   claim,
   proof,
+  owner,
 }: {
   invitationId: Base58
   claim: InvitationClaim
   proof: Base58
+  owner?: TeamLink
 }): ValidationResult => {
   const claimValidation = validateClaim(claim)
   if (!claimValidation.isValid) return claimValidation
 
-  const signatureIsValid = signatures.verify({
-    payload: possessionProofPayload(invitationId, claim),
-    signature: proof,
-    publicKey: claim.device.keys.signature,
-    context: DEVICE_POSSESSION,
-  })
+  const signatureIsValid = verifyGraphProof(
+    {
+      payload: possessionProofPayload(invitationId, claim),
+      signature: proof,
+      publicKey: claim.device.keys.signature,
+      context: DEVICE_POSSESSION,
+    },
+    owner
+  )
   if (!signatureIsValid) {
     return fail('The device did not prove possession of its own keys', { invitationId, claim })
   }
