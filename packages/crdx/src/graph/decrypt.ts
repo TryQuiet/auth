@@ -31,10 +31,7 @@ export const decryptLink = <A extends Action, C>(
 
   const hash = hashEncryptedLink(cipher)
   const { secretKey } = keyset.encryption
-  const previousOwner = recentCipherOwners.get(hash)?.deref()
-  const fact =
-    decryptedBodies.get(encryptedLink) ??
-    (previousOwner === undefined ? undefined : decryptedBodies.get(previousOwner))
+  const fact = decryptedBodies.get(encryptedLink) ?? recentCipherFacts.get(hash)?.deref()
   if (
     fact?.hash === hash &&
     fact.senderPublicKey === senderPublicKey &&
@@ -144,12 +141,11 @@ type DecryptionFact = {
   body: Uint8Array
 }
 const decryptedBodies = new WeakMap<EncryptedLink, DecryptionFact>()
-const recentCipherOwners = new Map<Hash, WeakRef<EncryptedLink>>()
+const recentCipherFacts = new Map<Hash, WeakRef<DecryptionFact>>()
 const rememberDecryption = (owner: EncryptedLink, fact: DecryptionFact) => {
   decryptedBodies.set(owner, fact)
   if (typeof WeakRef !== 'function') return
-  recentCipherOwners.delete(fact.hash)
-  recentCipherOwners.set(fact.hash, new WeakRef(owner))
-  if (recentCipherOwners.size > 4096)
-    recentCipherOwners.delete(recentCipherOwners.keys().next().value)
+  recentCipherFacts.delete(fact.hash)
+  recentCipherFacts.set(fact.hash, new WeakRef(fact))
+  if (recentCipherFacts.size > 4096) recentCipherFacts.delete(recentCipherFacts.keys().next().value)
 }

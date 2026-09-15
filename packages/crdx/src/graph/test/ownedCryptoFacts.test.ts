@@ -1,5 +1,12 @@
 import { asymmetric, signatures } from '@localfirst/crypto'
-import { createGraph, append, decryptLink, getHead, verifyLinkSignature } from 'graph/index.js'
+import {
+  createGraph,
+  append,
+  decryptLink,
+  getHead,
+  getSequence,
+  verifyLinkSignature,
+} from 'graph/index.js'
 import { createTestSigner, TEST_GRAPH_KEYS as keys } from 'util/testing/setup.js'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -14,6 +21,31 @@ const build = () =>
   })
 
 describe('owned immutable cryptographic facts', () => {
+  it('anchors sequenced signature facts to the retained graph link without relying on WeakRef', () => {
+    const graph = build()
+    const original = getHead(graph)[0]
+    const sequenced = getSequence(graph).find(link => link.hash === original.hash)!
+    const input = {
+      hash: original.hash,
+      signature: original.signature,
+      publicKey: alice.keys.signature.publicKey,
+    }
+    const verify = vi.spyOn(signatures, 'verify')
+    vi.stubGlobal('WeakRef', undefined)
+    try {
+      expect(sequenced).not.toBe(original)
+      expect(verifyLinkSignature({ ...input, owner: sequenced })).toBe(true)
+      expect(verifyLinkSignature({ ...input, owner: original })).toBe(true)
+      expect(verify).toHaveBeenCalledTimes(1)
+      expect(
+        verifyLinkSignature({ ...input, owner: original, publicKey: eve.keys.signature.publicKey })
+      ).toBe(false)
+      expect(verify).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.unstubAllGlobals()
+      verify.mockRestore()
+    }
+  })
   it('reuses a link signature across replay objects but binds hash, signature and resolved key', () => {
     const graph = build()
     const link = getHead(graph)[0]

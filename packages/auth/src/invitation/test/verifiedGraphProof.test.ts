@@ -1,4 +1,4 @@
-import { createKeyset } from '@localfirst/crdx'
+import { createKeyset, getSequence } from '@localfirst/crdx'
 import {
   signatures,
   INVITATION_PROOF,
@@ -13,6 +13,28 @@ const { alice } = setup('alice')
 const owner = alice.team.graph.links[alice.team.graph.root]
 
 describe('owned graph proof signatures', () => {
+  it('keeps proof facts with retained graph inputs rather than temporary sequence copies', () => {
+    const keys = createKeyset({ type: 'DEVICE', name: 'retained-proof' })
+    const input = {
+      payload: 'owned proof',
+      context: INVITATION_PROOF,
+      signature: signatures.sign('owned proof', keys.signature.secretKey, INVITATION_PROOF),
+      publicKey: keys.signature.publicKey,
+    }
+    const sequenced = getSequence(alice.team.graph).find(link => link.hash === owner.hash)!
+    const verify = vi.spyOn(signatures, 'verify')
+    vi.stubGlobal('WeakRef', undefined)
+    try {
+      expect(verifyGraphProof(input, sequenced)).toBe(true)
+      expect(verifyGraphProof(input, owner)).toBe(true)
+      expect(verify).toHaveBeenCalledTimes(1)
+      expect(verifyGraphProof({ ...input, payload: 'changed' }, owner)).toBe(false)
+      expect(verify).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.unstubAllGlobals()
+      verify.mockRestore()
+    }
+  })
   it('reuses only the complete context/payload/signature/resolved-key fact', () => {
     const keys = createKeyset({ type: 'DEVICE', name: 'proof-signer' })
     const other = createKeyset({ type: 'DEVICE', name: 'other-proof-signer' })
