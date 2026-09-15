@@ -50,6 +50,24 @@ describe('owned graph proof signatures', () => {
     }
   })
 
+  it('remains correct without WeakRef support', () => {
+    const keys = createKeyset({ type: 'DEVICE', name: 'no-weakref-proof' })
+    const input = {
+      payload: 'no WeakRef',
+      context: INVITATION_PROOF,
+      signature: signatures.sign('no WeakRef', keys.signature.secretKey, INVITATION_PROOF),
+      publicKey: keys.signature.publicKey,
+    }
+    vi.stubGlobal('WeakRef', undefined)
+    try {
+      expect(verifyGraphProof(input, owner)).toBe(true)
+      expect(verifyGraphProof(input, { ...owner })).toBe(true)
+      expect(verifyGraphProof({ ...input, payload: 'tampered' }, owner)).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('keeps non-graph handshake signature checks uncached', () => {
     const keys = createKeyset({ type: 'DEVICE', name: 'handshake-signer' })
     const input = {

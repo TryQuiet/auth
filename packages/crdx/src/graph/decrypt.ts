@@ -147,6 +147,7 @@ const decryptedBodies = new WeakMap<EncryptedLink, DecryptionFact>()
 const recentCipherOwners = new Map<Hash, WeakRef<EncryptedLink>>()
 const rememberDecryption = (owner: EncryptedLink, fact: DecryptionFact) => {
   decryptedBodies.set(owner, fact)
+  if (typeof WeakRef !== 'function') return
   recentCipherOwners.delete(fact.hash)
   recentCipherOwners.set(fact.hash, new WeakRef(owner))
   if (recentCipherOwners.size > 4096)

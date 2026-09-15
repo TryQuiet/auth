@@ -63,6 +63,26 @@ describe('owned immutable cryptographic facts', () => {
     }
   })
 
+  it('remains correct when the runtime has no WeakRef', () => {
+    const graph = build()
+    const link = getHead(graph)[0]
+    const input = graph.encryptedLinks[link.hash]
+    vi.stubGlobal('WeakRef', undefined)
+    try {
+      const args = {
+        hash: link.hash,
+        signature: link.signature,
+        publicKey: alice.keys.signature.publicKey,
+      }
+      expect(verifyLinkSignature({ ...args, owner: link })).toBe(true)
+      expect(verifyLinkSignature({ ...args, owner: link })).toBe(true)
+      expect(verifyLinkSignature({ ...args, owner: { ...link } })).toBe(true)
+      expect(decryptLink(input, keys)).toEqual(decryptLink({ ...input }, keys))
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('rejects changed cipher, sender key and secret key after a cached decryption', () => {
     const graph = build()
     const input = graph.encryptedLinks[getHead(graph)[0].hash]

@@ -36,6 +36,7 @@ const remember = (owner: TeamLink, identity: string) => {
   owned.add(identity)
   if (owned.size > 8) owned.delete(owned.values().next().value)
   facts.set(owner, owned)
+  if (typeof WeakRef !== 'function') return
   recentOwners.delete(identity)
   recentOwners.set(identity, new WeakRef(owner))
   if (recentOwners.size > 4096) recentOwners.delete(recentOwners.keys().next().value)

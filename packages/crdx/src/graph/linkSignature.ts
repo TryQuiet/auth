@@ -65,6 +65,7 @@ const recentOwners = new Map<Hash, WeakRef<{ hash: Hash }>>()
 const MAX_RECENT_LINKS = 4096
 const remember = (owner: { hash: Hash }, fact: SignatureFact) => {
   validated.set(owner, fact)
+  if (typeof WeakRef !== 'function') return
   recentOwners.delete(fact.hash)
   recentOwners.set(fact.hash, new WeakRef(owner))
   if (recentOwners.size > MAX_RECENT_LINKS) recentOwners.delete(recentOwners.keys().next().value)
