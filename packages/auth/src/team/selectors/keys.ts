@@ -17,7 +17,9 @@ export const keys = (
 
   assert(
     keys,
-    `Couldn't find keys: ${JSON.stringify(scope)}
+    keys
+      ? undefined
+      : `Couldn't find keys: ${JSON.stringify(scope)}
      Device: ${deviceKeys.name}
      Available lockboxes: \n- ${state.lockboxes.map(lockboxSummary).join('\n- ')} 
      Keymap: ${JSON.stringify(keysFromLockboxes, null, 2)}`
@@ -45,7 +47,9 @@ export const keysAllGen = (
 
   assert(
     keys,
-    `Couldn't find keys: ${JSON.stringify(scope)}
+    keys
+      ? undefined
+      : `Couldn't find keys: ${JSON.stringify(scope)}
      Device: ${deviceKeys.name}
      Available lockboxes: \n- ${state.lockboxes.map(lockboxSummary).join('\n- ')} 
      Keymap: ${JSON.stringify(keysFromLockboxes, null, 2)}`
@@ -59,7 +63,9 @@ export const allKeys = (state: TeamState, deviceKeys: KeysetWithSecrets): KeyMap
 
   assert(
     keysFromLockboxes,
-    `Couldn't find keys: all
+    keysFromLockboxes
+      ? undefined
+      : `Couldn't find keys: all
      Device: ${deviceKeys.name}
      Available lockboxes: \n- ${state.lockboxes.map(lockboxSummary).join('\n- ')} 
      Keymap: ${JSON.stringify(keysFromLockboxes, null, 2)}`

@@ -1,3 +1,4 @@
+import { keysetCacheIdentity } from './keysetCacheIdentity.js'
 import { type Keyset, type KeysetWithSecrets } from '@localfirst/crdx'
 import {
   isBase58KeyOfLength,
@@ -8,18 +9,21 @@ import {
 /** Strict runtime validation for the plaintext format stored inside a lockbox. */
 export function isValidKeyset(value: unknown): value is KeysetWithSecrets {
   if (!isRecord(value)) return false
+  const identity = keysetCacheIdentity(value as KeysetWithSecrets)
+  if (identity !== undefined && validated.get(value) === identity) return true
   if (
     !hasExactKeys(value, ['type', 'name', 'generation', 'secretKey', 'encryption', 'signature'])
   ) {
     return false
   }
 
-  return (
+  const valid =
     metadataIsValid(value) &&
     isBase58KeyOfLength(value.secretKey, 32) &&
     isValidEncryptionKeypair(value.encryption) &&
     isValidSignatureKeypair(value.signature)
-  )
+  if (valid && identity !== undefined) validated.set(value, identity)
+  return valid
 }
 
 /** Runtime validation for redacted recipient keysets accepted by `lockbox.create`. */
@@ -59,3 +63,7 @@ const hasExactKeys = (value: Record<string, unknown>, expected: string[]) => {
   const actual = Object.keys(value)
   return actual.length === expected.length && expected.every(key => Object.hasOwn(value, key))
 }
+
+// Cache only successful validation, bound to every own data field. A caller mutating keys,
+// adding a field or replacing a nested keypair must pass the cryptographic checks again.
+const validated = new WeakMap<Record<string, unknown>, string>()

@@ -1,3 +1,5 @@
+import { isLockboxSnapshot } from './snapshot.js'
+import { keysetCacheIdentity } from './keysetCacheIdentity.js'
 import { assert } from '@localfirst/shared'
 import { type KeysetWithSecrets } from '@localfirst/crdx'
 import { asymmetric } from '@localfirst/crypto'
@@ -6,6 +8,9 @@ import { isKeyManifest, isRecipientManifest, type Lockbox } from 'lockbox/types.
 import { assertValidKeyset } from 'lockbox/validateKeyset.js'
 
 export const open = (lockbox: Lockbox, decryptionKeys: KeysetWithSecrets): KeysetWithSecrets => {
+  const identity = isLockboxSnapshot(lockbox) ? keysetCacheIdentity(decryptionKeys) : undefined
+  const previous = opened.get(lockbox)
+  if (identity !== undefined && previous?.identity === identity) return previous.keys
   const { encryptionKey, encryptedPayload } = lockbox
   assertValidKeyset(decryptionKeys, 'The lockbox decryption keys are invalid')
   assert(isRecipientManifest(lockbox.recipient), 'The lockbox recipient manifest is invalid')
@@ -39,5 +44,15 @@ export const open = (lockbox: Lockbox, decryptionKeys: KeysetWithSecrets): Keyse
     'The lockbox contents do not match its manifest'
   )
 
+  if (identity !== undefined) {
+    Object.freeze(keys.encryption)
+    Object.freeze(keys.signature)
+    Object.freeze(keys)
+    opened.set(lockbox, { identity, keys })
+  }
   return keys
 }
+
+// A decrypted keyset is a context-independent fact only for the exact ciphertext, manifests,
+// ephemeral sender key and complete recipient keyset. Never cache caller-owned lockboxes.
+const opened = new WeakMap<Lockbox, { identity: string; keys: KeysetWithSecrets }>()

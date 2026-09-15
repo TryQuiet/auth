@@ -1,4 +1,6 @@
+import { keysetCacheIdentity } from 'lockbox/keysetCacheIdentity.js'
 import { type KeysetWithSecrets } from '@localfirst/crdx'
+import { isLockboxCollection } from 'lockbox/snapshot.js'
 import { visibleKeys } from './visibleKeys.js'
 import { type TeamState } from 'team/types.js'
 import { isUnsafeScopeName } from 'team/unsafeScopeName.js'
@@ -19,11 +21,31 @@ import { isUnsafeScopeName } from 'team/unsafeScopeName.js'
  * ```
  */
 export const keyMap = (state: TeamState, deviceKeys: KeysetWithSecrets): KeyMap => {
-  // Get all the keys those keys can access
-  const allVisibleKeys = visibleKeys(state, deviceKeys)
+  // Only immutable reducer snapshots are eligible. Device keys remain caller-owned: include all
+  // fields (including both secret keys) in the cache key, so mutation never aliases a valid key.
+  const cacheable = isLockboxCollection(state.lockboxes)
+  const identity = cacheable ? keysetCacheIdentity(deviceKeys) : undefined
+  const previous = cacheable ? keyMaps.get(state.lockboxes) : undefined
+  if (previous !== undefined && previous.identity === identity && identity !== undefined)
+    return previous.keys
 
-  // Structure these keys as described above
-  return allVisibleKeys.reduce<KeyMap>(organizeKeysIntoMap, Object.create(null))
+  const allVisibleKeys = visibleKeys(state, deviceKeys)
+  const keys = allVisibleKeys.reduce<KeyMap>(organizeKeysIntoMap, Object.create(null))
+  if (cacheable && identity !== undefined) {
+    // Callers must not be able to poison the next lookup by altering returned decrypted keys.
+    for (const scopes of Object.values(keys)) {
+      for (const generations of Object.values(scopes)) {
+        for (const keyset of generations) {
+          freezeKeyset(keyset)
+        }
+        Object.freeze(generations)
+      }
+      Object.freeze(scopes)
+    }
+    Object.freeze(keys)
+    keyMaps.set(state.lockboxes, { identity, keys })
+  }
+  return keys
 }
 
 const organizeKeysIntoMap = (result: KeyMap, keys: KeysetWithSecrets) => {
@@ -48,3 +70,13 @@ const organizeKeysIntoMap = (result: KeyMap, keys: KeysetWithSecrets) => {
 }
 
 export type KeyMap = Record<string, Record<string, KeysetWithSecrets[]>>
+
+// One device/context per immutable state; no unbounded process-wide secret-key cache.
+const keyMaps = new WeakMap<TeamState['lockboxes'], { identity: string; keys: KeyMap }>()
+
+const freezeKeyset = (keys: KeysetWithSecrets | undefined) => {
+  if (keys === undefined) return
+  Object.freeze(keys.encryption)
+  Object.freeze(keys.signature)
+  Object.freeze(keys)
+}
