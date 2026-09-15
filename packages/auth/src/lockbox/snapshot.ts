@@ -4,6 +4,7 @@ import { type Lockbox } from './types.js'
 // and Object.freeze(lockbox) alone does not protect its bytes or nested manifests.
 const snapshots = new WeakSet<Lockbox>()
 const collections = new WeakSet<Lockbox[]>()
+const manifests = new WeakSet<Record<string, unknown>>()
 
 export const snapshotLockbox = (lockbox: Lockbox): Lockbox => {
   if (snapshots.has(lockbox)) return lockbox
@@ -16,12 +17,17 @@ export const snapshotLockbox = (lockbox: Lockbox): Lockbox => {
       return new Uint8Array(bytes)
     },
   })
+  manifests.add(snapshot.contents)
+  manifests.add(snapshot.recipient)
   snapshots.add(snapshot)
   return snapshot
 }
 
 export const isLockboxSnapshot = (lockbox: Lockbox) => snapshots.has(lockbox)
 export const isLockboxCollection = (lockboxes: Lockbox[]) => collections.has(lockboxes)
+// These are frozen copies with own data properties, never caller-provided frozen accessors.
+export const isLockboxManifestSnapshot = (manifest: Record<string, unknown>) =>
+  manifests.has(manifest)
 
 export const snapshotLockboxes = (lockboxes: Lockbox[]): Lockbox[] => {
   if (collections.has(lockboxes)) return lockboxes
