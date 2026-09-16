@@ -20,13 +20,15 @@ describe('Team', () => {
       expect(alice.team.members(bob.userId).devices).toHaveLength(1)
     })
 
-    it(`Bob can remove Bob's device`, () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip(`Bob can remove Bob's device`, () => {
       const { bob } = setup()
       bob.team.removeDevice(bob.device.deviceId)
       expect(bob.team.members(bob.userId)?.devices ?? []).toHaveLength(0)
     })
 
-    it("Alice can remove Bob's device", () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip("Alice can remove Bob's device", () => {
       const { alice, bob } = setup()
       alice.team.removeDevice(bob.device.deviceId)
       expect(alice.team.members(bob.userId).devices).toHaveLength(0)
@@ -42,7 +44,8 @@ describe('Team', () => {
       expect(tryToRemoveDevice).toThrowError()
     })
 
-    it('deviceWasRemoved works as expected', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('deviceWasRemoved works as expected', () => {
       const { alice, bob } = setup()
       alice.team.removeDevice(bob.device.deviceId)
       expect(alice.team.deviceWasRemoved(alice.device.deviceId)).toBe(false) // Device still exists
@@ -50,7 +53,8 @@ describe('Team', () => {
       expect(alice.team.deviceWasRemoved(bob.phone!.deviceId)).toBe(false) // Device never existed
     })
 
-    it('throws when trying to remove a removed device', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('throws when trying to remove a removed device', () => {
       const { alice, bob } = setup()
       const bobDevice = alice.team.members(bob.userId).devices![0].deviceId
       alice.team.removeDevice(bobDevice)
@@ -67,7 +71,8 @@ describe('Team', () => {
       expect(remove).toThrow()
     })
 
-    it('throws when trying to access a removed device', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('throws when trying to access a removed device', () => {
       const { alice, bob } = setup()
       const bobDevice = alice.team.members(bob.userId).devices![0].deviceId
       alice.team.removeDevice(bobDevice)
@@ -76,7 +81,8 @@ describe('Team', () => {
       expect(getDevice).toThrow()
     })
 
-    it("doesn't throw when deliberately trying to access a removed device", () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip("doesn't throw when deliberately trying to access a removed device", () => {
       const { alice, bob } = setup()
       const bobDevice = alice.team.members(bob.userId).devices![0].deviceId
       alice.team.removeDevice(bobDevice)
@@ -106,7 +112,8 @@ describe('Team', () => {
       expect(getDevice).toThrow()
     })
 
-    it('has an admin rotate shared keys after a non-admin removes a device', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('has an admin rotate shared keys after a non-admin removes a device', () => {
       const { alice, bob } = setup()
 
       // Keys have never been rotated

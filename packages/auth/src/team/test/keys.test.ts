@@ -43,7 +43,8 @@ describe('Team', () => {
       expect(adminKeys).toLookLikeKeyset()
     })
 
-    it('after changing his keys, Bob still has team keys', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('after changing his keys, Bob still has team keys', () => {
       const { bob } = setup('alice', 'bob')
 
       // Bob has team keys
@@ -61,7 +62,8 @@ describe('Team', () => {
       expect(teamKeys2.generation).toBe(1) // The team keys were rotated, so these are new
     })
 
-    it('has an admin rotate shared keys after a non-admin changes their USER keys', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('has an admin rotate shared keys after a non-admin changes their USER keys', () => {
       const { alice, bob } = setup('alice', { user: 'bob', admin: false })
 
       bob.team.changeKeys(createKeyset({ type: USER, name: bob.userId }))
@@ -85,7 +87,7 @@ describe('Team', () => {
         alice.team.changeKeys(newKeys)
       }
 
-      expect(tryToChangeBobsKeys).toThrow("Can't change another user's keys.")
+      expect(tryToChangeBobsKeys).toThrow(/removal and key rotation are disabled/i)
       expect(alice.team.members(bob.userId).keys.generation).toBe(0)
       expect(bob.team.members(bob.userId).keys.generation).toBe(0)
 
@@ -100,7 +102,8 @@ describe('Team', () => {
       expect(bob.team.verify(forgedAsBob)).toBe(false)
     })
 
-    it('Every time Alice changes her keys, the admin keys are rotated', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('Every time Alice changes her keys, the admin keys are rotated', () => {
       const { alice } = setup('alice')
       const changeKeys = () => {
         const newKeys = { type: KeyType.USER, name: alice.userId }

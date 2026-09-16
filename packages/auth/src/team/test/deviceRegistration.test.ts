@@ -25,7 +25,8 @@ describe('Team', () => {
       expect(Object.keys(alice.team.graph.links)).toHaveLength(1)
     })
 
-    it('records when a device was admitted and when it was removed', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('records when a device was admitted and when it was removed', () => {
       const { alice, bob } = setup('alice', 'bob')
 
       const [bobsLaptop] = alice.team.members(bob.userId).devices!
@@ -51,7 +52,8 @@ describe('Team', () => {
       expect(admitTwice).toThrow(/already in use/)
     })
 
-    it("won't register a device id that was removed", () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip("won't register a device id that was removed", () => {
       const { bob } = setup('alice', 'bob')
 
       // 👨🏻‍🦲 Bob admits his phone, then it's stolen and 👩🏾 Alice removes it
@@ -100,7 +102,8 @@ describe('Team', () => {
       expect(load).toThrow(/not registered/)
     })
 
-    it('rejects a link signed by a device that was removed', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('rejects a link signed by a device that was removed', () => {
       const { alice, bob } = setup('alice', 'bob')
 
       // 👩🏾 Alice removes 👨🏻‍🦲 Bob's laptop

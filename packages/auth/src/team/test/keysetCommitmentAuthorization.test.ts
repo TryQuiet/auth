@@ -31,7 +31,8 @@ describe('complete-keyset manifest authorization', () => {
     expect(lockbox.open(redistributed, bob.user.keys)).toEqual(established)
   })
 
-  it('drops a conflicting historical-generation redistribution', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('drops a conflicting historical-generation redistribution', () => {
     const { alice, bob } = setup('alice', { user: 'bob', admin: false })
     alice.team.addRole(CHANNEL)
     alice.team.addMemberRole(bob.userId, CHANNEL)

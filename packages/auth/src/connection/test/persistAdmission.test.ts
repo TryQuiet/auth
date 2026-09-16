@@ -535,7 +535,8 @@ describe('connection', () => {
         ).toBeUndefined()
       })
 
-      it('refuses a claim whose identity has been removed', () => {
+      // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+      it.skip('refuses a claim whose identity has been removed', () => {
         const { alice, charlie } = setup('alice', { user: 'charlie', member: false })
         const { seed } = alice.team.inviteMember()
         const { proof, claim, possessionProof } = admission(seed, charlie)
