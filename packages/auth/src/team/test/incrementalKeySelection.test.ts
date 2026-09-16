@@ -2,17 +2,24 @@ import { createKeyset } from '@localfirst/crdx'
 import { asymmetric } from '@localfirst/crypto'
 import { create, open } from 'lockbox/index.js'
 import { appendLockboxes, snapshotLockboxes } from 'lockbox/snapshot.js'
-import { keyMap } from 'team/selectors/keyMap.js'
+import { keyMap as selectKeyMap } from 'team/selectors/keyMap.js'
+import { CheckedKeyStore } from 'lockbox/CheckedKeyStore.js'
 import { type TeamState } from 'team/types.js'
 import { removeMemberRole } from 'team/transforms/removeMemberRole.js'
 import { setup } from 'util/testing/index.js'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const stateWith = (lockboxes: TeamState['lockboxes']) => ({ lockboxes }) as TeamState
+let checkedKeys: CheckedKeyStore
+beforeEach(() => {
+  checkedKeys = new CheckedKeyStore()
+})
+const keyMap = (state: TeamState, recipient: Parameters<typeof selectKeyMap>[1]) =>
+  selectKeyMap(state, recipient, checkedKeys)
 
-describe('immutable key selection cache', () => {
+describe('team-owned checked key selection', () => {
   it('opens an existing key path once for 1,000 lookups and protects returned keys', () => {
-    const recipient = createKeyset({ type: 'DEVICE', name: 'phone' })
+    const recipient = checkedKeys.import(createKeyset({ type: 'DEVICE', name: 'phone' }))
     const role = createKeyset({ type: 'ROLE', name: 'member' })
     const state = stateWith(snapshotLockboxes([create(role, recipient)]))
     const decrypt = vi.spyOn(asymmetric, 'decryptBytes')

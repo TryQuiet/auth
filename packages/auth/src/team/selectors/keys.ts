@@ -1,5 +1,6 @@
 import { type KeyMetadata, type KeyScope, type KeysetWithSecrets } from '@localfirst/crdx'
-import { keyMap, type KeyMap } from './keyMap.js'
+import { keyMap } from './keyMap.js'
+import { type CheckedKeyStore } from 'lockbox/CheckedKeyStore.js'
 import { type TeamState } from 'team/types.js'
 import { assert } from '@localfirst/shared'
 import { lockboxSummary } from 'util/lockboxSummary.js'
@@ -8,22 +9,10 @@ import { lockboxSummary } from 'util/lockboxSummary.js'
 export const keys = (
   state: TeamState,
   deviceKeys: KeysetWithSecrets,
-  scope: KeyScope | KeyMetadata
+  scope: KeyScope | KeyMetadata,
+  checkedKeys?: CheckedKeyStore
 ) => {
-  const { type, name } = scope
-
-  const keysFromLockboxes = keyMap(state, deviceKeys)
-  const keys = keysFromLockboxes[type] ? keysFromLockboxes[type][name] : undefined
-
-  assert(
-    keys,
-    keys
-      ? undefined
-      : `Couldn't find keys: ${JSON.stringify(scope)}
-     Device: ${deviceKeys.name}
-     Available lockboxes: \n- ${state.lockboxes.map(lockboxSummary).join('\n- ')} 
-     Keymap: ${JSON.stringify(keysFromLockboxes, null, 2)}`
-  )
+  const keys = keysAllGen(state, deviceKeys, scope, checkedKeys)
 
   const generation =
     'generation' in scope && scope.generation !== undefined
@@ -38,11 +27,12 @@ export const keys = (
 export const keysAllGen = (
   state: TeamState,
   deviceKeys: KeysetWithSecrets,
-  scope: KeyScope | KeyMetadata
+  scope: KeyScope | KeyMetadata,
+  checkedKeys?: CheckedKeyStore
 ) => {
   const { type, name } = scope
 
-  const keysFromLockboxes = keyMap(state, deviceKeys)
+  const keysFromLockboxes = keyMap(state, deviceKeys, checkedKeys)
   const keys = keysFromLockboxes[type] ? keysFromLockboxes[type][name] : undefined
 
   assert(
@@ -58,18 +48,4 @@ export const keysAllGen = (
   return keys
 }
 
-export const allKeys = (state: TeamState, deviceKeys: KeysetWithSecrets): KeyMap => {
-  const keysFromLockboxes = keyMap(state, deviceKeys)
-
-  assert(
-    keysFromLockboxes,
-    keysFromLockboxes
-      ? undefined
-      : `Couldn't find keys: all
-     Device: ${deviceKeys.name}
-     Available lockboxes: \n- ${state.lockboxes.map(lockboxSummary).join('\n- ')} 
-     Keymap: ${JSON.stringify(keysFromLockboxes, null, 2)}`
-  )
-
-  return keysFromLockboxes
-}
+export { keyMap as allKeys } from './keyMap.js'

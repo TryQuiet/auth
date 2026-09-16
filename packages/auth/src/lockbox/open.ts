@@ -1,58 +1,9 @@
-import { isLockboxSnapshot } from './snapshot.js'
-import { keysetCacheIdentity } from './keysetCacheIdentity.js'
-import { assert } from '@localfirst/shared'
 import { type KeysetWithSecrets } from '@localfirst/crdx'
-import { asymmetric } from '@localfirst/crypto'
-import { keysetCommitment } from 'lockbox/keysetCommitment.js'
-import { isKeyManifest, isRecipientManifest, type Lockbox } from 'lockbox/types.js'
-import { assertValidKeyset } from 'lockbox/validateKeyset.js'
+import { CheckedKeyStore } from './CheckedKeyStore.js'
+import { type Lockbox } from './types.js'
 
 export const open = (lockbox: Lockbox, decryptionKeys: KeysetWithSecrets): KeysetWithSecrets => {
-  const identity = isLockboxSnapshot(lockbox) ? keysetCacheIdentity(decryptionKeys) : undefined
-  const previous = opened.get(lockbox)
-  if (identity !== undefined && previous?.identity === identity) return previous.keys
-  const { encryptionKey, encryptedPayload } = lockbox
-  assertValidKeyset(decryptionKeys, 'The lockbox decryption keys are invalid')
-  assert(isRecipientManifest(lockbox.recipient), 'The lockbox recipient manifest is invalid')
-  assert(isKeyManifest(lockbox.contents), 'The lockbox contents manifest is invalid')
-
-  assert(
-    lockbox.recipient.type === decryptionKeys.type &&
-      lockbox.recipient.name === decryptionKeys.name &&
-      lockbox.recipient.generation === decryptionKeys.generation &&
-      lockbox.recipient.publicKey === decryptionKeys.encryption.publicKey,
-    'The lockbox recipient does not match its decryption keys'
-  )
-
-  const decrypted = asymmetric.decryptBytes({
-    cipher: encryptedPayload,
-    senderPublicKey: encryptionKey.publicKey,
-    recipientSecretKey: decryptionKeys.encryption.secretKey,
-  })
-  assertValidKeyset(decrypted, 'The lockbox contents are not a valid keyset')
-  const keys = decrypted
-
-  // The manifest is used for authorization before the encrypted payload can be opened. Bind the
-  // two representations here so an author cannot advertise an established key in `contents`
-  // while hiding a conflicting keyset in the ciphertext.
-  assert(
-    keys.type === lockbox.contents.type &&
-      keys.name === lockbox.contents.name &&
-      keys.generation === lockbox.contents.generation &&
-      keys.encryption.publicKey === lockbox.contents.publicKey &&
-      keysetCommitment(keys) === lockbox.contents.commitment,
-    'The lockbox contents do not match its manifest'
-  )
-
-  if (identity !== undefined) {
-    Object.freeze(keys.encryption)
-    Object.freeze(keys.signature)
-    Object.freeze(keys)
-    opened.set(lockbox, { identity, keys })
-  }
-  return keys
+  const keys = new CheckedKeyStore().open(lockbox, decryptionKeys)
+  // The standalone API returns caller-owned material; Team keeps its checked records private.
+  return { ...keys, encryption: { ...keys.encryption }, signature: { ...keys.signature } }
 }
-
-// A decrypted keyset is a context-independent fact only for the exact ciphertext, manifests,
-// ephemeral sender key and complete recipient keyset. Never cache caller-owned lockboxes.
-const opened = new WeakMap<Lockbox, { identity: string; keys: KeysetWithSecrets }>()

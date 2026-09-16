@@ -3,7 +3,7 @@ import { isValidKeyset } from 'lockbox/validateKeyset.js'
 import { keysetCommitment } from 'lockbox/keysetCommitment.js'
 import { describe, expect, it } from 'vitest'
 
-describe('complete keyset validation cache identity', () => {
+describe('caller-owned keyset validation', () => {
   it.each([
     'signature secret',
     'signature public',
@@ -12,7 +12,7 @@ describe('complete keyset validation cache identity', () => {
     'name',
     'type',
     'extra field',
-  ])('rejects invalid %s mutation after successful cached validation', field => {
+  ])('rejects invalid %s mutation after successful validation', field => {
     const keys = createKeyset({ type: 'DEVICE', name: 'phone' })
     const other = createKeyset({ type: 'DEVICE', name: 'other' })
     expect(isValidKeyset(keys)).toBe(true)
@@ -27,7 +27,7 @@ describe('complete keyset validation cache identity', () => {
         break
       }
       case 'symmetric secret': {
-        keys.secretKey = ''
+        keys.secretKey = '' as typeof keys.secretKey
         break
       }
       case 'generation': {
@@ -56,7 +56,7 @@ describe('complete keyset validation cache identity', () => {
     let secret = keys.secretKey
     Object.defineProperty(keys, 'secretKey', { enumerable: true, get: () => secret })
     expect(isValidKeyset(keys)).toBe(true)
-    secret = ''
+    secret = '' as typeof secret
     expect(isValidKeyset(keys)).toBe(false)
   })
 
