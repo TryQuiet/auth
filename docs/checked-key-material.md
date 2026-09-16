@@ -18,7 +18,10 @@ removed role access cannot select the retained key. The store retains only one
 selection view, and only immutable reducer collections can reuse that view.
 
 Material and successful delivery records live with the owning `Team`; they are
-not global and are not serialized. Standalone selectors use a temporary store
+not global and are not serialized. A failed merge discards the store, including
+keys opened while decrypting a valid prefix of a rejected graph. This prevents
+rejected updates from accumulating retained material; the next use checks keys
+again. Successful merges keep their records. Standalone selectors use a temporary store
 unless given an explicit owner, and standalone `lockbox.open` returns a fresh
 caller-owned copy. Existing Team key, encryption, and verification APIs and wire
 formats are unchanged. Ordinary message signatures are still verified individually.
@@ -36,6 +39,8 @@ pnpm exec vitest run packages/auth/src packages/crdx/src packages/crypto/src pac
 lockbox opening, keypair validation, or key hashing after warm-up, while verifying
 all 1,000 signatures and rejecting tampering. It also tests serialized graph
 updates, retained removal behavior, and mutation of explicit recipient inputs.
+Repeated semantic and ciphertext rejections leave graph/state unchanged and release
+speculative keys; a later successful merge checks them again and retains them.
 `checkedKeyStore.test.ts` covers complete delivery binding, reconstructed
 collections without WeakRef, branch isolation, malformed deliveries, and ownership.
 

@@ -1,10 +1,12 @@
+import { Buffer } from 'node:buffer'
 import * as crypto from '@localfirst/crypto'
 import { decryptGraph } from '@localfirst/crdx'
-import { unpack } from 'msgpackr'
+import { pack, unpack } from 'msgpackr'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { removeMemberRole } from 'team/transforms/removeMemberRole.js'
 import { type TeamAction, type TeamContext } from 'team/types.js'
 import { setup } from 'util/testing/index.js'
+import { forge } from './forgeHelpers.js'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -82,5 +84,55 @@ describe('messages using team-owned checked keys', () => {
     } finally {
       raw.encryption.secretKey = saved
     }
+  })
+
+  it.each(['semantic', 'ciphertext'])('discards speculative keys after %s rejection', failure => {
+    const { alice, bob } = setup('alice', 'bob')
+    const graphBefore = bob.team.graph
+    const stateBefore = bob.team.state
+    const roleName = 'pending-role'
+    alice.team.addRole(roleName)
+    const acceptedPrefix = alice.team.graph
+    const delivery = alice.team.state.lockboxes.find(box => box.contents.name === roleName)!
+    const rejectedGraph = forge({
+      graph: acceptedPrefix,
+      action: {
+        type: 'ADD_ROLE',
+        payload: { roleName: '__proto__', createdBy: alice.userId, lockboxes: [] },
+      },
+      signer: alice.signer,
+      teamKeys: alice.team.teamKeys(),
+    })
+    if (failure === 'ciphertext') {
+      const [head] = rejectedGraph.head
+      const link = rejectedGraph.encryptedLinks[head]
+      const envelope = unpack(link.encryptedBody) as { message: Uint8Array }
+      envelope.message[0] ^= 1 // eslint-disable-line no-bitwise
+      link.encryptedBody = pack(envelope)
+    }
+    const rejection = failure === 'semantic' ? /Role name .* is reserved/ : /ciphertext/
+    const decrypt = vi.spyOn(crypto.asymmetric, 'decryptBytes')
+    const openedDelivery = () =>
+      decrypt.mock.calls.some(([{ cipher }]) =>
+        Buffer.from(cipher).equals(Buffer.from(delivery.encryptedPayload))
+      )
+    for (let attempt = 0; attempt < 3; attempt++) {
+      decrypt.mockClear()
+      expect(() => bob.team.merge(rejectedGraph)).toThrow(rejection)
+      expect(bob.team.graph).toBe(graphBefore)
+      expect(bob.team.state).toBe(stateBefore)
+      expect(bob.team.hasRole(roleName)).toBe(false)
+      // Each rejected attempt must release the preceding valid delivery's checked material.
+      expect(openedDelivery()).toBe(true)
+    }
+    decrypt.mockClear()
+    bob.team.merge(acceptedPrefix)
+    expect(openedDelivery()).toBe(true)
+    const committedKeys = bob.team.roleKeys(roleName)
+    expect(committedKeys).toEqual(alice.team.roleKeys(roleName))
+    decrypt.mockClear()
+    bob.team.merge(acceptedPrefix)
+    expect(bob.team.roleKeys(roleName)).toBe(committedKeys)
+    expect(decrypt).not.toHaveBeenCalled()
   })
 })

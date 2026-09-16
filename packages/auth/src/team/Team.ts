@@ -86,7 +86,7 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** The keys that open lockboxes addressed to us: our device keys, or a server's rotatable keys. */
   private lockboxKeys: KeysetWithSecrets
-  readonly #checkedKeys = new CheckedKeyStore()
+  #checkedKeys = new CheckedKeyStore()
 
   /**
    * We can make a team instance either by creating a brand-new team, or restoring one from a stored graph.
@@ -244,14 +244,21 @@ export class Team extends EventEmitter<TeamEvents> {
   public merge = (theirGraph: TeamGraph) => {
     // A graph from a peer arrives with plaintext links attached; those are theirs to write, so we
     // reconstruct every body from the ciphertext its hash commits to before merging.
-    const authenticatedGraph = decryptTeamGraph({
-      encryptedGraph: { ...theirGraph, childMap: getChildMap(theirGraph) },
-      teamKeys: this.teamKeyring(),
-      deviceKeys: this.lockboxKeys,
-      checkedKeys: this.#checkedKeys,
-      extendableLogger: this.logger,
-    })
-    this.store.merge(authenticatedGraph)
+    try {
+      const authenticatedGraph = decryptTeamGraph({
+        encryptedGraph: { ...theirGraph, childMap: getChildMap(theirGraph) },
+        teamKeys: this.teamKeyring(),
+        deviceKeys: this.lockboxKeys,
+        checkedKeys: this.#checkedKeys,
+        extendableLogger: this.logger,
+      })
+      this.store.merge(authenticatedGraph)
+    } catch (error) {
+      // Decryption can open deliveries before the whole graph is accepted. Drop speculative
+      // records on failure so rejected branches cannot accumulate material for the Team's lifetime.
+      this.#checkedKeys = new CheckedKeyStore()
+      throw error
+    }
     this.state = this.store.getState()
 
     this.emit('updated', { head: this.graph.head })
