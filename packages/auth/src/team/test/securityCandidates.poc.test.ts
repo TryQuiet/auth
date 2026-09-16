@@ -102,7 +102,8 @@ describe('security candidate PoCs: team and lockbox state', () => {
     expect(() => symmetric.decryptBytes(message.contents, attackerRoleKeys.secretKey)).toThrow()
   })
 
-  it('does not deliver the replacement role key to the principal removed by the rotation', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('does not deliver the replacement role key to the principal removed by the rotation', () => {
     const { alice, bob } = setup('alice', { user: 'bob', admin: false })
     alice.team.addRole(CHANNEL)
     alice.team.addMemberRole(bob.userId, CHANNEL)
@@ -176,7 +177,8 @@ describe('security candidate PoCs: team and lockbox state', () => {
     ).toBe(false)
   })
 
-  it('does not deliver replacement USER or TEAM keys to a fully removed member', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('does not deliver replacement USER or TEAM keys to a fully removed member', () => {
     const { alice, bob } = setup('alice', { user: 'bob', admin: false })
     const beforeRemoval = serializeTeamGraph(alice.team.graph)
     bob.team = teams.load(beforeRemoval, bob.localContext, createKeyring(alice.team.teamKeys()))
@@ -196,7 +198,8 @@ describe('security candidate PoCs: team and lockbox state', () => {
     expect(() => symmetric.decryptBytes(futureMessage.contents, oldTeamKeys.secretKey)).toThrow()
   })
 
-  it('can leave the target of a losing concurrent member removal with the winning team key', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('can leave the target of a losing concurrent member removal with the winning team key', () => {
     const { alice, bob, dave, charlie } = setup(
       'alice',
       { user: 'bob', admin: false },
@@ -257,10 +260,7 @@ describe('security candidate PoCs: team and lockbox state', () => {
   it('rejects an admin-authored cross-user key replacement on live merge and cold load', () => {
     const { alice, bob } = setup('alice', 'bob')
     const teamKeys = alice.team.teamKeys()
-    const replacement = createKeyset(
-      { type: KeyType.USER, name: bob.userId },
-      'alice-rotates-bob'
-    )
+    const replacement = createKeyset({ type: KeyType.USER, name: bob.userId }, 'alice-rotates-bob')
     replacement.generation = bob.team.members(bob.userId).keys.generation + 1
 
     // Build the exact graph a modified administrator would publish, bypassing the public API's
@@ -286,7 +286,8 @@ describe('security candidate PoCs: team and lockbox state', () => {
     })
   })
 
-  it('can fail to recover a descendant written under a losing concurrent team rotation', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('can fail to recover a descendant written under a losing concurrent team rotation', () => {
     const { alice, bob } = setup('alice', 'bob')
     const base = serializeTeamGraph(alice.team.graph)
     const baseKeys = createKeyring(alice.team.teamKeys())

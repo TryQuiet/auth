@@ -140,17 +140,17 @@ describe('invitation acceptance wire format', () => {
     }
   })
 
-  // The outer payload must be *exactly* the v3 schema: no unknown extra fields (which could smuggle
+  // The outer payload must be *exactly* the v4 schema: no unknown extra fields (which could smuggle
   // data past the envelope), no missing fields, no other version. This pins the strictness of the
   // schema check, not every possible malformed payload.
-  it('rejects outer payloads that are not exactly the v3 schema', async () => {
+  it('rejects outer payloads that are not exactly the v4 schema', async () => {
     const fixture = await captureAcceptance()
 
     expect(() =>
       openExpectedAcceptance({ ...fixture, payload: { ...fixture.payload, extra: true } })
     ).toThrow()
     expect(() =>
-      openExpectedAcceptance({ ...fixture, payload: { ...fixture.payload, version: 4 } })
+      openExpectedAcceptance({ ...fixture, payload: { ...fixture.payload, version: 3 } })
     ).toThrow()
     const { senderPublicKey: _, ...missingSenderKey } = fixture.payload
     expect(() =>
@@ -213,7 +213,7 @@ describe('invitation acceptance wire format', () => {
 })
 
 const ACCEPTANCE_DOMAIN = 'localfirst-auth/invitation-acceptance'
-const ACCEPTANCE_VERSION = 3
+const ACCEPTANCE_VERSION = 4
 
 type ExpectedPayload = {
   version: number

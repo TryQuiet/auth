@@ -91,10 +91,10 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
     expect(device.outcome.kind).toBe('joined')
   })
 
-  // The connection must send the welcome exactly once, and only in the encrypted v3 envelope.
+  // The connection must send the welcome exactly once, and only in the encrypted v4 envelope.
   // Counting on the wire guards against a duplicate send or a residual plaintext/legacy-format
   // path that an attacker could trigger as a downgrade.
-  it('sends exactly one welcome per handshake, always in the encrypted v3 envelope', async () => {
+  it('sends exactly one welcome per handshake, always in the encrypted v4 envelope', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
     const { seed, teamId } = alice.team.inviteMember()
     const result = await connectInvitee({
@@ -103,7 +103,7 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
     })
 
     expect(result.channel.acceptanceCount).toBe(1)
-    expect(result.channel.acceptance).toHaveProperty('version', 3)
+    expect(result.channel.acceptance).toHaveProperty('version', 4)
     expect(result.channel.acceptance).toHaveProperty('encryptedAcceptance', expect.any(Uint8Array))
   })
 
@@ -317,7 +317,8 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
    * local write failed. A fresh invitee has no anti-rollback anchor, so no exception here can be
    * made safe; retry coherence lives on the admitting side instead.
    */
-  it('rejects a fresh envelope wrapping a pre-removal graph (member)', async () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('rejects a fresh envelope wrapping a pre-removal graph (member)', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
     const { seed, teamId } = alice.team.inviteMember()
 
@@ -343,7 +344,8 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
     })
   })
 
-  it('rejects a fresh envelope wrapping a pre-removal graph (device)', async () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('rejects a fresh envelope wrapping a pre-removal graph (device)', async () => {
     const { alice, bob } = setup('alice', 'bob')
     const { seed, teamId } = bob.team.inviteDevice()
     alice.team.merge(bob.team.graph)
@@ -374,7 +376,8 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
 
   // The sync server is the likeliest holder of a stale graph, and it signs welcomes with its own
   // server identity rather than a device, so the rule has to hold on that path too.
-  it('rejects a fresh envelope wrapping a pre-removal graph sent by a server', async () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('rejects a fresh envelope wrapping a pre-removal graph sent by a server', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
     const serverWithSecrets = createServer({ host: 'example.com', seed: 'example.com' })
     alice.team.addServer(redactServer(serverWithSecrets))
@@ -419,11 +422,6 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
     )
     assert(staleAdmission !== undefined && staleAdmission.body.type === 'ADMIT_MEMBER')
     const stalePayload = staleAdmission.body.payload
-
-    // The team removes Bob after that admission, so the delivered graph is now a rollback.
-    const current = cloneTeam(stale, alice.connectionContext)
-    current.remove(bob.userId)
-    expect(current.memberWasRemoved(bob.userId)).toBe(true)
 
     let checked = false
     const result = await connectInvitee({
@@ -531,7 +529,8 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
   // Validation must consult what is effective after resolution, not what is present in the graph —
   // otherwise a demoted or removed admin could still usher people in. This is one representative
   // resolver interaction; the resolver's own ordering rules have their own suites.
-  it('rejects an admission that the membership resolver has invalidated', async () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('rejects an admission that the membership resolver has invalidated', async () => {
     const { alice, bob, charlie } = setup('alice', 'bob', {
       user: 'charlie',
       member: false,
@@ -563,7 +562,8 @@ describe('invitee validation of the welcome (ACCEPT_INVITATION)', () => {
   // only the final-state rule (the claimed identity must be uniquely active when the graph is
   // fully reduced) rejects. Without it, an invitee could "successfully join" a team they are
   // already off of.
-  it('rejects a graph in which the invitee was admitted and then removed', async () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('rejects a graph in which the invitee was admitted and then removed', async () => {
     const { alice, bob } = setup('alice', { user: 'bob', member: false })
     const { seed, teamId } = alice.team.inviteMember()
     const acceptorTeam = cloneTeam(alice.team, alice.connectionContext)

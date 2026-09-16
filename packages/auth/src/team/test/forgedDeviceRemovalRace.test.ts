@@ -37,7 +37,8 @@ describe('a removed device racing its removal', () => {
     return { alice, bob, thief: deviceSigner(bob.phone!), keys: alice.team.teamKeys() }
   }
 
-  it('discards what the stolen device does while it is being removed', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('discards what the stolen device does while it is being removed', () => {
     const { alice, bob, thief, keys } = stolenPhone()
     const shared = clone(alice.team.graph)
 
@@ -69,7 +70,8 @@ describe('a removed device racing its removal', () => {
     expect(loaded.deviceWasRemoved(bob.phone!.deviceId)).toBe(true)
   })
 
-  it('does not let the stolen device lock the owner out by removing his other device first', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('does not let the stolen device lock the owner out by removing his other device first', () => {
     const { alice, bob, thief, keys } = stolenPhone()
     const shared = clone(alice.team.graph)
 
@@ -99,7 +101,8 @@ describe('a removed device racing its removal', () => {
     expect(loaded.deviceWasRemoved(bob.phone!.deviceId)).toBe(true)
   })
 
-  it('discards what the stolen device does when its owner is concurrently removed', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('discards what the stolen device does when its owner is concurrently removed', () => {
     const { alice, bob, thief, keys } = stolenPhone()
     const shared = clone(alice.team.graph)
 

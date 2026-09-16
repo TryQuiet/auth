@@ -5,11 +5,11 @@ import type { InvitationKind } from 'invitation/index.js'
 import type { ErrorMessage, LocalErrorMessage } from './errors.js'
 
 /**
- * Peers at this version authorize lockboxes by a commitment to the complete encrypted keyset.
- * Negotiating this version before any identity or graph exchange prevents replicas with different
- * manifest-authorization rules from synchronizing.
+ * Protocol 4 disables removals and key rotation, in addition to protocol 3's complete-keyset
+ * lockbox commitments. Negotiate before identity or graph exchange: a protocol 3 replica would
+ * apply actions that protocol 4 deliberately leaves inert.
  */
-export const CONNECTION_PROTOCOL_VERSION = 3 as const
+export const CONNECTION_PROTOCOL_VERSION = 4 as const
 
 export type ReadyMessage = {
   type: 'REQUEST_IDENTITY'
@@ -28,8 +28,8 @@ export type ReadyMessage = {
  * Runtime validation for the first protocol message, which arrives as untyped wire data.
  *
  * This is also the protocol-version negotiation. The payload is exact so an old implementation
- * cannot ignore an unknown version field and continue under different manifest-authorization
- * rules. Everything downstream — an invitee's proof of invitation above all — is bound to the
+ * cannot ignore an unknown version field and continue under different authorization rules.
+ * Everything downstream — an invitee's proof of invitation above all — is bound to the
  * identity nonce this message carries.
  */
 export const isReadyMessage = (message: unknown): message is ReadyMessage => {

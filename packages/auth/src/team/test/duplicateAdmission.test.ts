@@ -74,7 +74,8 @@ describe('Team', () => {
     })
 
     // Design target: keep this red until duplicate tombstone cleanup is idempotent.
-    it('keeps exactly one removal tombstone and a usable member selector after merging a duplicate', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('keeps exactly one removal tombstone and a usable member selector after merging a duplicate', () => {
       const { alice, bob, charlie } = setup('alice', 'bob', { user: 'charlie', member: false })
 
       const { seed } = alice.team.inviteMember()

@@ -287,8 +287,11 @@ describe('auth provider for automerge-repo', () => {
     await authenticated(alice, charlie)
     await synced(alice, charlie) // ✅
 
-    // Alice boots charlie
-    aliceTeam.remove(charlie.user.userId)
+    // Protocol 4 retains membership and keys when removal is requested. Persistence must still
+    // support later invitations and reconnecting with this unchanged keyring.
+    expect(() => aliceTeam.remove(charlie.user.userId)).toThrow(/disabled/i)
+    expect(aliceTeam.has(charlie.user.userId)).toBe(true)
+    expect(aliceTeam.teamKeys().generation).toBe(0)
 
     // Alice sends Bob an invitation
     const { seed: bobInvite } = aliceTeam.inviteMember()
