@@ -2,7 +2,6 @@ import { type KeyMetadata, type KeyScope, type KeysetWithSecrets } from '@localf
 import { keyMap, type KeyMap } from './keyMap.js'
 import { type TeamState } from 'team/types.js'
 import { assert } from '@localfirst/shared'
-import { lockboxSummary } from 'util/lockboxSummary.js'
 
 /** Returns the keys for the given scope, if they are in a lockbox that the current device has access to */
 export const keys = (
@@ -15,13 +14,7 @@ export const keys = (
   const keysFromLockboxes = keyMap(state, deviceKeys)
   const keys = keysFromLockboxes[type] ? keysFromLockboxes[type][name] : undefined
 
-  assert(
-    keys,
-    `Couldn't find keys: ${JSON.stringify(scope)}
-     Device: ${deviceKeys.name}
-     Available lockboxes: \n- ${state.lockboxes.map(lockboxSummary).join('\n- ')} 
-     Keymap: ${JSON.stringify(keysFromLockboxes, null, 2)}`
-  )
+  assert(keys, 'Requested key scope is unavailable')
 
   const generation =
     'generation' in scope && scope.generation !== undefined
@@ -43,13 +36,7 @@ export const keysAllGen = (
   const keysFromLockboxes = keyMap(state, deviceKeys)
   const keys = keysFromLockboxes[type] ? keysFromLockboxes[type][name] : undefined
 
-  assert(
-    keys,
-    `Couldn't find keys: ${JSON.stringify(scope)}
-     Device: ${deviceKeys.name}
-     Available lockboxes: \n- ${state.lockboxes.map(lockboxSummary).join('\n- ')} 
-     Keymap: ${JSON.stringify(keysFromLockboxes, null, 2)}`
-  )
+  assert(keys, 'Requested key scope is unavailable')
 
   return keys
 }
@@ -57,13 +44,7 @@ export const keysAllGen = (
 export const allKeys = (state: TeamState, deviceKeys: KeysetWithSecrets): KeyMap => {
   const keysFromLockboxes = keyMap(state, deviceKeys)
 
-  assert(
-    keysFromLockboxes,
-    `Couldn't find keys: all
-     Device: ${deviceKeys.name}
-     Available lockboxes: \n- ${state.lockboxes.map(lockboxSummary).join('\n- ')} 
-     Keymap: ${JSON.stringify(keysFromLockboxes, null, 2)}`
-  )
+  assert(keysFromLockboxes, 'Key material is unavailable')
 
   return keysFromLockboxes
 }
