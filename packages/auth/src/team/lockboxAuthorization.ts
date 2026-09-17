@@ -1,3 +1,5 @@
+import { CommitmentIndex } from 'lockbox/commitmentIndex.js'
+import { isLockboxCollection, isLockboxSnapshot } from 'lockbox/snapshot.js'
 import { ROOT, type Keyset } from '@localfirst/crdx'
 import { isBase58KeyOfLength } from '@localfirst/crypto'
 import { type Logger } from '@localfirst/shared'
@@ -848,18 +850,38 @@ const groupByKeyIdentity = (lockboxes: Lockbox[]): Map<string, Lockbox[]> => {
   return batches
 }
 
-const establishedCommitments = (lockboxes: unknown): Map<string, string> => {
-  const commitments = new Map<string, string>()
+const commitmentIndexes = new WeakMap<Lockbox[], CommitmentIndex>()
+const establishedCommitments = (lockboxes: unknown): CommitmentIndex => {
+  if (Array.isArray(lockboxes) && isLockboxCollection(lockboxes)) {
+    const cached = commitmentIndexes.get(lockboxes)
+    if (cached !== undefined) return cached
+  }
+  let commitments = CommitmentIndex.empty
   if (!Array.isArray(lockboxes)) return commitments
 
   for (const candidate of lockboxes as unknown[]) {
     if (!isAuthorizationLockbox(candidate)) continue
     const { contents } = candidate
     const id = keyIdentityId(contents)
-    if (!commitments.has(id)) commitments.set(id, contents.commitment)
+    commitments = commitments.add(id, contents.commitment)
   }
 
+  if (isLockboxCollection(lockboxes)) commitmentIndexes.set(lockboxes, commitments)
   return commitments
+}
+
+/** Called only after action authorization accepted the new deliveries into immutable state. */
+export const extendEstablishedCommitments = (
+  previous: Lockbox[],
+  next: Lockbox[],
+  added: Lockbox[]
+): void => {
+  let index = establishedCommitments(previous)
+  for (const candidate of added) {
+    if (!isAuthorizationLockbox(candidate)) continue
+    index = index.add(keyIdentityId(candidate.contents), candidate.contents.commitment)
+  }
+  commitmentIndexes.set(next, index)
 }
 
 /** Extracts only the coordinates needed to associate a malformed manifest with its batch. */
@@ -884,20 +906,24 @@ const keyIdentity = (value: unknown): KeyIdentity | undefined => {
 }
 
 /** Strict public structure check before attacker-controlled lockboxes reach any selector. */
+const structurallyValidated = new WeakSet<Lockbox>()
 const isAuthorizationLockbox = (value: unknown): value is Lockbox => {
+  if (typeof value === 'object' && value !== null && structurallyValidated.has(value as Lockbox))
+    return true
   if (!isRecord(value) || !hasExactKeys(value, LOCKBOX_FIELDS)) return false
   if (!isRecord(value.encryptionKey) || !hasExactKeys(value.encryptionKey, ENCRYPTION_KEY_FIELDS)) {
     return false
   }
 
-  return (
+  const valid =
     value.encryptionKey.type === 'EPHEMERAL' &&
     value.encryptionKey.name === 'EPHEMERAL' &&
     isBase58KeyOfLength(value.encryptionKey.publicKey, 32) &&
     isRecipientManifest(value.recipient) &&
     isKeyManifest(value.contents) &&
     value.encryptedPayload instanceof Uint8Array
-  )
+  if (valid && isLockboxSnapshot(value as Lockbox)) structurallyValidated.add(value as Lockbox)
+  return valid
 }
 
 const mayEstablishIdentityKeyset = (

@@ -30,6 +30,7 @@ import * as invitations from 'invitation/index.js'
 import { type InvitationClaim, type ProofOfInvitation } from 'invitation/index.js'
 import { normalize } from 'invitation/normalize.js'
 import * as lockbox from 'lockbox/index.js'
+import { CheckedKeyStore } from 'lockbox/CheckedKeyStore.js'
 import { type AddRoleInput, ADMIN, type Role } from 'role/index.js'
 import { castServer } from 'server/castServer.js'
 import { type Host, type Server } from 'server/types.js'
@@ -85,6 +86,7 @@ export class Team extends EventEmitter<TeamEvents> {
 
   /** The keys that open lockboxes addressed to us: our device keys, or a server's rotatable keys. */
   private lockboxKeys: KeysetWithSecrets
+  #checkedKeys = new CheckedKeyStore()
 
   /**
    * We can make a team instance either by creating a brand-new team, or restoring one from a stored graph.
@@ -99,14 +101,14 @@ export class Team extends EventEmitter<TeamEvents> {
     if ('user' in options.context) {
       const { user, device } = options.context
       this.user = user
-      this.lockboxKeys = device.keys
+      this.lockboxKeys = this.#checkedKeys.import(device.keys)
       // Members author links as their device: device keys never rotate, so a signature stays
       // checkable against the device's registration forever.
       this.signer = deviceSigner(device)
     } else {
       const { server } = options.context
       this.user = castServer.toUser(server)
-      this.lockboxKeys = server.keys
+      this.lockboxKeys = this.#checkedKeys.import(server.keys)
       // A server signs with its identity keys, which are separate from the rotatable keys its
       // lockboxes are addressed to.
       this.signer = castServer.toSigner(server)
@@ -242,13 +244,21 @@ export class Team extends EventEmitter<TeamEvents> {
   public merge = (theirGraph: TeamGraph) => {
     // A graph from a peer arrives with plaintext links attached; those are theirs to write, so we
     // reconstruct every body from the ciphertext its hash commits to before merging.
-    const authenticatedGraph = decryptTeamGraph({
-      encryptedGraph: { ...theirGraph, childMap: getChildMap(theirGraph) },
-      teamKeys: this.teamKeyring(),
-      deviceKeys: this.lockboxKeys,
-      extendableLogger: this.logger,
-    })
-    this.store.merge(authenticatedGraph)
+    try {
+      const authenticatedGraph = decryptTeamGraph({
+        encryptedGraph: { ...theirGraph, childMap: getChildMap(theirGraph) },
+        teamKeys: this.teamKeyring(),
+        deviceKeys: this.lockboxKeys,
+        checkedKeys: this.#checkedKeys,
+        extendableLogger: this.logger,
+      })
+      this.store.merge(authenticatedGraph)
+    } catch (error) {
+      // Decryption can open deliveries before the whole graph is accepted. Drop speculative
+      // records on failure so rejected branches cannot accumulate material for the Team's lifetime.
+      this.#checkedKeys = new CheckedKeyStore()
+      throw error
+    }
     this.state = this.store.getState()
 
     this.emit('updated', { head: this.graph.head })
@@ -683,7 +693,7 @@ export class Team extends EventEmitter<TeamEvents> {
     )
 
     const openedRoleKeys = select
-      .visibleKeys(this.state, roleGrantKeys)
+      .visibleKeys(this.state, roleGrantKeys, this.#checkedKeys)
       .filter(keys => keys.type === KeyType.ROLE && keys.name === roleName)
       .sort((a, b) => a.generation - b.generation)
     const currentGeneration = select.lockboxesInScope(this.state, {
@@ -1129,15 +1139,15 @@ export class Team extends EventEmitter<TeamEvents> {
   public keys = (
     scope: KeyMetadata | KeyScope,
     decryptionKeys: KeysetWithSecrets = this.lockboxKeys
-  ) => select.keys(this.state, decryptionKeys, scope)
+  ) => select.keys(this.state, decryptionKeys, scope, this.#checkedKeys)
 
   public keysAllGenerations = (
     scope: KeyMetadata | KeyScope,
     decryptionKeys: KeysetWithSecrets = this.lockboxKeys
-  ) => select.keysAllGen(this.state, decryptionKeys, scope)
+  ) => select.keysAllGen(this.state, decryptionKeys, scope, this.#checkedKeys)
 
   public allKeys = (decryptionKeys: KeysetWithSecrets = this.lockboxKeys) =>
-    select.allKeys(this.state, decryptionKeys)
+    select.allKeys(this.state, decryptionKeys, this.#checkedKeys)
 
   /** Returns the keys for the given role. */
   public roleKeys = (roleName: string, generation?: number, decryptionKeys?: KeysetWithSecrets) =>
@@ -1158,7 +1168,7 @@ export class Team extends EventEmitter<TeamEvents> {
    */
   public teamKeyring = () => ({
     ...this.store.getKeyring(),
-    ...select.teamKeyring(this.state, this.lockboxKeys),
+    ...select.teamKeyring(this.state, this.lockboxKeys, this.#checkedKeys),
   })
 
   /** Returns the admin keyset. */
@@ -1201,7 +1211,7 @@ export class Team extends EventEmitter<TeamEvents> {
     if (name === this.userId) {
       this.user.keys = newKeys
       // A server's rotatable keys are also the keys its lockboxes are addressed to
-      if (isForServer) this.lockboxKeys = newKeys
+      if (isForServer) this.lockboxKeys = this.#checkedKeys.import(newKeys)
     }
   }
 

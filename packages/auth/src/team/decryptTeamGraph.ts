@@ -17,6 +17,7 @@ import {
   type TeamState,
 } from './types.js'
 import { assert, Logger } from '@localfirst/shared'
+import { CheckedKeyStore } from 'lockbox/CheckedKeyStore.js'
 
 /**
  * Decrypts a graph.
@@ -32,6 +33,7 @@ export const decryptTeamGraph = ({
   encryptedGraph,
   teamKeys,
   deviceKeys,
+  checkedKeys = new CheckedKeyStore(),
   extendableLogger,
   maxTraversalSteps = 50_000,
 }: {
@@ -48,6 +50,7 @@ export const decryptTeamGraph = ({
    * rotated.
    */
   deviceKeys: KeysetWithSecrets
+  checkedKeys?: CheckedKeyStore
 
   extendableLogger?: Logger
 
@@ -63,6 +66,7 @@ export const decryptTeamGraph = ({
       ? extendableLogger.extend('decryptTeamGraph')
       : new Logger({ moduleName: 'auth:decryptTeamGraph' })
   const keyring = createKeyring(teamKeys)
+  const recipient = checkedKeys.import(deviceKeys)
 
   const { encryptedLinks, childMap, root } = encryptedGraph
   const decryptedLinks: Record<Hash, TeamLink> = {}
@@ -145,7 +149,7 @@ export const decryptTeamGraph = ({
 
     let newKeys: KeysetWithSecrets | undefined
     try {
-      newKeys = keys(newState, deviceKeys, TEAM_SCOPE)
+      newKeys = keys(newState, recipient, TEAM_SCOPE, checkedKeys)
       keyring[newKeys.encryption.publicKey] = newKeys
     } catch {
       newKeys = previousKeys

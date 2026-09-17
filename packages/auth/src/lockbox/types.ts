@@ -1,5 +1,6 @@
 import { type KeyMetadata } from '@localfirst/crdx'
 import { isBase58KeyOfLength, type Base58 } from '@localfirst/crypto'
+import { isLockboxManifestSnapshot } from './snapshot.js'
 
 export const KEY_MANIFEST_VERSION = 1 as const
 
@@ -23,17 +24,23 @@ export const isRecipientManifest = (value: unknown): value is RecipientManifest 
 
 export const isKeyManifest = (value: unknown): value is KeyManifest => {
   if (!isRecord(value)) return false
+  if (validatedManifests.has(value)) return true
   if (!hasExactKeys(value, ['type', 'name', 'generation', 'publicKey', 'version', 'commitment'])) {
     return false
   }
 
-  return (
+  const valid =
     metadataIsValid(value) &&
     isBase58KeyOfLength(value.publicKey, 32) &&
     value.version === KEY_MANIFEST_VERSION &&
     isBase58KeyOfLength(value.commitment, 32)
-  )
+  // Reuse structure only for our complete immutable snapshots. Scope and action authorization
+  // are evaluated by callers against their current state, even when this fact is reused.
+  if (valid && isLockboxManifestSnapshot(value)) validatedManifests.add(value)
+  return valid
 }
+
+const validatedManifests = new WeakSet<Record<string, unknown>>()
 
 export type Lockbox = {
   /** The public key of the keypair used to encrypt this lockbox  */

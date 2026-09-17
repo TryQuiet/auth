@@ -1,5 +1,6 @@
 ﻿import { byHash, topoSort } from './topoSort.js'
 import { type Action, type Link, type Resolver, type Graph } from './types.js'
+import { setLinkValidationOwner } from './validationOwner.js'
 
 /**
  * Takes a `Graph` and returns a flat array of links by performing a topographical sort and
@@ -32,7 +33,9 @@ export const getSequence = <A extends Action, C>(
   // Rather than apply the filter directly, we mark links that would be filtered out as invalid.
   return sorted.map(link => {
     const isInvalid = link.isInvalid ?? !filter(link)
-    return { ...link, isInvalid }
+    const sequenced = { ...link, isInvalid }
+    setLinkValidationOwner(sequenced, link)
+    return sequenced
   })
 }
 

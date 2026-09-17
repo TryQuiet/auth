@@ -1,5 +1,6 @@
+import { appendLockboxes } from 'lockbox/snapshot.js'
 import { type Logger } from '@localfirst/shared'
-import { authorizedLockboxes } from 'team/lockboxAuthorization.js'
+import { authorizedLockboxes, extendEstablishedCommitments } from 'team/lockboxAuthorization.js'
 import {
   isLockboxCarrierAction,
   SignerKind,
@@ -47,7 +48,13 @@ export const collectLockboxes =
       logger
     )
     if (authorized.length === 0) return projectedState
-    return { ...projectedState, lockboxes: projectedState.lockboxes.concat(authorized) }
+    const lockboxes = appendLockboxes(projectedState.lockboxes, authorized)
+    extendEstablishedCommitments(
+      projectedState.lockboxes,
+      lockboxes,
+      lockboxes.slice(-authorized.length)
+    )
+    return { ...projectedState, lockboxes }
   }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
