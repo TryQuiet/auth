@@ -65,6 +65,7 @@ export const useTeam = () => {
         ...prev,
         team: newTeam,
         teamState: newTeam.state,
+        teamKeys: newTeam.teamKeyring(),
       }
     })
   }
@@ -77,6 +78,7 @@ export const useTeam = () => {
         ...prev,
         team,
         teamState: team.state,
+        teamKeys: team.teamKeyring(),
       }
     })
 
@@ -85,8 +87,8 @@ export const useTeam = () => {
     connect(teamName, context)
   }
 
-  const joinTeam = (teamName: string, invitationSeed: string) => {
-    const context = { userName, userId, user, device, invitationSeed }
+  const joinTeam = (teamName: string, invitationSeed: string, expectedTeamId: auth.Base58) => {
+    const context = { userName, userId, user, device, invitationSeed, expectedTeamId }
     connect(teamName, context)
   }
 
@@ -124,16 +126,17 @@ export const useTeam = () => {
       })
 
       // when we join a team, expose it to the app (and update our user, in case it has new info)
-      .on('joined', ({ team, user }) => {
+      .on('joined', ({ team, user, teamKeyring }) => {
         setPeerState(prev => ({
           ...prev,
           team,
           user,
+          teamKeys: teamKeyring,
         }))
       })
 
       // when we connect to a peer, expose the latest team info from the connection
-      .on('connected', (connection: auth.Connection) => {
+      .on('connected', connection => {
         setTeam(connection.team)
       })
 
@@ -146,9 +149,7 @@ export const useTeam = () => {
           }
         }
 
-        // if we have a detailed error message, use that
-        const message = error.details ?? error.message
-        addAlert(message)
+        addAlert(error.message)
       })
 
       // when we disconnect from a peer, update our connection status

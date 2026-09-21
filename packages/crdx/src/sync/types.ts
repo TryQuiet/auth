@@ -57,3 +57,24 @@ export type SyncMessage = {
   /** Any errors caused by their last sync message. */
   error?: ValidationError
 }
+
+/**
+ * Ceilings on what a single sync message may make us do. Everything here is peer-supplied, so
+ * every dimension a peer controls — how many links, how many bytes, how large a topology, how far
+ * we walk it — needs a bound. These are deliberately far above anything a real graph produces.
+ */
+export type SyncLimits = {
+  maxPendingLinks: number
+  maxPendingCiphertextBytes: number
+  maxParentEntries: number
+  maxParentEdges: number
+  maxTraversalSteps: number
+}
+
+export const DEFAULT_SYNC_LIMITS: SyncLimits = Object.freeze({
+  maxPendingLinks: 10_000,
+  maxPendingCiphertextBytes: 64 * 1024 * 1024,
+  maxParentEntries: 20_000,
+  maxParentEdges: 50_000,
+  maxTraversalSteps: 100_000,
+})

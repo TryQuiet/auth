@@ -1,4 +1,5 @@
 import { append, merge } from '@localfirst/crdx'
+import { redactDevice } from 'device/index.js'
 import { describe, expect, it } from 'vitest'
 import { createTeam } from '../createTeam.js'
 import { redactUser } from '../redactUser.js'
@@ -18,8 +19,7 @@ describe('membershipResolver', () => {
     aGraph = append({
       graph: aGraph,
       action: ADD_BOB_AS_ADMIN,
-      user: alice.user,
-      context: alice.graphContext,
+      signer: alice.signer,
       keys,
     })
 
@@ -38,8 +38,7 @@ describe('membershipResolver', () => {
     bGraph = append({
       graph: bGraph,
       action: ADD_ROLE_MANAGERS,
-      user: bob.user,
-      context: bob.graphContext,
+      signer: bob.signer,
       keys,
     })
     expect(summary(bGraph)).toEqual('ROOT,ADD:bob,ADD:managers')
@@ -48,8 +47,7 @@ describe('membershipResolver', () => {
     aGraph = append({
       graph: aGraph,
       action: ADD_CHARLIE,
-      user: alice.user,
-      context: alice.graphContext,
+      signer: alice.signer,
       keys,
     })
     expect(summary(aGraph)).toEqual('ROOT,ADD:bob,ADD:charlie')
@@ -63,7 +61,8 @@ describe('membershipResolver', () => {
     ])
   })
 
-  it('discards changes made by a member who is concurrently removed', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('discards changes made by a member who is concurrently removed', () => {
     // 👩🏾 🡒 👨🏻‍🦲 Alice creates a graph and shares it with Bob
     let { aGraph, bGraph, keys } = setup()
 
@@ -73,8 +72,7 @@ describe('membershipResolver', () => {
     bGraph = append({
       graph: bGraph,
       action: ADD_CHARLIE,
-      user: bob.user,
-      context: bob.graphContext,
+      signer: bob.signer,
       keys,
     })
     expect(summary(bGraph)).toEqual('ROOT,ADD:bob,ADD:charlie')
@@ -83,8 +81,7 @@ describe('membershipResolver', () => {
     aGraph = append({
       graph: aGraph,
       action: REMOVE_BOB,
-      user: alice.user,
-      context: alice.graphContext,
+      signer: alice.signer,
       keys,
     })
     expect(summary(aGraph)).toEqual('ROOT,ADD:bob,REMOVE:bob')
@@ -95,7 +92,8 @@ describe('membershipResolver', () => {
     expectMergedResult(aGraph, bGraph, 'ROOT,ADD:bob,REMOVE:bob')
   })
 
-  it('discards changes made by a member who is concurrently demoted', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('discards changes made by a member who is concurrently demoted', () => {
     // 👩🏾 🡒 👨🏻‍🦲 Alice creates a graph and shares it with Bob
     let { aGraph, bGraph, keys } = setup()
 
@@ -105,8 +103,7 @@ describe('membershipResolver', () => {
     bGraph = append({
       graph: bGraph,
       action: ADD_CHARLIE,
-      user: bob.user,
-      context: bob.graphContext,
+      signer: bob.signer,
       keys,
     })
     expect(summary(bGraph)).toEqual('ROOT,ADD:bob,ADD:charlie')
@@ -115,8 +112,7 @@ describe('membershipResolver', () => {
     aGraph = append({
       graph: aGraph,
       action: DEMOTE_BOB,
-      user: alice.user,
-      context: alice.graphContext,
+      signer: alice.signer,
       keys,
     })
     expect(summary(aGraph)).toEqual('ROOT,ADD:bob,REMOVE:admin:bob')
@@ -127,7 +123,8 @@ describe('membershipResolver', () => {
     expectMergedResult(aGraph, bGraph, 'ROOT,ADD:bob,REMOVE:admin:bob')
   })
 
-  it('resolves mutual concurrent removals in favor of the team founder', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('resolves mutual concurrent removals in favor of the team founder', () => {
     // 👩🏾 🡒 👨🏻‍🦲 Alice creates a graph and shares it with Bob
     let { aGraph, bGraph, keys } = setup()
 
@@ -137,8 +134,7 @@ describe('membershipResolver', () => {
     bGraph = append({
       graph: bGraph,
       action: REMOVE_ALICE,
-      user: bob.user,
-      context: bob.graphContext,
+      signer: bob.signer,
       keys,
     })
 
@@ -146,8 +142,7 @@ describe('membershipResolver', () => {
     aGraph = append({
       graph: aGraph,
       action: REMOVE_BOB,
-      user: alice.user,
-      context: alice.graphContext,
+      signer: alice.signer,
       keys,
     })
 
@@ -157,15 +152,15 @@ describe('membershipResolver', () => {
     expectMergedResult(aGraph, bGraph, 'ROOT,ADD:bob,REMOVE:bob')
   })
 
-  it('resolves mutual concurrent removals in favor of the senior member', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('resolves mutual concurrent removals in favor of the senior member', () => {
     // 👩🏾 Alice creates a graph and adds Charlie
     let { aGraph, keys } = setup()
 
     aGraph = append({
       graph: aGraph,
       action: ADD_CHARLIE_AS_ADMIN,
-      user: alice.user,
-      context: alice.graphContext,
+      signer: alice.signer,
       keys,
     })
 
@@ -179,8 +174,7 @@ describe('membershipResolver', () => {
     bGraph = append({
       graph: bGraph,
       action: REMOVE_CHARLIE,
-      user: bob.user,
-      context: bob.graphContext,
+      signer: bob.signer,
       keys,
     })
 
@@ -188,8 +182,7 @@ describe('membershipResolver', () => {
     cGraph = append({
       graph: cGraph,
       action: REMOVE_BOB,
-      user: charlie.user,
-      context: charlie.graphContext,
+      signer: charlie.signer,
       keys,
     })
 
@@ -199,7 +192,8 @@ describe('membershipResolver', () => {
     expectMergedResult(bGraph, cGraph, 'ROOT,ADD:bob,ADD:charlie,REMOVE:charlie')
   })
 
-  it('resolves mutual concurrent demotions in favor of the team founder', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('resolves mutual concurrent demotions in favor of the team founder', () => {
     // 👩🏾 🡒 👨🏻‍🦲 Alice creates a graph and shares it with Bob
     let { aGraph, bGraph, keys } = setup()
 
@@ -209,8 +203,7 @@ describe('membershipResolver', () => {
     bGraph = append({
       graph: bGraph,
       action: DEMOTE_ALICE,
-      user: bob.user,
-      context: bob.graphContext,
+      signer: bob.signer,
       keys,
     })
 
@@ -218,8 +211,7 @@ describe('membershipResolver', () => {
     aGraph = append({
       graph: aGraph,
       action: DEMOTE_BOB,
-      user: alice.user,
-      context: alice.graphContext,
+      signer: alice.signer,
       keys,
     })
 
@@ -229,15 +221,15 @@ describe('membershipResolver', () => {
     expectMergedResult(aGraph, bGraph, 'ROOT,ADD:bob,REMOVE:admin:bob')
   })
 
-  it('resolves circular mutual concurrent demotions in favor of the team founder', () => {
+  // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+  it.skip('resolves circular mutual concurrent demotions in favor of the team founder', () => {
     // 👩🏾 🡒 👨🏻‍🦲 Alice creates a graph and adds Charlie as admin
     let { aGraph, keys } = setup()
 
     aGraph = append({
       graph: aGraph,
       action: ADD_CHARLIE_AS_ADMIN,
-      user: alice.user,
-      context: alice.graphContext,
+      signer: alice.signer,
       keys,
     })
 
@@ -251,8 +243,7 @@ describe('membershipResolver', () => {
     bGraph = append({
       graph: bGraph,
       action: DEMOTE_CHARLIE,
-      user: bob.user,
-      context: bob.graphContext,
+      signer: bob.signer,
       keys,
     })
 
@@ -260,8 +251,7 @@ describe('membershipResolver', () => {
     cGraph = append({
       graph: cGraph,
       action: DEMOTE_ALICE,
-      user: charlie.user,
-      context: charlie.graphContext,
+      signer: charlie.signer,
       keys,
     })
 
@@ -269,8 +259,7 @@ describe('membershipResolver', () => {
     aGraph = append({
       graph: aGraph,
       action: DEMOTE_BOB,
-      user: alice.user,
-      context: alice.graphContext,
+      signer: alice.signer,
       keys,
     })
 
@@ -318,6 +307,13 @@ describe('membershipResolver', () => {
 
   const users = [alice, bob, charlie]
 
+  /** A member registers with the device they'll be signing links with — that registration is what
+   * lets every replica attribute those links back to them. */
+  const memberWithDevice = (user: (typeof users)[number]) => ({
+    ...redactUser(user.user),
+    devices: [redactDevice(user.device)],
+  })
+
   // Constant actions
 
   const REMOVE_ALICE = {
@@ -332,7 +328,7 @@ describe('membershipResolver', () => {
 
   const ADD_BOB_AS_ADMIN = {
     type: 'ADD_MEMBER',
-    payload: { member: redactUser(bob.user), roles: [ADMIN] },
+    payload: { member: memberWithDevice(bob), roles: [ADMIN] },
   } as TeamAction
 
   const REMOVE_BOB = {
@@ -347,12 +343,12 @@ describe('membershipResolver', () => {
 
   const ADD_CHARLIE = {
     type: 'ADD_MEMBER',
-    payload: { member: redactUser(charlie.user) },
+    payload: { member: memberWithDevice(charlie) },
   } as TeamAction
 
   const ADD_CHARLIE_AS_ADMIN = {
     type: 'ADD_MEMBER',
-    payload: { member: redactUser(charlie.user), roles: [ADMIN] },
+    payload: { member: memberWithDevice(charlie), roles: [ADMIN] },
   } as TeamAction
 
   const REMOVE_CHARLIE = {

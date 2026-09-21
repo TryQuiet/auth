@@ -25,7 +25,7 @@ export const byPayload = (a: Link<XAction, any>, b: Link<XAction, any>) => {
 }
 
 export const buildGraph = (type: string) => {
-  const root = createGraph<XAction>({ user: alice, name: 'root', keys })
+  const root = createGraph<XAction>({ signer: alice, name: 'root', keys })
   switch (trim(type)) {
     // one link
     case 'a': {
@@ -187,7 +187,7 @@ export const appendLink = (
   append({
     graph,
     action: { type: 'X', payload },
-    user: alice,
+    signer: alice,
     keys,
   })
 

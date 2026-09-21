@@ -1,7 +1,6 @@
 import { EventEmitter } from '@herbcaudill/eventemitter42'
-import { debug, Logger } from '@localfirst/shared'
+import { Logger } from '@localfirst/shared'
 
-const log = debug.extend('message-queue')
 /**
  * Receives numbered inbound messages and emits them in order. If a message is missing after a delay, asks
  * for it to be sent (or resent).
@@ -10,6 +9,7 @@ const log = debug.extend('message-queue')
  */
 export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
   #started = false
+  #closed = false
 
   #inbound: Record<number, NumberedMessage<T>> = {}
   #nextInbound = 0
@@ -28,7 +28,10 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
       sendMessage(message)
     }
     this.#timeout = timeout
-    this.logger = extendableLogger != null ? extendableLogger.extend('message-queue') : new Logger({ moduleName: 'auth:message-queue' })
+    this.logger =
+      extendableLogger !== undefined && extendableLogger !== null
+        ? extendableLogger.extend('message-queue')
+        : new Logger({ moduleName: 'auth:message-queue' })
   }
 
   /**
@@ -36,6 +39,7 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
    * over the network). They will be emitted in order when start() is called.
    */
   public start() {
+    if (this.#closed) return this
     this.#started = true
     this.#processInbound()
     this.#processOutbound()
@@ -51,9 +55,28 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
   }
 
   /**
+   * Shuts the queue down for good: anything not yet sent is dropped, nothing further is accepted,
+   * and `start()` cannot revive it.
+   *
+   * This is what `stop()` is not. A stopped queue keeps its backlog so it can resume, which means
+   * a promise that settles after a connection was torn down could queue a message that a later
+   * `start()` would then send (private#203 audit L-3). A closed queue has nothing to flush.
+   */
+  public close() {
+    this.#closed = true
+    this.#started = false
+    for (const timeout of Object.values(this.#waiting)) clearTimeout(timeout)
+    this.#waiting = {}
+    this.#outbound = {}
+    this.#inbound = {}
+    return this
+  }
+
+  /**
    * Assigns a number to the message and sends it.
    */
   public send(message: T) {
+    if (this.#closed) return this
     const index = highestIndex(this.#outbound) + 1
     const numberedMessage = { ...message, index }
     this.#outbound[index] = numberedMessage
@@ -65,6 +88,7 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
    * Resends a message that was previously sent.
    */
   public resend(index: number) {
+    if (this.#closed) return this
     const message = this.#outbound[index]
     if (!message)
       throw new Error(`Received resend request for message #${index}, which doesn't exist.`)
@@ -76,6 +100,7 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
    * Queues inbound messages and, if we're started, emits them in order.
    */
   public receive(message: NumberedMessage<T>) {
+    if (this.#closed) return this
     const { index } = message
     if (!this.#inbound[index]) {
       this.#inbound[index] = message
@@ -125,6 +150,8 @@ export class MessageQueue<T> extends EventEmitter<MessageQueueEvents<T>> {
       JSON.parse(JSON.stringify(message)),
       ['data', 'encryptedBody', 'encryptedPayload'],
       {
+        // This package also runs in browsers, where the demo bundlers provide Buffer as a global.
+        // eslint-disable-next-line n/prefer-global/buffer
         replacerFunc: (dataArray: any[]) => Buffer.from(dataArray).toString('base64'),
       }
     )
@@ -142,20 +169,22 @@ const findAllByKeyAndReplace = (
   keys: string[],
   replace: { newValue?: any; replacerFunc?: (originalValue: any) => any }
 ) => {
-  if (replace.newValue == null && replace.replacerFunc == null) {
+  const hasNewValue = replace.newValue !== undefined && replace.newValue !== null
+  const hasReplacerFunction = replace.replacerFunc !== undefined && replace.replacerFunc !== null
+  if (!hasNewValue && !hasReplacerFunction) {
     throw new Error(`Must provide a replacement value or a replacement function!`)
   }
 
-  const replacerFunc = replace.newValue
-    ? (originalValue: any) => replace.newValue
+  const replacerFunc = hasNewValue
+    ? (_originalValue: any) => replace.newValue
     : replace.replacerFunc!
 
   const newObject = { ...object }
   const looper = (obj: any) => {
-    for (let k in obj) {
+    for (const k in obj) {
       if (keys.includes(k)) {
         obj[k] = replacerFunc(obj[k])
-      } else if ('object' === typeof obj[k]) {
+      } else if (typeof obj[k] === 'object') {
         looper(obj[k])
       }
     }

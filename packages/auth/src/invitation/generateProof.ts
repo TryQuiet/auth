@@ -1,22 +1,40 @@
-import { memoize } from '@localfirst/shared'
-import { signatures } from '@localfirst/crypto'
+import { signatures, INVITATION_PROOF, type Base58 } from '@localfirst/crypto'
 import { deriveId } from 'invitation/deriveId.js'
-import { type ProofOfInvitation } from 'invitation/types.js'
+import type { InvitationClaim, ProofOfInvitation } from 'invitation/types.js'
 import { generateStarterKeys } from './generateStarterKeys.js'
+import { invitationProofPayload } from './invitationProofPayload.js'
 import { normalize } from './normalize.js'
 
-export const generateProof = memoize((seed: string): ProofOfInvitation => {
+/**
+ * Generates a proof that the invitee knows the secret invitation seed.
+ *
+ * The signature is domain-separated and binds the seed to the exact member or device claim plus
+ * both peers' handshake nonces, so a proof can't be replayed for a different identity or a
+ * different connection.
+ */
+export const generateProof = ({
+  seed,
+  claim,
+  identityNonce,
+  inviteeNonce,
+}: {
+  seed: string
+  claim: InvitationClaim
+  identityNonce: Base58
+  inviteeNonce: Base58
+}): ProofOfInvitation => {
   seed = normalize(seed)
 
   // Bob independently derives the invitation id and the ephemeral keys
   const id = deriveId(seed)
-  const ephemeralKeys = generateStarterKeys(seed)
+  const starterKeys = generateStarterKeys(seed)
 
-  // Bob uses the ephemeral keys to sign a message consisting of the invitation id
-  const payload = { id }
-  const signature = signatures.sign(payload, ephemeralKeys.signature.secretKey)
+  const proofFields = { id, identityNonce, inviteeNonce }
+  const signature = signatures.sign(
+    invitationProofPayload(proofFields, claim),
+    starterKeys.signature.secretKey,
+    INVITATION_PROOF
+  )
 
-  // This signature will be shown to an existing team admin as proof that Bob knows the secret
-  // invitation key.
-  return { id, signature }
-})
+  return { ...proofFields, signature }
+}

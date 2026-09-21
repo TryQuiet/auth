@@ -1,20 +1,16 @@
-import { type Host } from 'server/index.js'
+import type { UnixTimestamp } from '@localfirst/crdx'
 import { type Transform } from 'team/types.js'
 
 export const removeServer =
-  (host: Host): Transform =>
+  (serverId: string, removedAt: UnixTimestamp): Transform =>
   state => {
-    const remainingServers = state.servers.filter(m => m.host !== host)
-    const removedServer = state.servers.find(m => m.host === host) // The server that was removed
-
-    const removedServers = [...state.removedServers]
-    if (removedServer) {
-      removedServers.push(removedServer)
-    }
+    const removedServer = state.servers.find(s => s.serverId === serverId)
 
     return {
       ...state,
-      servers: remainingServers,
-      removedServers,
+      servers: state.servers.filter(s => s.serverId !== serverId),
+      removedServers: removedServer
+        ? [...state.removedServers, { ...removedServer, removedAt }]
+        : state.removedServers,
     }
   }

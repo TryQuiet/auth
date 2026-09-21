@@ -34,10 +34,11 @@ describe('create', () => {
 
     // Alice signs a message
     const payload = 'si vis frumenti, necesse est plantandi frumentum'
-    const signature = signatures.sign(payload, secretKey)
+    const context = 'test/keyset'
+    const signature = signatures.sign(payload, secretKey, context)
 
     // Bob checks it
-    const isLegit = signatures.verify({ payload, signature, publicKey })
+    const isLegit = signatures.verify({ payload, signature, publicKey, context })
     expect(isLegit).toBe(true)
   })
 

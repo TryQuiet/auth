@@ -1,6 +1,6 @@
 import { Logger } from '@localfirst/shared'
 import { type Reducer } from './types.js'
-import { type Action, getSequence, type Graph, Link, type Resolver } from 'graph/index.js'
+import { type Action, getSequence, type Graph, type Link, type Resolver } from 'graph/index.js'
 import { validate, type ValidatorSet } from 'validator/index.js'
 
 export const makeMachine = <S, A extends Action, C>({
@@ -11,14 +11,18 @@ export const makeMachine = <S, A extends Action, C>({
 }: MachineParams<S, A, C>) => {
   return (graph: Graph<A, C>, extendableLogger?: Logger) => {
     // extend the logger or generate a new one if none was passed in
-    const logger = extendableLogger != null ? extendableLogger.extend('makeMachine') : new Logger({ moduleName: 'auth:makeMachine' })
+    const logger =
+      extendableLogger !== null && extendableLogger !== undefined
+        ? extendableLogger.extend('makeMachine')
+        : new Logger({ moduleName: 'auth:makeMachine' })
 
-    // Validate the graph's integrity.
-    validate(graph, validators, logger)
+    // Validate the graph's integrity. An invalid graph must never reach the reducer.
+    const validation = validate(graph, validators, logger)
+    if (!validation.isValid) throw validation.error
 
     // Use the filter & sequencer to turn the graph into an ordered sequence
     const sequence = getSequence(graph, resolver)
-    const wrappedReducer = (state: S, link: Link<A, C>) => reducer(state, link, logger)
+    const wrappedReducer = (state: S, link: Link<A, C>) => reducer(state, link, logger, graph)
 
     // Run the sequence through the reducer to calculate the current team state
     return sequence.reduce(wrappedReducer, initialState)

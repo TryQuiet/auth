@@ -8,20 +8,14 @@ export const DAY = 24 * HOUR
 export const WEEK = 7 * DAY
 
 export type InviteOptions = {
-  maxUses?: 1 | 5 | 10 | 0
   expiration?: typeof SECOND | typeof MINUTE
 }
 
 export const invite: CommandFn = (subject, options: InviteOptions = {}) => {
-  const { maxUses = 1, expiration = MINUTE } = options
+  const { expiration = MINUTE } = options
   const s = () => wrap(subject)
   // click invite button
   s().findByText('Invite members', NOLOG).click(NOLOG)
-
-  // set max uses
-  s()
-    .findByLabelText('How many people can use this invitation code?', NOLOG)
-    .select(maxUses.toString(), NOLOG)
 
   // set expiration
   s()

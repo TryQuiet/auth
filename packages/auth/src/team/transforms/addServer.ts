@@ -1,18 +1,11 @@
+import type { UnixTimestamp } from '@localfirst/crdx'
 import type { Server } from 'server/index.js'
-import type { TeamState, Transform } from 'team/types.js'
-import { unique } from 'util/unique.js'
+import type { Transform } from 'team/types.js'
 
+/** Registers a server. As with devices, a removed `serverId` is never registered again. */
 export const addServer =
-  (newServer: Server): Transform =>
-  state => {
-    const newState: TeamState = {
-      ...state,
-
-      // Add server to the team's list of servers
-      servers: unique([...state.servers, newServer]),
-
-      // Remove server's url from list of removed servers (e.g. if server was removed and is now being re-added)
-      removedServers: state.removedServers.filter(m => m.host !== newServer.host),
-    }
-    return newState
-  }
+  (newServer: Server, admittedAt: UnixTimestamp): Transform =>
+  state => ({
+    ...state,
+    servers: [...state.servers, { ...newServer, admittedAt }],
+  })

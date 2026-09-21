@@ -5,13 +5,13 @@ import { validate } from 'validator/index.js'
 import 'util/testing/expect/toBeValid.js'
 
 const { alice } = setup('alice')
-const defaultUser = alice
+const defaultSigner = alice
 
 const _ = expect.objectContaining
 
 describe('graphs', () => {
   test('create', () => {
-    const graph = createGraph({ user: defaultUser, name: 'a', keys })
+    const graph = createGraph({ signer: defaultSigner, name: 'a', keys })
     const expected = _({ body: _({ payload: _({ name: 'a' }) }) })
     expect(getRoot(graph)).toEqual(expected)
     expect(getHead(graph)[0]).toEqual(expected)
@@ -19,7 +19,7 @@ describe('graphs', () => {
 
   test('serialize/deserialize', () => {
     // 👨🏻‍🦲 Bob saves a graph to a file and loads it later
-    const graph = createGraph({ user: defaultUser, name: 'Spies Я Us', keys })
+    const graph = createGraph({ signer: defaultSigner, name: 'Spies Я Us', keys })
 
     // serialize
     const graphJson = serialize(graph)

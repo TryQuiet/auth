@@ -1,5 +1,5 @@
-import { defineConfig } from 'cypress'
 import createBundler from '@bahmutov/cypress-esbuild-preprocessor'
+import { defineConfig } from 'cypress'
 
 export default defineConfig({
   e2e: {
@@ -12,25 +12,22 @@ export default defineConfig({
     viewportHeight: 1200,
     defaultCommandTimeout: 10000,
 
-    // experimentalRunAllSpecs: true,
-
     setupNodeEvents(on) {
       on('file:preprocessor', createBundler())
-      on('before:browser:launch', (browser: any = {}, launchOptions: any) => {
+      on('before:browser:launch', (browser = {}, launchOptions) => {
         if (browser.family === 'chromium' && browser.name !== 'electron' && browser.isHeaded) {
-          // auto open devtools
+          // Auto-open DevTools.
           launchOptions.args.push('--auto-open-devtools-for-tabs')
 
-          // remove "Chrome is being controlled..." infobar
-          launchOptions.args = launchOptions.args.filter((a: string) => a !== '--enable-automation')
+          // Remove the "Chrome is being controlled" infobar.
+          launchOptions.args = launchOptions.args.filter(argument => argument !== '--enable-automation')
 
-          // allow debugging in vs code
+          // Allow debugging in VS Code.
           launchOptions.args.push('--remote-debugging-port=9222')
 
           return launchOptions
         }
 
-        // whatever you return here becomes the launchOptions
         return launchOptions
       })
     },

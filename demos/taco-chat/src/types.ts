@@ -12,6 +12,7 @@ export type PeerState = {
   device: auth.DeviceWithSecrets
   team?: auth.Team
   teamState?: auth.TeamState
+  teamKeys?: auth.Keyring
   connectionManager?: ConnectionManager
   online: boolean
   connectionStatus: Record<UserName, ConnectionStatus>
@@ -23,8 +24,8 @@ export type StoredPeerState = {
   userId: string
   user?: auth.UserWithSecrets
   device: auth.DeviceWithSecrets
-  teamGraph?: string
-  teamKeys?: auth.KeysetWithSecrets
+  teamGraph?: Uint8Array
+  teamKeys?: auth.Keyring
 }
 
 export type Storage = Record<string, StoredPeerState>

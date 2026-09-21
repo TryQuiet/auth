@@ -22,7 +22,7 @@ it('Alice invites Bob and Charlie with a single code', () => {
   alice().should('not.have.member', 'Charlie')
 
   alice()
-    .invite({ maxUses: 5 })
+    .invite()
     .then(code => {
       show('Bob:laptop')
       bob().join(code)
@@ -106,7 +106,7 @@ it(`Alice's phone invites Bob`, () => {
   bob().peerConnectionStatus('Alice', 'phone').should('equal', 'connected')
 })
 
-it(`Eve tries to reuse a single-use invitation`, () => {
+it(`Alice's invitation can admit more than one member`, () => {
   show('Bob:laptop')
 
   alice()
@@ -119,14 +119,9 @@ it(`Eve tries to reuse a single-use invitation`, () => {
 
       bob().hide()
       show('Eve:laptop')
-      eve().join(code, { expectToFail: true })
+      eve().join(code)
 
-      // foiled again
-      alice().should('not.have.member', 'Eve')
-
-      // TODO: Eve should get some feedback
-      // eve()
-      //   .find('.Alerts')
-      //   .should('contain', 'cannot be used again')
+      alice().should('have.member', 'Eve')
+      eve().should('have.member', 'Alice')
     })
 })

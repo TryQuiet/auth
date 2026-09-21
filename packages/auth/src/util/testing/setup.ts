@@ -1,19 +1,43 @@
 import { assert } from '@localfirst/shared'
-import { createKeyring, createUser, type UserWithSecrets } from '@localfirst/crdx'
-import { createId } from '@paralleldrive/cuid2'
+import { createKeyring, createUser, type Signer, type UserWithSecrets } from '@localfirst/crdx'
 import type { Connection, Context, InviteeContext, MemberContext } from 'connection/index.js'
 import type { DeviceWithSecrets } from 'device/index.js'
 import * as devices from 'device/index.js'
 import { ADMIN } from 'role/index.js'
 import type { LocalUserContext } from 'team/context.js'
-import type { Team, TeamContext } from 'team/index.js'
+import type { Team } from 'team/index.js'
+import { deviceSigner } from 'team/index.js'
 import * as teams from 'team/index.js'
-import { arrayToMap } from 'util/index.js'
+import { arrayToMap, deriveUserId } from 'util/index.js'
 import { phoneInfo, laptopInfo } from './constants.js'
 
 export type SetupConfig = Array<Array<TestUserSettings | string> | TestUserSettings | string>
 
 // ignore file coverage
+
+/**
+ * Creates a matched user and founding device for tests that build identities by hand, deriving the
+ * user's id from the device exactly the way `setup` and the real founder/join flows do.
+ */
+export const createTestUser = (
+  userName: string,
+  {
+    deviceName = 'laptop',
+    seed = userName,
+    deviceInfo,
+  }: { deviceName?: string; seed?: string; deviceInfo?: any } = {}
+): { user: UserWithSecrets; device: DeviceWithSecrets } => {
+  const laptop = devices.createFirstUseDevice({
+    deviceName,
+    seed: `${seed}-${deviceName}`,
+    deviceInfo,
+  })
+  const userId = deriveUserId(laptop.deviceId)
+  return {
+    user: createUser(userName, userId, seed),
+    device: { ...laptop, userId },
+  }
+}
 
 /**
 Usage:
@@ -40,36 +64,29 @@ export const setup = (..._config: SetupConfig) => {
   // Get a list of just user ids
   const userNames = config.map(user => user.user)
 
-  // Create users
-  const testUsers: Record<string, UserWithSecrets> = userNames
-    .map((userName: string) => {
-      const randomSeed = userName // Make these predictable
-      const userId = createId()
-      return createUser(userName, userId, randomSeed)
+  // Every user's id is derived from their founding device, so the device has to exist first. A
+  // device's id is the fingerprint of its own keys — independent of its owner — so we can mint the
+  // laptop, derive the userId from it, and only then create the user (and their phone, a second
+  // device under the same derived id). This is uniform for the founder and every member.
+  const testUsers: Record<string, UserWithSecrets> = {}
+  const laptops: Record<string, DeviceWithSecrets> = {}
+  const phones: Record<string, DeviceWithSecrets> = {}
+  for (const userName of userNames) {
+    const laptop = devices.createFirstUseDevice({
+      deviceName: 'laptop',
+      seed: `${userName}-laptop`,
+      deviceInfo: laptopInfo,
     })
-    .reduce(arrayToMap('userName'), {})
-
-  const makeDevice = (userId: string, deviceName: string) => {
-    const key = `${userId}-${deviceName}`
-    const randomSeed = key
-    const deviceInfo = deviceName === 'phone' ? phoneInfo : laptopInfo
-    const device = devices.createDevice({ userId, deviceName, seed: randomSeed, deviceInfo })
-    return device
+    const userId = deriveUserId(laptop.deviceId)
+    laptops[userName] = { ...laptop, userId }
+    phones[userName] = devices.createDevice({
+      userId,
+      deviceName: 'phone',
+      seed: `${userName}-phone`,
+      deviceInfo: phoneInfo,
+    })
+    testUsers[userName] = createUser(userName, userId, userName)
   }
-
-  const laptops = userNames.reduce<Record<string, DeviceWithSecrets>>((result, userName) => {
-    const user = testUsers[userName]
-    const device = makeDevice(user.userId, 'laptop')
-    result[userName] = device
-    return result
-  }, {})
-
-  const phones = userNames.reduce<Record<string, DeviceWithSecrets>>((result, userName) => {
-    const user = testUsers[userName]
-    const device = makeDevice(user.userId, 'phone')
-    result[userName] = device
-    return result
-  }, {})
 
   // Create team
   const founder = userNames[0] // E.g. alice
@@ -77,7 +94,9 @@ export const setup = (..._config: SetupConfig) => {
   const founderContext = { user: testUsers[founder], device: laptops[founder] }
   const teamName = 'Spies Я Us'
   const randomSeed = teamName
-  const team = teams.createTeam(teamName, founderContext, randomSeed, { selfAssignableRoles: ['MEMBER'] })
+  const team = teams.createTeam(teamName, founderContext, randomSeed, {
+    selfAssignableRoles: ['MEMBER'],
+  })
   const teamKeys = team.teamKeys()
 
   // Add members
@@ -100,14 +119,13 @@ export const setup = (..._config: SetupConfig) => {
     const phone = phones[userName]
 
     const localContext = { user, device }
-    const graphContext = { deviceId: device.deviceId }
     const team = member
       ? teams.load(graph, localContext, createKeyring(teamKeys)) // Members get a copy of the source team
       : teams.createTeam(userName, localContext, randomSeed) // Non-members get a dummy empty placeholder team
 
     const connectionContext: Context = member
       ? { user, device, team }
-      : { user, device, invitationSeed: '' }
+      : { user, device, invitationSeed: '', expectedTeamId: team.id }
 
     const phoneStuff: UserStuff = {
       userName,
@@ -119,7 +137,7 @@ export const setup = (..._config: SetupConfig) => {
         : teams.createTeam(userName, localContext, randomSeed), // Non-members get a dummy empty placeholder team
       device: phone,
       localContext: { user, device: phone },
-      graphContext: { deviceId: phone.deviceId },
+      signer: deviceSigner(phone),
       connectionContext,
       connection: {} as Record<string, Connection>,
       getState: (peer: string) => phoneStuff.connection[peer].state,
@@ -136,7 +154,7 @@ export const setup = (..._config: SetupConfig) => {
       team,
       device,
       localContext,
-      graphContext,
+      signer: deviceSigner(device),
       phone,
       phoneStuff,
       connectionContext,
@@ -170,7 +188,9 @@ export type UserStuff = {
   phone?: DeviceWithSecrets
   phoneStuff?: UserStuff
   localContext: LocalUserContext
-  graphContext: TeamContext
+
+  /** The identity this user's device signs links with, for tests that append to a graph directly. */
+  signer: Signer
   connectionContext: MemberContext | InviteeContext
   connection: Record<string, Connection>
   getState: (peer: string) => any

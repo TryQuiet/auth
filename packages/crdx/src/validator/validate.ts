@@ -1,4 +1,4 @@
-﻿import { assert, debug, Logger } from '@localfirst/shared'
+﻿import { Logger } from '@localfirst/shared'
 import { type ValidationResult, type ValidatorSet } from './types.js'
 import { fail, validators } from './validators.js'
 import { VALID } from 'constants.js'
@@ -17,7 +17,10 @@ export const validate = <A extends Action, C>(
   customValidators: ValidatorSet = {},
   extendableLogger?: Logger
 ): ValidationResult => {
-  const logger = extendableLogger != null ? extendableLogger.extend('validate') : new Logger({ moduleName: 'auth:validate' })
+  const logger =
+    extendableLogger !== null && extendableLogger !== undefined
+      ? extendableLogger.extend('validate')
+      : new Logger({ moduleName: 'auth:validate' })
 
   // Confirm that the root hash matches the computed hash of the root link
   {
@@ -78,7 +81,12 @@ export const validate = <A extends Action, C>(
   for (const link of Object.values(graph.links)) {
     const result = compositeValidator(link)
     if (!result.isValid) {
-      logger.error('Link validation failed with result', result.isValid, result.error, result.error.details ?? {})
+      logger.error(
+        'Link validation failed with result',
+        result.isValid,
+        result.error,
+        result.error.details ?? {}
+      )
       return result
     }
   }

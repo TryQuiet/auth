@@ -137,7 +137,7 @@ export const Team = () => {
       {/* Chain visualization */}
       <div className="border-t p-4">
         <CardLabel>Signature chain</CardLabel>
-        <GraphDiagram graph={team.graph} id={device.keys.name.replace(/::/, '-')} />
+        <GraphDiagram graph={team.graph} id={`graph-${device.keys.name.replace(/::/, '-')}`} />
       </div>
     </>
   )

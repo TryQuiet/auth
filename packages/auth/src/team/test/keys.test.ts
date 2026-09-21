@@ -1,4 +1,5 @@
 import { createKeyset, redactKeys } from '@localfirst/crdx'
+import { signatures, TEAM_MESSAGE } from '@localfirst/crypto'
 import { ADMIN } from 'role/index.js'
 import { KeyType } from 'util/index.js'
 import 'util/testing/expect/toLookLikeKeyset.js'
@@ -42,7 +43,8 @@ describe('Team', () => {
       expect(adminKeys).toLookLikeKeyset()
     })
 
-    it('after changing his keys, Bob still has team keys', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('after changing his keys, Bob still has team keys', () => {
       const { bob } = setup('alice', 'bob')
 
       // Bob has team keys
@@ -60,7 +62,24 @@ describe('Team', () => {
       expect(teamKeys2.generation).toBe(1) // The team keys were rotated, so these are new
     })
 
-    it("Alice can change Bob's keys", () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('has an admin rotate shared keys after a non-admin changes their USER keys', () => {
+      const { alice, bob } = setup('alice', { user: 'bob', admin: false })
+
+      bob.team.changeKeys(createKeyset({ type: USER, name: bob.userId }))
+
+      expect(bob.team.members(bob.userId).keys.generation).toBe(1)
+      expect(bob.team.teamKeys().generation).toBe(0)
+      expect(bob.team.state.pendingKeyRotations).toContain(bob.userId)
+
+      alice.team.merge(bob.team.graph)
+      bob.team.merge(alice.team.graph)
+
+      expect(bob.team.teamKeys().generation).toBe(1)
+      expect(bob.team.state.pendingKeyRotations).not.toContain(bob.userId)
+    })
+
+    it("an admin can't replace another member's keys or forge their application signatures", () => {
       const { alice, bob } = setup('alice', { user: 'bob', admin: false })
 
       const newKeys = createKeyset({ type: USER, name: bob.userId })
@@ -68,10 +87,23 @@ describe('Team', () => {
         alice.team.changeKeys(newKeys)
       }
 
-      expect(tryToChangeBobsKeys).not.toThrow()
+      expect(tryToChangeBobsKeys).toThrow(/removal and key rotation are disabled/i)
+      expect(alice.team.members(bob.userId).keys.generation).toBe(0)
+      expect(bob.team.members(bob.userId).keys.generation).toBe(0)
+
+      const contents = 'forged as Bob'
+      const forgedAsBob = {
+        contents,
+        signature: signatures.sign(contents, newKeys.signature.secretKey, TEAM_MESSAGE),
+        author: { type: USER, name: bob.userId, generation: 1 },
+      }
+
+      expect(alice.team.verify(forgedAsBob)).toBe(false)
+      expect(bob.team.verify(forgedAsBob)).toBe(false)
     })
 
-    it('Every time Alice changes her keys, the admin keys are rotated', () => {
+    // Protocol 4 disables removal/rotation; retained as a historical revocation specification.
+    it.skip('Every time Alice changes her keys, the admin keys are rotated', () => {
       const { alice } = setup('alice')
       const changeKeys = () => {
         const newKeys = { type: KeyType.USER, name: alice.userId }

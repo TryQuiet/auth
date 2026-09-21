@@ -1,4 +1,5 @@
-﻿import type { Base58, Hash, Optional, UnixTimestamp } from 'util/types.js'
+﻿import type { KeysetWithSecrets } from 'keyset/types.js'
+import type { Base58, Hash, Optional, UnixTimestamp } from 'util/types.js'
 
 /**
  * A hash graph is an acyclic directed graph of links. Each link is **asymmetrically encrypted and
@@ -91,13 +92,28 @@ export type LinkMap = Record<Hash, Hash[]>
 export type EncryptedLink = {
   /**
    * The body of the link, encrypted asymmetrically with authentication (using libsodium's
-   * `crypto_box`) using the author's SK and the team's PK.
+   * `crypto_box`) using the signer's SK and the team's PK.
    */
   encryptedBody: Uint8Array
 
   /**
-   * Public key of the author of the link, at the time of authoring. After decryption, it is up to
-   * the application to ensure that this is in fact the public key of the author (`link.body.user`).
+   * The signer's signature over this link's `hash`. This is what binds the link to the identity
+   * named in `body.signer`: `crypto_box` is a Diffie-Hellman construction keyed on (sender,
+   * recipient), and the recipient here is a keyset that every reader of the graph holds. So the box
+   * authenticates nothing about authorship — anyone with those keys can produce one naming any
+   * sender. The signature can't be forged that way, so it is the only usable proof of who wrote a
+   * link.
+   *
+   * crdx verifies nothing about the signer beyond offering `verifyLinkSignature`; deciding which
+   * public key a `SignerInfo` resolves to, and whether that signer was allowed to author this
+   * action, is the application's job.
+   */
+  signature: Base58
+
+  /**
+   * Public key of the `crypto_box` sender (the signer's encryption key at the time of authoring).
+   * This is the Diffie-Hellman counterparty needed to decrypt, and nothing more — it does not
+   * identify the author, because whoever holds the recipient keys can pick any value here.
    */
   senderPublicKey: Base58
 
@@ -113,6 +129,9 @@ export type EncryptedLink = {
 export type Link<A extends Action, C> = {
   /** Hash of the body */
   hash: Hash
+
+  /** The signer's signature over `hash`, carried over from the `EncryptedLink` this was decrypted from */
+  signature: Base58
 
   /** The part of the link that is encrypted */
   body: LinkBody<A, C>
@@ -141,10 +160,30 @@ export type Action =
       payload: any
     }
 
+/**
+ * Identifies the signing identity that authored a link. crdx is agnostic about what a `kind` means
+ * — the application defines its own kinds (in `@localfirst/auth`, `'device'` and `'server'`) and
+ * decides how to resolve an `id` to a public signing key.
+ *
+ * The claim made here is only as good as the signature that accompanies it: `id` is plaintext that
+ * anyone can write, so nothing may be authorized off it until `link.signature` has been verified
+ * against the key the application has registered for that id.
+ */
+export type SignerInfo = {
+  kind: string
+  id: string
+}
+
+/** The signing identity authoring a link, along with the secret keys needed to do so. */
+export type Signer = {
+  info: SignerInfo
+  keys: KeysetWithSecrets
+}
+
 /** The `LinkBody` adds contextual information to the `Action`. This is the part of the link that is encrypted. */
 export type LinkBody<A extends Action, C> = {
-  /** User who authored this link */
-  userId: string
+  /** Identity that signed this link */
+  signer: SignerInfo
 
   /** Unix timestamp on device that created this link */
   timestamp: UnixTimestamp

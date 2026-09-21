@@ -3,6 +3,7 @@ import { pack, unpack } from 'msgpackr'
 import { stretch } from './stretch.js'
 import type { Base58, Cipher, Payload } from './types.js'
 import { base58, keyToBytes, keypairToBase58 } from './util/index.js'
+import { isValidEncryptionKeypair } from './keypairValidation.js'
 
 /**
  * @returns A key pair consisting of a public key and a secret key, encoded as base58 strings, to
@@ -125,6 +126,7 @@ const decrypt = ({
 
 export const asymmetric = {
   keyPair,
+  keyPairIsValid: isValidEncryptionKeypair,
   encryptBytes,
   decryptBytes,
   encrypt,

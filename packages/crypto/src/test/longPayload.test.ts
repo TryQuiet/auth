@@ -49,18 +49,29 @@ describe('long Unicode payloads on current Node', () => {
   test('signs the full payload and rejects text, nested-field and binary tampering', () => {
     const signer = signatures.keyPair('public-node24-regression-signer')
     const payload = makePayload()
-    const signature = signatures.sign(payload, signer.secretKey)
-    expect(signatures.sign(makePayload(), signer.secretKey)).toBe(signature)
-    expect(signatures.verify({ payload, signature, publicKey: signer.publicKey })).toBe(true)
+    const context = 'test/node24-long-unicode'
+    const signature = signatures.sign(payload, signer.secretKey, context)
+    expect(signatures.sign(makePayload(), signer.secretKey, context)).toBe(signature)
+    expect(signatures.verify({ payload, signature, publicKey: signer.publicKey, context })).toBe(
+      true
+    )
+    expect(
+      signatures.verify({
+        payload,
+        signature,
+        publicKey: signer.publicKey,
+        context: context + '/other',
+      })
+    ).toBe(false)
     const changed = [
       { ...makePayload(), text: text + '!' },
       { ...makePayload(), nested: { ...payload.nested, count: 43 } },
       { ...makePayload(), bytes: Buffer.from([0, 1, 127, 128, 254]) },
     ]
     for (const tampered of changed) {
-      expect(signatures.verify({ payload: tampered, signature, publicKey: signer.publicKey })).toBe(
-        false
-      )
+      expect(
+        signatures.verify({ payload: tampered, signature, publicKey: signer.publicKey, context })
+      ).toBe(false)
     }
   })
 

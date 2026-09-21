@@ -3,12 +3,10 @@ import { NodeWSServerAdapter } from '@automerge/automerge-repo-network-websocket
 import { NodeFSStorageAdapter } from '@automerge/automerge-repo-storage-nodefs'
 import {
   Team,
-  castServer,
-  createKeyset,
-  redactKeys,
+  createServer,
+  redactServer,
   type Keyring,
-  type Keyset,
-  type KeysetWithSecrets,
+  type Server,
   type ServerWithSecrets,
 } from '@localfirst/auth'
 import { AuthProvider, getShareId, type ShareId } from '@localfirst/auth-provider-automerge-repo'
@@ -43,7 +41,9 @@ export class LocalFirstAuthSyncServer {
   webSocketServer: WebSocketServer
   server: HttpServer
   storageDir: string
-  publicKeys: Keyset
+
+  /** What we hand out at `/keys`: everything a team needs to register us as a server. */
+  publicServer: Server
 
   log = debug.extend('auth:syncserver')
 
@@ -70,9 +70,9 @@ export class LocalFirstAuthSyncServer {
 
       if (!fs.existsSync(storageDir)) fs.mkdirSync(storageDir)
 
-      // Get keys from storage or create new ones
-      const keys = this.#getKeys()
-      this.publicKeys = redactKeys(keys)
+      // Get our identity from storage or create a new one
+      const server = this.#getServer()
+      this.publicServer = redactServer(server)
 
       // localfirst/auth will use this to send and receive authentication messages, and Automerge Repo will use it to send and receive sync messages
       this.webSocketServer = new WebSocketServer({ noServer: true })
@@ -81,13 +81,11 @@ export class LocalFirstAuthSyncServer {
         this.close(payload)
       })
 
-      // Set up the auth provider
-      const server: ServerWithSecrets = { host: this.host, keys }
-      const user = castServer.toUser(server)
-      const device = castServer.toDevice(server)
+      // Set up the auth provider. A server is not a device: it signs links and answers identity
+      // challenges as itself, using keys that never rotate.
       const peerId = this.host as PeerId
       const storage = new NodeFSStorageAdapter(storageDir)
-      const auth = new AuthProvider({ user, device, storage })
+      const auth = new AuthProvider({ serverIdentity: server, storage })
 
       // Set up the repo
       const adapter = new NodeWSServerAdapter(this.webSocketServer)
@@ -123,10 +121,10 @@ export class LocalFirstAuthSyncServer {
           res.send(running)
         })
 
-        /** Endpoint to request the server's public keys. */
+        /** Endpoint to request the server's public record: its id and both of its keysets. */
         .get('/keys', (req, res) => {
           this.log('GET /keys %o', req.body)
-          res.send(this.publicKeys)
+          res.send(this.publicServer)
         })
 
         /** Endpoint to register a team. */
@@ -199,19 +197,22 @@ export class LocalFirstAuthSyncServer {
     this.server.close()
   }
 
-  readonly #getKeys = () => {
-    const keysPath = path.join(this.storageDir, '__SERVER_KEYS.json')
-    if (fs.existsSync(keysPath)) {
+  /**
+   * Loads our identity from storage, or mints one on first run. `serverId` is the fingerprint of
+   * the identity keys, so this file *is* our name on every team we belong to: lose it and we're a
+   * different server that has to be re-registered.
+   */
+  readonly #getServer = (): ServerWithSecrets => {
+    const serverPath = path.join(this.storageDir, '__SERVER_IDENTITY.json')
+    if (fs.existsSync(serverPath)) {
       // retrieve from storage
-      const serializedKeys = fs.readFileSync(keysPath, 'utf8')
-      const keys = JSON.parse(serializedKeys) as KeysetWithSecrets
-      return keys
-    } else {
-      // create & store new keys
-      const keys = createKeyset({ type: 'SERVER', name: this.host })
-      fs.writeFileSync(keysPath, JSON.stringify(keys, null, 2))
-      return keys
+      return JSON.parse(fs.readFileSync(serverPath, 'utf8')) as ServerWithSecrets
     }
+
+    // create & store a new identity
+    const server = createServer({ host: this.host })
+    fs.writeFileSync(serverPath, JSON.stringify(server, null, 2))
+    return server
   }
 }
 

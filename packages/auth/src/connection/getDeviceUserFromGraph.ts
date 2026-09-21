@@ -1,7 +1,8 @@
 import type { Keyring, UserWithSecrets } from '@localfirst/crdx'
-import { assert, Logger } from '@localfirst/shared'
-import { generateProof } from 'invitation/generateProof.js'
+import { assert, type Logger } from '@localfirst/shared'
+import { deriveId } from 'invitation/deriveId.js'
 import { generateStarterKeys } from 'invitation/generateStarterKeys.js'
+import type { TeamState } from 'team/index.js'
 import { KeyType } from 'util/index.js'
 import { getTeamState } from '../team/getTeamState.js'
 import * as select from '../team/selectors/index.js'
@@ -10,8 +11,7 @@ const { USER } = KeyType
 
 /**
  * If we're joining as a new device for an existing member, we don't have a user object yet, so we
- * need to get those from the graph. We use the invitation seed to generate the starter keys for the
- * new device. We can use these to unlock a lockbox on the team graph that contains our user keys.
+ * derive validated team state from the serialized graph and recover the user from it.
  */
 export const getDeviceUserFromGraph = ({
   serializedGraph,
@@ -23,10 +23,26 @@ export const getDeviceUserFromGraph = ({
   teamKeyring: Keyring
   invitationSeed: string
   logger: Logger
+}): UserWithSecrets =>
+  getDeviceUserFromState({
+    state: getTeamState(serializedGraph, teamKeyring, logger),
+    invitationSeed,
+  })
+
+/**
+ * Recovers an invited device's user from already-derived team state. The invitation seed gives us
+ * both the invitation id and the starter keys that open the lockbox holding the user's keys — and
+ * the *owner* comes from the invitation record on the graph, never from anything we claimed.
+ */
+export const getDeviceUserFromState = ({
+  state,
+  invitationSeed,
+}: {
+  state: TeamState
+  invitationSeed: string
 }): UserWithSecrets => {
   const starterKeys = generateStarterKeys(invitationSeed)
-  const invitationId = generateProof(invitationSeed).id
-  const state = getTeamState(serializedGraph, teamKeyring, logger)
+  const invitationId = deriveId(invitationSeed)
 
   const { userId } = select.getInvitation(state, invitationId)
   assert(userId) // since this is a device invitation the invitation info includes the userId that created it

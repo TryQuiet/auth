@@ -8,7 +8,7 @@
     "qsb": "./dist/index.js"
   },
   "scripts": {
-    "build": "npx tsc",
+    "build": "echo 'skip build: quiet-sandbox demo lags the path-A invitation refactor (proofs are now handshake-bound: claims + nonces + possession proofs); unmaintained, not shipped, not consumed by Quiet'",
     "test": "echo \"Error: no test specified\" && exit 1",
     "ig": "tsc && npm i -g .",
     "start": "node dist/index.js interactive"

@@ -6,6 +6,7 @@ import figlet from 'figlet'
 import { RoleName } from "../auth/services/roles/roles.js";
 import { EncryptionScopeType } from "../auth/services/crypto/types.js";
 import { UserService } from "../auth/services/members/userService.js";
+import { InviteService } from "../auth/services/invites/inviteService.js";
 
 console.log(figlet.textSync('Quiet Sandbox'));
 
@@ -60,13 +61,22 @@ console.log(`Invite Result: ${JSON.stringify(newInvitation, null, 2)}`)
 const newUsername = 'isntla'
 const prospectiveMember = UserService.createFromInviteSeed(newUsername, newInvitation.seed)
 
+// This script admits a member directly rather than opening a Connection, so it creates both
+// handshake nonces explicitly. A real connection gets identityNonce from the accepting peer.
+const admission = InviteService.createMemberAdmission({
+  seed: prospectiveMember.invitationSeed,
+  user: prospectiveMember.context.user,
+  device: prospectiveMember.context.device,
+  identityNonce: SigChain.lfa.invitation.randomSeed(),
+  inviteeNonce: SigChain.lfa.invitation.randomSeed(),
+})
+
 console.log(`Prospective Member: ${JSON.stringify(prospectiveMember, null, 2)}`)
 
 sigChain.invites.admitMemberFromInvite(
-  prospectiveMember.inviteProof, 
-  prospectiveMember.context.user.userName, 
-  prospectiveMember.context.user.userId,
-  prospectiveMember.publicKeys
+  admission.proofOfInvitation,
+  admission.claim,
+  admission.possessionProof
 )
 
 const {

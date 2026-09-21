@@ -136,13 +136,20 @@ export class App {
     return index === undefined ? todos : todos.nth(index)
   }
 
+  todoCheckbox(content: string) {
+    return this.page
+      .locator('ul > li')
+      .filter({ has: this.page.locator(`input[value=${JSON.stringify(content)}]`) })
+      .getByRole('checkbox')
+  }
+
   async addTodo(text: string) {
     const newTodo = this.page.getByPlaceholder('Add a new todo')
     await newTodo.fill(text)
     await newTodo.press('Enter')
   }
 
-  async toggleTodo(index: number) {
-    await this.page.getByRole('checkbox').nth(index).click()
+  async toggleTodo(content: string) {
+    await this.todoCheckbox(content).click()
   }
 }

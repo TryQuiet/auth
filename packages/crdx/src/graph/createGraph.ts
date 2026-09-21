@@ -1,9 +1,8 @@
 ﻿import { createId } from '@paralleldrive/cuid2'
 import { ROOT } from 'constants.js'
 import type { KeysetWithSecrets } from 'keyset/index.js'
-import type { UserWithSecrets } from 'user/index.js'
 import { append } from './append.js'
-import type { Action, Graph } from './types.js'
+import type { Action, Graph, Signer } from './types.js'
 
 export const EMPTY_GRAPH = {
   root: undefined,
@@ -13,8 +12,8 @@ export const EMPTY_GRAPH = {
 }
 
 type CreateGraphParams<C = Record<string, unknown>> = {
-  /** Local user (with secret keys) that is creating the graph.  */
-  user: UserWithSecrets
+  /** The identity (with secret keys) authoring the graph's root link.  */
+  signer: Signer
 
   /** Unique identifier for the graph. If none is provided, a random one will be generated. */
   id?: string
@@ -34,7 +33,7 @@ type CreateGraphParams<C = Record<string, unknown>> = {
 }
 
 export const createGraph = <A extends Action, C = Record<string, unknown>>({
-  user,
+  signer,
   id = createId(),
   name = id,
   rootPayload = {},
@@ -54,7 +53,7 @@ export const createGraph = <A extends Action, C = Record<string, unknown>>({
   const graph = append({
     graph: EMPTY_GRAPH,
     action: rootAction,
-    user,
+    signer,
     context,
     keys,
   })

@@ -1,7 +1,6 @@
-import { TEST_GRAPH_KEYS as keys } from 'util/testing/setup.js'
+import { createTestSigner, TEST_GRAPH_KEYS as keys } from 'util/testing/setup.js'
 import { describe, expect, test } from 'vitest'
 import { createStore } from 'store/index.js'
-import { createUser } from 'user/index.js'
 import { counterReducer } from './shared/counterReducer.js'
 
 /*
@@ -9,15 +8,15 @@ This is intended to be the simplest possible proof of concept: An increment-only
 no custom resolver because there are no conflicts possible. 
 */
 
-const alice = createUser('alice')
-const bob = createUser('bob')
+const alice = createTestSigner('alice')
+const bob = createTestSigner('bob')
 
 const setupCounter = () => {
-  const aliceStore = createStore({ user: alice, reducer: counterReducer, keys })
+  const aliceStore = createStore({ signer: alice, reducer: counterReducer, keys })
 
   const saved = aliceStore.getGraph()
   const bobStore = createStore({
-    user: bob,
+    signer: bob,
     graph: saved,
     reducer: counterReducer,
     keys,

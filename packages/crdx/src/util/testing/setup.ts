@@ -1,35 +1,41 @@
-﻿import { type Base58 } from '@localfirst/crypto'
-import { arrayToMap } from './arrayToMap.js'
-import { type KeysetWithSecrets } from 'keyset/index.js'
-import * as users from 'user/index.js'
-import { type UserWithSecrets } from 'user/index.js'
+import { fingerprint, type Base58 } from '@localfirst/crypto'
 import { assert } from '@localfirst/shared'
+import { arrayToMap } from './arrayToMap.js'
+import { type Signer } from 'graph/types.js'
+import { createKeyset, type KeysetWithSecrets } from 'keyset/index.js'
+
+/** A `Signer` with the name we know it by in tests. */
+export type TestSigner = Signer & { name: string }
 
 /**
-Usage: 
+ * Creates a test signer whose id is the fingerprint of its own signing key, the way applications
+ * built on crdx are expected to derive signer ids. crdx itself never checks this — `id` is an
+ * opaque string as far as the library is concerned.
+ */
+export const createTestSigner = (name: string, kind = 'test'): TestSigner => {
+  const keys = createKeyset({ type: 'SIGNER', name })
+  return {
+    name,
+    info: { kind, id: fingerprint(keys.signature.publicKey) },
+    keys,
+  }
+}
+
+/**
+Usage:
 
 ```ts
-const {alice, bob} = setup(['alice', 'bob'])
+const {alice, bob} = setup('alice', 'bob')
 ```
 */
-export const setup = (...userNames: string[]) => {
-  assert(userNames.length > 0)
+export const setup = (...names: string[]) => {
+  assert(names.length > 0)
 
-  const testUsers: Record<string, UserWithSecrets> = userNames
-    .map((userName: string) => {
-      return users.createUser(userName)
-    })
-    .reduce(arrayToMap('userName'), {})
+  const testSigners: Record<string, TestSigner> = names
+    .map(name => createTestSigner(name))
+    .reduce(arrayToMap('name'), {})
 
-  const makeUserStuff = (userName: string): UserWithSecrets => {
-    return testUsers[userName]
-  }
-
-  const testUserStuff: Record<string, UserWithSecrets> = userNames
-    .map(name => makeUserStuff(name))
-    .reduce(arrayToMap('userName'), {})
-
-  return testUserStuff
+  return testSigners
 }
 
 export const TEST_GRAPH_KEYS: KeysetWithSecrets = {

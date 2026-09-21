@@ -24,8 +24,12 @@ export const setup = async <T extends string>(userNames = [] as T[]) => {
 
   const users = userNames.reduce<Record<string, UserStuff>>((result, userName) => {
     const storageDir = getStorageDirectory(userName)
-    const user = Auth.createUser(userName)
-    const device = Auth.createDevice({ userId: user.userId, deviceName: `${userName}'s device` })
+    // A user's id is derived from their founding device, so the device is minted first (its id is
+    // the fingerprint of its own keys, independent of any owner) and the user's id derived from it.
+    const firstUseDevice = Auth.device.createFirstUseDevice({ deviceName: `${userName}'s device` })
+    const userId = Auth.deriveUserId(firstUseDevice.deviceId)
+    const device = { ...firstUseDevice, userId }
+    const user = Auth.createUser(userName, userId)
     const context = { user, device }
     const storage = new NodeFSStorageAdapter(storageDir)
     const authProvider = new AuthProvider({ user, device, storage, server: url })

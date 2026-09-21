@@ -2,6 +2,7 @@ import { challenge, prove, verify } from 'connection/identity.js'
 import { ADMIN_SCOPE, TEAM_SCOPE } from 'team/index.js'
 import { setup } from 'util/testing/index.js'
 import 'util/testing/expect/toBeValid.js'
+import { IDENTITY_CHALLENGE, signatures } from '@localfirst/crypto'
 import { type KeyScope, KeyType, createKeyset, redactKeys } from '@localfirst/crdx'
 import { describe, expect, it } from 'vitest'
 
@@ -48,6 +49,29 @@ describe('identity', () => {
 
     // ❌ Eve's proof fails because she doesn't have Bob's secret signature key
     expect(validation).not.toBeValid()
+  })
+
+  it('rejects a legacy identity proof that does not commit to the negotiated protocol', () => {
+    const alicesChallenge = challenge({ type: USER, name: 'bob' })
+    const legacyProof = signatures.sign(
+      alicesChallenge,
+      bob.user.keys.signature.secretKey,
+      IDENTITY_CHALLENGE
+    )
+
+    expect(verify(alicesChallenge, legacyProof, redactKeys(bob.user.keys))).not.toBeValid()
+  })
+
+  it('rejects a protocol 3 identity proof even if a relay rewrites its ready message', () => {
+    const currentChallenge = challenge({ type: USER, name: 'bob' })
+    const { type, name, nonce, timestamp } = currentChallenge
+    const previousProof = signatures.sign(
+      [3, type, name, nonce, timestamp],
+      bob.user.keys.signature.secretKey,
+      IDENTITY_CHALLENGE
+    )
+
+    expect(verify(currentChallenge, previousProof, redactKeys(bob.user.keys))).not.toBeValid()
   })
 
   it('rejects reused proof of identity', () => {

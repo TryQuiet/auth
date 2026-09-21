@@ -1,13 +1,25 @@
 export { Connection } from './connection/index.js'
-export { createDevice, redactDevice, type Device } from './device/index.js'
+export {
+  createDevice,
+  createFirstUseDevice,
+  redactDevice,
+  redactFirstUseDevice,
+  type Device,
+  type FirstUseDevice,
+} from './device/index.js'
 export { generateProof } from './invitation/index.js'
-export { Team, createTeam, load as loadTeam } from './team/index.js'
+export { Team, createTeam, deviceSigner, load as loadTeam } from './team/index.js'
+
+/** Link signers are named by kind + id; these are the kinds this library uses. */
+export { SignerKind } from './team/types.js'
 
 export * as connection from './connection/index.js'
 export * as device from './device/index.js'
 export * as invitation from './invitation/index.js'
 export * as lockbox from './lockbox/index.js'
 export * as role from './role/index.js'
+export * as server from './server/index.js'
+export { createServer, redactServer } from './server/index.js'
 export * from './role/constants.js'
 export * from './team/constants.js'
 export * from './util/constants.js'
@@ -25,6 +37,9 @@ export type * from './server/types.js'
 export type * from './team/types.js'
 
 export { graphSummary } from './util/graphSummary.js'
+
+/** Derives a user's id from their founding device — the id an app must mint for a new identity. */
+export { deriveUserId } from './util/userId.js'
 
 export {
   createKeyset,

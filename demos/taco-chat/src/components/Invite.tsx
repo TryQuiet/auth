@@ -17,7 +17,6 @@ export const Invite = () => {
   const [state, setState] = useState<State>('inactive')
   const [seed, setSeed] = useState<string>()
 
-  const maxUsesSelect = useRef() as MutableRefObject<HTMLSelectElement>
   const expirationSelect = useRef() as MutableRefObject<HTMLSelectElement>
 
   const { team, user } = useTeam()
@@ -39,25 +38,24 @@ export const Invite = () => {
 
   const inviteMembers = () => {
     const seed = `${team.teamName}-${randomSeed()}`
-    setSeed(seed)
 
-    const maxUses = Number(maxUsesSelect.current.value)
     const now = Date.now()
     const expirationMs = Number(expirationSelect.current.value) * 1000
-    const expiration = (now + expirationMs) as UnixTimestamp
+    const expiration = (expirationMs === 0 ? 0 : now + expirationMs) as UnixTimestamp
 
     // TODO we're storing id so we can revoke - wire that up
-    const { id } = team.inviteMember({ seed, maxUses, expiration })
+    const { id } = team.inviteMember({ seed, expiration })
+    setSeed(`${team.id}:${seed}`)
 
     setState('showing_member_invite')
   }
 
   const inviteDevice = () => {
     const seed = `${team.teamName}-${randomSeed()}`
-    setSeed(seed)
 
     // TODO we're storing id so we can revoke - wire that up
     const { id } = team.inviteDevice({ seed })
+    setSeed(`${team.id}:${seed}`)
 
     setState('adding_device')
   }
@@ -123,18 +121,7 @@ export const Invite = () => {
         <>
           <h3>Invite members</h3>
           <div className="flex flex-col gap-4 mt-4">
-            <label>
-              How many people can use this invitation code?
-              <select
-                ref={maxUsesSelect}
-                className="MaxUses mt-1 w-full border border-gray-200 rounded-md p-2 text-sm"
-              >
-                <option value={1}>1 person</option>
-                <option value={5}>5 people</option>
-                <option value={10}>10 people</option>
-                <option value={0}>No limit</option>
-              </select>
-            </label>
+            <p>This invitation can be used by multiple people until it expires or is revoked.</p>
             <label>
               When does this invitation code expire?
               <select

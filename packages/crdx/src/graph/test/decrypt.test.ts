@@ -1,17 +1,16 @@
-import { TEST_GRAPH_KEYS } from 'util/testing/setup.js'
+import { createTestSigner, TEST_GRAPH_KEYS } from 'util/testing/setup.js'
 import { describe, expect, it } from 'vitest'
 import { append, createGraph, decryptGraph, decryptLink, redactGraph } from 'graph/index.js'
 import { createKeyset } from 'keyset/index.js'
-import { createUser } from 'user/index.js'
 import { type Hash } from 'util/index.js'
 
 const keys = TEST_GRAPH_KEYS
 
 describe('decrypt', () => {
   it('decryptLink', () => {
-    const alice = createUser('alice')
-    let graph = createGraph<any>({ user: alice, name: 'test graph', keys })
-    graph = append({ graph, action: { type: 'FOO' }, user: alice, keys })
+    const alice = createTestSigner('alice')
+    let graph = createGraph<any>({ signer: alice, name: 'test graph', keys })
+    graph = append({ graph, action: { type: 'FOO' }, signer: alice, keys })
 
     for (const _ in graph.encryptedLinks) {
       const hash = _ as Hash
@@ -23,9 +22,9 @@ describe('decrypt', () => {
   })
 
   it('decryptGraph', () => {
-    const alice = createUser('alice')
-    let graph = createGraph<any>({ user: alice, name: 'test graph', keys })
-    graph = append({ graph, action: { type: 'FOO' }, user: alice, keys })
+    const alice = createTestSigner('alice')
+    let graph = createGraph<any>({ signer: alice, name: 'test graph', keys })
+    graph = append({ graph, action: { type: 'FOO' }, signer: alice, keys })
 
     const encryptedGraph = redactGraph(graph)
 
@@ -40,19 +39,19 @@ describe('decrypt', () => {
   })
 
   it('decryptGraph with keyring', () => {
-    const alice = createUser('alice')
+    const alice = createTestSigner('alice')
 
     // create a graph with an initial keyset
     const keys1 = createKeyset({ type: 'TEAM', name: 'TEAM' })
     let graph = createGraph<any>({
-      user: alice,
+      signer: alice,
       name: 'test graph',
       keys: keys1,
     })
 
     // suppose the keys are rotated, now we have a new keyset
     const keys2 = createKeyset({ type: 'TEAM', name: 'TEAM' })
-    graph = append({ graph, action: { type: 'FOO' }, user: alice, keys: keys2 })
+    graph = append({ graph, action: { type: 'FOO' }, signer: alice, keys: keys2 })
 
     const encryptedGraph = redactGraph(graph)
 

@@ -17,8 +17,9 @@ describe('user', () => {
       const bob = createUser('bob')
       const keypair = bob.keys.signature
       const { secretKey, publicKey } = keypair
-      const signature = signatures.sign(message, secretKey)
-      const signedMessage = { payload: message, signature, publicKey }
+      const context = 'test/user'
+      const signature = signatures.sign(message, secretKey, context)
+      const signedMessage = { payload: message, signature, publicKey, context }
       expect(signatures.verify(signedMessage)).toBe(true)
     })
 

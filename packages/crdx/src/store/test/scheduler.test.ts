@@ -1,9 +1,8 @@
-import { TEST_GRAPH_KEYS as keys } from 'util/testing/setup.js'
+import { createTestSigner, TEST_GRAPH_KEYS as keys } from 'util/testing/setup.js'
 import { describe, expect, it } from 'vitest'
 import { createGraph, type Link, type Resolver, type RootAction } from 'graph/index.js'
 import { createStore } from 'store/index.js'
 import { type Reducer } from 'store/types.js'
-import { createUser } from 'user/index.js'
 import { type UnixTimestamp } from 'util/index.js'
 
 /**
@@ -14,14 +13,14 @@ import { type UnixTimestamp } from 'util/index.js'
  * resolved by giving the room to the person with the most seniority.
  */
 describe('scheduler', () => {
-  const alice = createUser('alice', 'alice')
-  const bob = createUser('bob', 'bob')
+  const alice = createTestSigner('alice')
+  const bob = createTestSigner('bob')
 
-  // the person with the longest tenure wins in the case of conflicts
+  // the person with the longest tenure wins in the case of conflicts; a link's author is the
+  // identity that signed it
   const seniorityLookup: Record<string, number> = {
-    alice: 10, // years
-    bob: 3,
-    charlie: 7,
+    [alice.info.id]: 10, // years
+    [bob.info.id]: 3,
   }
 
   const setup = () => {
@@ -29,7 +28,7 @@ describe('scheduler', () => {
      * The resolver enforces the rule that the most senior person wins in cases of conflict.
      */
     const resolver = (_ => {
-      const seniority = (link: SchedulerLink) => seniorityLookup[link.body.userId]
+      const seniority = (link: SchedulerLink) => seniorityLookup[link.body.signer.id]
       return {
         sort: (a: SchedulerLink, b: SchedulerLink) => seniority(b) - seniority(a),
       }
@@ -82,20 +81,20 @@ describe('scheduler', () => {
     }
 
     const graph = createGraph<SchedulerAction, SchedulerState>({
-      user: alice,
+      signer: alice,
       name: 'scheduler',
       keys,
     })
 
     // everyone starts out with the same store
     const aliceStore = createStore({
-      user: alice,
+      signer: alice,
       graph,
       reducer,
       resolver,
       keys,
     })
-    const bobStore = createStore({ user: bob, graph, reducer, resolver, keys })
+    const bobStore = createStore({ signer: bob, graph, reducer, resolver, keys })
 
     const sync = () => {
       aliceStore.merge(bobStore.getGraph())

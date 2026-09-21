@@ -24,10 +24,6 @@ export const actionFingerprint = (link: TeamLink) => {
         return `${action.payload.roleName}:${action.payload.userId}`
       }
 
-      case 'ADD_DEVICE': {
-        return action.payload.device.deviceName
-      }
-
       case 'REMOVE_DEVICE': {
         return action.payload.deviceId
       }
