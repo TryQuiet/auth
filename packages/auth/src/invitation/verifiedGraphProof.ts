@@ -1,5 +1,5 @@
 import { hash, signatures, type SignedMessage, type Payload } from '@localfirst/crypto'
-import { type TeamLink } from 'team/types.js'
+import { type TeamLink } from '../team/types.js'
 import { pack, unpack } from 'msgpackr'
 import { getLinkValidationOwner } from '@localfirst/crdx'
 

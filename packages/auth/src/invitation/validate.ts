@@ -1,5 +1,5 @@
 import { verifyGraphProof } from './verifiedGraphProof.js'
-import { type TeamLink } from 'team/types.js'
+import { type TeamLink } from '../team/types.js'
 import { INVITATION_PROOF, type Base58 } from '@localfirst/crypto'
 import { deviceIdentityIsValid } from 'device/index.js'
 import {

@@ -1,6 +1,6 @@
 import { type KeyMetadata, type KeyScope, type KeysetWithSecrets } from '@localfirst/crdx'
 import { keyMap } from './keyMap.js'
-import { type CheckedKeyStore } from 'lockbox/CheckedKeyStore.js'
+import { type CheckedKeyStore } from '../../lockbox/CheckedKeyStore.js'
 import { type TeamState } from 'team/types.js'
 import { assert } from '@localfirst/shared'
 

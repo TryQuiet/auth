@@ -2,7 +2,7 @@ import { type KeysetWithSecrets, createKeyring } from '@localfirst/crdx'
 import { type TeamState } from 'team/types.js'
 import { KeyType } from 'util/types.js'
 import { keyMap } from './keyMap.js'
-import { type CheckedKeyStore } from 'lockbox/CheckedKeyStore.js'
+import { type CheckedKeyStore } from '../../lockbox/CheckedKeyStore.js'
 
 const { TEAM } = KeyType
 
