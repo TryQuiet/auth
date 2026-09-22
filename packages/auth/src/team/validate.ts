@@ -125,6 +125,7 @@ const validateRoot = (previousState: TeamState, link: TeamLink, logger: Logger) 
   if (
     !verifyLinkSignature({
       hash: link.hash,
+      owner: link,
       signature: link.signature,
       publicKey: rootDevice.keys.signature,
     })
@@ -181,7 +182,9 @@ const resolveAuthor = (
   }
 
   const publicKey = signingKeyOf(record)
-  if (!verifyLinkSignature({ hash: link.hash, signature: link.signature, publicKey })) {
+  if (
+    !verifyLinkSignature({ hash: link.hash, owner: link, signature: link.signature, publicKey })
+  ) {
     return fail(
       `Link signature does not verify against the keys registered for '${signer.id}'`,
       previousState,
@@ -539,7 +542,7 @@ const validators: AuthorizedValidatorSet = {
 
     const invitation = select.getInvitation(previousState, id)
 
-    const proofValidation = invitations.validate(proof, invitation, claim)
+    const proofValidation = invitations.validate(proof, invitation, claim, undefined, link)
     if (!proofValidation.isValid) {
       return fail(
         `Admission does not contain a valid invitation proof: ${proofValidation.error.message}`,
@@ -550,6 +553,7 @@ const validators: AuthorizedValidatorSet = {
     }
 
     const possessionValidation = invitations.validatePossessionProof({
+      owner: link,
       invitationId: id,
       claim,
       proof: possessionProof,

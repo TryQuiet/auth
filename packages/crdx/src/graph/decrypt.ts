@@ -1,3 +1,4 @@
+import { pack, unpack } from 'msgpackr'
 import { asymmetric } from '@localfirst/crypto'
 import { hashEncryptedLink } from './hashLink.js'
 import {
@@ -28,17 +29,32 @@ export const decryptLink = <A extends Action, C>(
 
   const cipher = toUint8Array(encryptedBody)
 
-  const decryptedLinkBody = asymmetric.decryptBytes({
+  const hash = hashEncryptedLink(cipher)
+  const { secretKey } = keyset.encryption
+  const fact = decryptedBodies.get(encryptedLink) ?? recentCipherFacts.get(hash)?.deref()
+  if (
+    fact?.hash === hash &&
+    fact.senderPublicKey === senderPublicKey &&
+    fact.recipientPublicKey === recipientPublicKey &&
+    fact.secretKey === secretKey
+  ) {
+    rememberDecryption(encryptedLink, fact)
+    // Never return cached plaintext by alias. Even nested byte arrays must belong to this caller.
+    return { hash, signature, body: unpack(Uint8Array.from(fact.body)) as LinkBody<A, C> }
+  }
+  const body = asymmetric.decryptBytes({
     cipher,
-    recipientSecretKey: keyset.encryption.secretKey,
+    recipientSecretKey: secretKey,
     senderPublicKey,
   }) as LinkBody<A, C>
-
-  return {
-    hash: hashEncryptedLink(encryptedBody),
-    signature,
-    body: decryptedLinkBody,
-  }
+  rememberDecryption(encryptedLink, {
+    hash,
+    senderPublicKey,
+    recipientPublicKey,
+    secretKey,
+    body: Uint8Array.from(pack(body)),
+  })
+  return { hash, signature, body }
 }
 
 /**
@@ -116,3 +132,20 @@ const toUint8Array = (buf: globalThis.Buffer | Uint8Array) => {
 
 const isBuffer = (buf: globalThis.Buffer | Uint8Array): buf is globalThis.Buffer =>
   'buffer' in buf && 'byteOffset' in buf && 'byteLength' in buf
+
+type DecryptionFact = {
+  hash: Hash
+  senderPublicKey: string
+  recipientPublicKey: string
+  secretKey: string
+  body: Uint8Array
+}
+const decryptedBodies = new WeakMap<EncryptedLink, DecryptionFact>()
+const recentCipherFacts = new Map<Hash, WeakRef<DecryptionFact>>()
+const rememberDecryption = (owner: EncryptedLink, fact: DecryptionFact) => {
+  decryptedBodies.set(owner, fact)
+  if (typeof WeakRef !== 'function') return
+  recentCipherFacts.delete(fact.hash)
+  recentCipherFacts.set(fact.hash, new WeakRef(fact))
+  if (recentCipherFacts.size > 4096) recentCipherFacts.delete(recentCipherFacts.keys().next().value)
+}

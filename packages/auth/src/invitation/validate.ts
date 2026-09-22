@@ -1,4 +1,6 @@
-import { signatures, INVITATION_PROOF, type Base58 } from '@localfirst/crypto'
+import { verifyGraphProof } from './verifiedGraphProof.js'
+import { type TeamLink } from 'team/types.js'
+import { INVITATION_PROOF, type Base58 } from '@localfirst/crypto'
 import { deviceIdentityIsValid } from 'device/index.js'
 import {
   type Invitation,
@@ -39,7 +41,8 @@ export const validate = (
   proof: ProofOfInvitation,
   invitation: Invitation,
   claim: InvitationClaim,
-  expectedIdentityNonce?: Base58
+  expectedIdentityNonce?: Base58,
+  owner?: TeamLink
 ): ValidationResult => {
   if (!hasExactKeys(proof, ['id', 'identityNonce', 'inviteeNonce', 'signature'])) {
     return fail('Invitation proof has extra or missing fields')
@@ -58,12 +61,15 @@ export const validate = (
   if (!claimValidation.isValid) return claimValidation
 
   // Check signature on proof against public key from invitation
-  const signatureIsValid = signatures.verify({
-    payload: invitationProofPayload(proof, claim),
-    signature: proof.signature,
-    publicKey: invitation.publicKey,
-    context: INVITATION_PROOF,
-  })
+  const signatureIsValid = verifyGraphProof(
+    {
+      payload: invitationProofPayload(proof, claim),
+      signature: proof.signature,
+      publicKey: invitation.publicKey,
+      context: INVITATION_PROOF,
+    },
+    owner
+  )
   if (!signatureIsValid) {
     return fail('Signature provided is not valid', { proof, invitation })
   }

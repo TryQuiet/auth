@@ -1,5 +1,6 @@
 import { type KeyMetadata, type KeyScope, type KeysetWithSecrets } from '@localfirst/crdx'
-import { keyMap, type KeyMap } from './keyMap.js'
+import { keyMap } from './keyMap.js'
+import { type CheckedKeyStore } from 'lockbox/CheckedKeyStore.js'
 import { type TeamState } from 'team/types.js'
 import { assert } from '@localfirst/shared'
 
@@ -7,14 +8,10 @@ import { assert } from '@localfirst/shared'
 export const keys = (
   state: TeamState,
   deviceKeys: KeysetWithSecrets,
-  scope: KeyScope | KeyMetadata
+  scope: KeyScope | KeyMetadata,
+  checkedKeys?: CheckedKeyStore
 ) => {
-  const { type, name } = scope
-
-  const keysFromLockboxes = keyMap(state, deviceKeys)
-  const keys = keysFromLockboxes[type] ? keysFromLockboxes[type][name] : undefined
-
-  assert(keys, 'Requested key scope is unavailable')
+  const keys = keysAllGen(state, deviceKeys, scope, checkedKeys)
 
   const generation =
     'generation' in scope && scope.generation !== undefined
@@ -29,11 +26,12 @@ export const keys = (
 export const keysAllGen = (
   state: TeamState,
   deviceKeys: KeysetWithSecrets,
-  scope: KeyScope | KeyMetadata
+  scope: KeyScope | KeyMetadata,
+  checkedKeys?: CheckedKeyStore
 ) => {
   const { type, name } = scope
 
-  const keysFromLockboxes = keyMap(state, deviceKeys)
+  const keysFromLockboxes = keyMap(state, deviceKeys, checkedKeys)
   const keys = keysFromLockboxes[type] ? keysFromLockboxes[type][name] : undefined
 
   assert(keys, 'Requested key scope is unavailable')
@@ -41,10 +39,4 @@ export const keysAllGen = (
   return keys
 }
 
-export const allKeys = (state: TeamState, deviceKeys: KeysetWithSecrets): KeyMap => {
-  const keysFromLockboxes = keyMap(state, deviceKeys)
-
-  assert(keysFromLockboxes, 'Key material is unavailable')
-
-  return keysFromLockboxes
-}
+export { keyMap as allKeys } from './keyMap.js'
