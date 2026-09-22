@@ -257,6 +257,8 @@ export class Team extends EventEmitter<TeamEvents> {
       // Decryption can open deliveries before the whole graph is accepted. Drop speculative
       // records on failure so rejected branches cannot accumulate material for the Team's lifetime.
       this.#checkedKeys = new CheckedKeyStore()
+      // Keep our own lockbox keys an owned record so later key use does not recheck them.
+      this.lockboxKeys = this.#checkedKeys.import(this.lockboxKeys)
       throw error
     }
     this.state = this.store.getState()
