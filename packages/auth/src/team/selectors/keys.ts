@@ -3,7 +3,6 @@ import { keyMap } from './keyMap.js'
 import { type CheckedKeyStore } from 'lockbox/CheckedKeyStore.js'
 import { type TeamState } from 'team/types.js'
 import { assert } from '@localfirst/shared'
-import { lockboxSummary } from 'util/lockboxSummary.js'
 
 /** Returns the keys for the given scope, if they are in a lockbox that the current device has access to */
 export const keys = (
@@ -35,15 +34,7 @@ export const keysAllGen = (
   const keysFromLockboxes = keyMap(state, deviceKeys, checkedKeys)
   const keys = keysFromLockboxes[type] ? keysFromLockboxes[type][name] : undefined
 
-  assert(
-    keys,
-    keys
-      ? undefined
-      : `Couldn't find keys: ${JSON.stringify(scope)}
-     Device: ${deviceKeys.name}
-     Available lockboxes: \n- ${state.lockboxes.map(lockboxSummary).join('\n- ')} 
-     Keymap: ${JSON.stringify(keysFromLockboxes, null, 2)}`
-  )
+  assert(keys, 'Requested key scope is unavailable')
 
   return keys
 }

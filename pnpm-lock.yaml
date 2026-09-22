@@ -474,8 +474,8 @@ importers:
         specifier: ^4.17.21
         version: 4.17.21
       msgpackr:
-        specifier: 1.11.2
-        version: 1.11.2
+        specifier: 1.11.8
+        version: 1.11.8
       xstate:
         specifier: ^5.9.1
         version: 5.13.0
@@ -498,8 +498,8 @@ importers:
         specifier: workspace:*
         version: link:../shared
       msgpackr:
-        specifier: 1.11.2
-        version: 1.11.2
+        specifier: 1.11.8
+        version: 1.11.8
     devDependencies:
       '@automerge/automerge-repo-network-messagechannel':
         specifier: ^1.1.2
@@ -581,8 +581,8 @@ importers:
         specifier: ^4.17.21
         version: 4.17.21
       msgpackr:
-        specifier: 1.11.2
-        version: 1.11.2
+        specifier: 1.11.8
+        version: 1.11.8
 
   packages/crypto:
     dependencies:
@@ -602,8 +602,8 @@ importers:
         specifier: ^4.17.21
         version: 4.17.21
       msgpackr:
-        specifier: 1.11.2
-        version: 1.11.2
+        specifier: 1.11.8
+        version: 1.11.8
 
   packages/shared:
     dependencies:
@@ -6980,6 +6980,9 @@ packages:
 
   msgpackr@1.10.2:
     resolution: {integrity: sha512-L60rsPynBvNE+8BWipKKZ9jHcSGbtyJYIwjRq0VrIvQ08cRjntGXJYW/tmciZ2IHWIY8WEW32Qa2xbh5+SKBZA==}
+
+  msgpackr@1.11.8:
+    resolution: {integrity: sha512-bC4UGzHhVvgDNS7kn9tV8fAucIYUBuGojcaLiz7v+P63Lmtm0Xeji8B/8tYKddALXxJLpwIeBmUN3u64C4YkRA==}
 
   msgpackr@1.11.2:
     resolution: {integrity: sha512-F9UngXRlPyWCDEASDpTf6c9uNhGPTqnTeLVt7bN+bU1eajoR/8V9ys2BRaV5C/e5ihE6sJ9uPIKaYt6bFuO32g==}
@@ -17915,6 +17918,10 @@ snapshots:
     optional: true
 
   msgpackr@1.10.2:
+    optionalDependencies:
+      msgpackr-extract: 3.0.2
+
+  msgpackr@1.11.8:
     optionalDependencies:
       msgpackr-extract: 3.0.2
 
