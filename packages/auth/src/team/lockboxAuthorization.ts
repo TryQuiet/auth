@@ -1,5 +1,5 @@
-import { CommitmentIndex } from 'lockbox/commitmentIndex.js'
-import { isLockboxCollection, isLockboxSnapshot } from 'lockbox/snapshot.js'
+import { CommitmentIndex } from '../lockbox/commitmentIndex.js'
+import { isLockboxCollection, isLockboxSnapshot } from '../lockbox/snapshot.js'
 import { ROOT, type Keyset } from '@localfirst/crdx'
 import { isBase58KeyOfLength } from '@localfirst/crypto'
 import { type Logger } from '@localfirst/shared'

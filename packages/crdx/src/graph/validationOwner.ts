@@ -1,4 +1,4 @@
-import { type Hash } from 'util/types.js'
+import { type Hash } from '../util/types.js'
 
 type Owner = { hash: Hash }
 

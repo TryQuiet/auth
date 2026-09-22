@@ -1,5 +1,5 @@
 import { verifyGraphProof } from './verifiedGraphProof.js'
-import { type TeamLink } from 'team/types.js'
+import { type TeamLink } from '../team/types.js'
 import { redactKeys } from '@localfirst/crdx'
 import { signatures, DEVICE_POSSESSION, type Base58, type Payload } from '@localfirst/crypto'
 import { assert } from '@localfirst/shared'

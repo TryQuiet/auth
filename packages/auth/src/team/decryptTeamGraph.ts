@@ -17,7 +17,7 @@ import {
   type TeamState,
 } from './types.js'
 import { assert, Logger } from '@localfirst/shared'
-import { CheckedKeyStore } from 'lockbox/CheckedKeyStore.js'
+import { CheckedKeyStore } from '../lockbox/CheckedKeyStore.js'
 
 /**
  * Decrypts a graph.

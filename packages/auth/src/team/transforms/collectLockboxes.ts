@@ -1,6 +1,6 @@
-import { appendLockboxes } from 'lockbox/snapshot.js'
+import { appendLockboxes } from '../../lockbox/snapshot.js'
 import { type Logger } from '@localfirst/shared'
-import { authorizedLockboxes, extendEstablishedCommitments } from 'team/lockboxAuthorization.js'
+import { authorizedLockboxes, extendEstablishedCommitments } from '../lockboxAuthorization.js'
 import {
   isLockboxCarrierAction,
   SignerKind,
