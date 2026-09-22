@@ -1,4 +1,4 @@
-import { createKeyset } from '@localfirst/crdx'
+import { createKeyset, type KeysetWithSecrets } from '@localfirst/crdx'
 import * as crypto from '@localfirst/crypto'
 import { pack, unpack } from 'msgpackr'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -173,5 +173,55 @@ describe('checked key material owned by a team', () => {
     expect(store.keyMap(base, owned).ROLE.private).toEqual([role])
     const duplicates: Lockbox[] = [...base, create(conflict, recipient), copy(box)]
     expect(store.keyMap(snapshotLockboxes(duplicates), owned).ROLE.private).toEqual([role])
+  })
+})
+
+describe('bounded retention of explicit lookup keys', () => {
+  const collectGarbage = async () => {
+    // Expose gc at runtime; a WeakRef target stays alive until the job that created it ends.
+    const v8 = await import('node:v8')
+    const vm = await import('node:vm')
+    v8.setFlagsFromString('--expose-gc')
+    const gc = vm.runInNewContext('gc') as () => void
+    const settle = async () =>
+      new Promise(resolve => {
+        setTimeout(resolve, 0)
+      })
+    await settle()
+    gc()
+    await settle()
+    gc()
+    await settle()
+    gc()
+  }
+
+  it('does not retain valid unrelated keysets used only for lookups', async () => {
+    const { store, recipient, role, box } = fixture()
+    const owner = store.pin(recipient)
+    const lockboxes = snapshotLockboxes([box])
+    const transient: Array<WeakRef<KeysetWithSecrets>> = []
+    for (let n = 0; n < 256; n++) {
+      const other = createKeyset({ type: 'DEVICE', name: `peer-${n}` })
+      expect(store.keyMap(lockboxes, other).ROLE).toBeUndefined()
+      transient.push(new WeakRef(store.import(other)))
+    }
+    await collectGarbage()
+    expect(transient.filter(ref => ref.deref() !== undefined).length).toBeLessThan(256)
+    // The pinned owner and the material it opened are still owned records.
+    expect(store.import(owner)).toBe(owner)
+    expect(store.keyMap(lockboxes, owner).ROLE.private[0]).toEqual(role)
+  })
+
+  it('keeps the last selection recipient only until another recipient selects', () => {
+    const { store, recipient, box } = fixture()
+    const lockboxes = snapshotLockboxes([box])
+    const decrypt = vi.spyOn(crypto.asymmetric, 'decryptBytes')
+    const first = store.keyMap(lockboxes, recipient)
+    expect(store.keyMap(lockboxes, recipient)).toBe(first)
+    expect(store.keyMap(lockboxes, createKeyset({ type: 'DEVICE', name: 'other' })).ROLE).toBe(
+      undefined
+    )
+    expect(store.keyMap(lockboxes, recipient)).not.toBe(first)
+    expect(decrypt).toHaveBeenCalledTimes(1)
   })
 })

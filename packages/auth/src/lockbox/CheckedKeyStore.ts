@@ -14,14 +14,32 @@ export type KeyMap = Record<string, Record<string, KeysetWithSecrets[]>>
  * retaining a checked key or delivery never makes it selectable in another state.
  */
 export class CheckedKeyStore {
+  /** Pinned material: the owner's own lockbox keys and the contents of successful deliveries. */
   readonly #material = new Map<string, CheckedKeyset>()
-  readonly #owned = new Map<KeysetWithSecrets, CheckedKeyset>()
+  /** Every owned immutable copy, pinned or not. Weak, so a transient lookup key is collectable. */
+  readonly #owned = new WeakMap<KeysetWithSecrets, CheckedKeyset>()
   readonly #deliveries = new Map<string, CheckedKeyset>()
-  #selection?: { lockboxes: Lockbox[]; recipient: KeysetWithSecrets; keys: KeyMap }
+  #selection?: { lockboxes: Lockbox[]; recipient: string; keys: KeyMap }
 
-  /** Copy caller-owned data before checking it. Only our immutable records bypass import checks. */
+  /** Copy caller-owned data before checking it. Only our immutable records bypass import checks.
+   * An import is not retained: explicit lookup keys live only as long as the caller's use of them.
+   */
   import(keys: KeysetWithSecrets): KeysetWithSecrets {
-    return this.#owned.get(keys)?.keys ?? this.#retain(checkKeyset(keys)).keys
+    return this.#check(keys).keys
+  }
+
+  /** Import and retain for the store's lifetime. Only the owner's own lockbox keys are pinned. */
+  pin(keys: KeysetWithSecrets): KeysetWithSecrets {
+    return this.#retain(this.#check(keys)).keys
+  }
+
+  #check(keys: KeysetWithSecrets): CheckedKeyset {
+    const owned = this.#owned.get(keys)
+    if (owned !== undefined) return owned
+    const checked = checkKeyset(keys)
+    const record = this.#material.get(checked.commitment) ?? checked
+    this.#owned.set(record.keys, record)
+    return record
   }
 
   #retain(checked: CheckedKeyset): CheckedKeyset {
@@ -32,7 +50,7 @@ export class CheckedKeyStore {
   }
 
   open(input: Lockbox, decryptionKeys: KeysetWithSecrets): KeysetWithSecrets {
-    const recipient = this.#owned.get(this.import(decryptionKeys))!
+    const recipient = this.#check(decryptionKeys)
     const lockbox = snapshotLockbox(input)
     const { encryptionKey, encryptedPayload, contents } = lockbox
     // Bind the complete owned delivery and checked recipient. A known contents commitment alone
@@ -79,8 +97,8 @@ export class CheckedKeyStore {
   }
 
   visibleKeys(lockboxes: Lockbox[], decryptionKeys: KeysetWithSecrets): KeysetWithSecrets[] {
-    const root = this.import(decryptionKeys)
-    const visited = new Set([this.#owned.get(root)!.commitment])
+    const root = this.#check(decryptionKeys)
+    const visited = new Set([root.commitment])
     const byRecipient = new Map<string, Lockbox[]>()
     for (const lockbox of lockboxes) {
       const address = lockbox.recipient.publicKey
@@ -103,16 +121,17 @@ export class CheckedKeyStore {
       }
       return [...keys, ...keys.flatMap(visit)]
     }
-    return visit(root)
+    return visit(root.keys)
   }
 
   keyMap(lockboxes: Lockbox[], decryptionKeys: KeysetWithSecrets): KeyMap {
-    const recipient = this.import(decryptionKeys)
+    const recipient = this.#check(decryptionKeys)
     const previous = this.#selection
-    if (previous?.lockboxes === lockboxes && previous.recipient === recipient) return previous.keys
+    if (previous?.lockboxes === lockboxes && previous.recipient === recipient.commitment)
+      return previous.keys
 
     const keys: KeyMap = Object.create(null)
-    for (const key of this.visibleKeys(lockboxes, recipient)) {
+    for (const key of this.visibleKeys(lockboxes, recipient.keys)) {
       const { type, name, generation } = key
       if (isUnsafeScopeName(type) || isUnsafeScopeName(name)) continue
       keys[type] ??= Object.create(null)
@@ -128,7 +147,9 @@ export class CheckedKeyStore {
     }
     Object.freeze(keys)
     // Mutable arrays always select afresh. Keep only one view, rather than all replay states.
-    if (isLockboxCollection(lockboxes)) this.#selection = { lockboxes, recipient, keys }
+    if (isLockboxCollection(lockboxes)) {
+      this.#selection = { lockboxes, recipient: recipient.commitment, keys }
+    }
     return keys
   }
 }

@@ -101,14 +101,14 @@ export class Team extends EventEmitter<TeamEvents> {
     if ('user' in options.context) {
       const { user, device } = options.context
       this.user = user
-      this.lockboxKeys = this.#checkedKeys.import(device.keys)
+      this.lockboxKeys = this.#checkedKeys.pin(device.keys)
       // Members author links as their device: device keys never rotate, so a signature stays
       // checkable against the device's registration forever.
       this.signer = deviceSigner(device)
     } else {
       const { server } = options.context
       this.user = castServer.toUser(server)
-      this.lockboxKeys = this.#checkedKeys.import(server.keys)
+      this.lockboxKeys = this.#checkedKeys.pin(server.keys)
       // A server signs with its identity keys, which are separate from the rotatable keys its
       // lockboxes are addressed to.
       this.signer = castServer.toSigner(server)
@@ -258,7 +258,7 @@ export class Team extends EventEmitter<TeamEvents> {
       // records on failure so rejected branches cannot accumulate material for the Team's lifetime.
       this.#checkedKeys = new CheckedKeyStore()
       // Keep our own lockbox keys an owned record so later key use does not recheck them.
-      this.lockboxKeys = this.#checkedKeys.import(this.lockboxKeys)
+      this.lockboxKeys = this.#checkedKeys.pin(this.lockboxKeys)
       throw error
     }
     this.state = this.store.getState()
@@ -1213,7 +1213,7 @@ export class Team extends EventEmitter<TeamEvents> {
     if (name === this.userId) {
       this.user.keys = newKeys
       // A server's rotatable keys are also the keys its lockboxes are addressed to
-      if (isForServer) this.lockboxKeys = this.#checkedKeys.import(newKeys)
+      if (isForServer) this.lockboxKeys = this.#checkedKeys.pin(newKeys)
     }
   }
 

@@ -3,8 +3,11 @@
 Each `Team` owns a private `CheckedKeyStore`. Import copies a keyset, validates
 its complete shape and both public/secret keypair correspondences, computes its
 commitment, and freezes the owned data. Reusing that owned record does not repeat
-those checks. Explicit caller-owned key arguments are imported and checked on
-each call; mutating the original device keys cannot change the team's owned copy.
+those checks. Only the Team's own lockbox keys are pinned for the store's lifetime;
+an explicit caller-owned key argument is imported and checked on each call, is
+referenced only weakly by the store, and is collectable once the caller drops it,
+so explicit lookups with unrelated keysets cannot grow the store. Mutating the
+original device keys cannot change the team's owned copy.
 
 A successful lockbox opening is indexed by the complete delivery and the checked
 recipient commitment. The delivery identity includes ciphertext, sender key, and
@@ -25,8 +28,16 @@ again. Successful merges keep their records. Standalone selectors use a temporar
 unless given an explicit owner, and standalone `lockbox.open` returns a fresh
 caller-owned copy. Existing Team key, encryption, and verification APIs and wire
 formats are unchanged. Ordinary message signatures are still verified individually.
-Graph signature/proof caches, the commitment trie, Quiet's channel index, and
-the separate native crypto adapter are outside this change.
+
+Graph-level facts are owned by the retained graph links, never by the temporary
+copies `getSequence` makes: link signatures are bound to (hash, signature, resolved
+public key), decrypted link bodies to (ciphertext hash, sender key, recipient key,
+decryption secret) with plaintext copied on every return, and invitation/possession
+proofs to (context, payload, signature, public key). Each has a bounded recent index
+of `WeakRef`s (4,096 entries; 8 proof facts per owner) that only finds a fact a live
+link still owns; without `WeakRef` only the owner-keyed weak maps remain. Established
+commitments are indexed in an immutable radix trie extended per accepted collection.
+Quiet's channel index and the separate native crypto adapter are outside this change.
 
 ## Validation
 
